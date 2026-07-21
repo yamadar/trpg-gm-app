@@ -40,15 +40,20 @@ export default function CharacterTab({ worldId }) {
 
   useEffect(() => {
     if (!selectedName) return;
+    let cancelled = false;
     (async () => {
       try {
         const c = await getCharacter(worldId, kind, selectedName);
+        if (cancelled) return;
         setEditRaw(c.raw);
         setEditRevealed(!!c.revealed);
       } catch (e) {
-        setError('取得に失敗した: ' + e.message);
+        if (!cancelled) setError('取得に失敗した: ' + e.message);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName]);
 

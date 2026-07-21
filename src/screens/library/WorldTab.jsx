@@ -34,16 +34,21 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     }
     setSplitResult(null);
     setError('');
+    let cancelled = false;
     (async () => {
       try {
         const world = await getWorld(selectedWorldId);
+        if (cancelled) return;
         setDetail(world);
         setEditTitle(world.title);
         setEditRaw(world.raw);
       } catch (e) {
-        setError('World取得に失敗した: ' + e.message);
+        if (!cancelled) setError('World取得に失敗した: ' + e.message);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedWorldId]);
 
   async function handleCreate() {

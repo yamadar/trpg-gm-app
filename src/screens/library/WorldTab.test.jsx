@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import WorldTab from './WorldTab.jsx';
 import * as worldLibraryClient from '../../api/worldLibraryClient.js';
 import * as worldImport from '../../api/worldImport.js';
@@ -120,5 +120,53 @@ describe('WorldTab', () => {
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith('w1'));
     expect(onWorldsChanged).toHaveBeenCalled();
+  });
+
+  it('ignores a stale getWorld response when the selected world changes before it resolves', async () => {
+    let resolveA;
+    const promiseA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    const getWorldSpy = vi.spyOn(worldLibraryClient, 'getWorld').mockImplementation((id) => {
+      if (id === 'w1') return promiseA;
+      if (id === 'w2') return Promise.resolve({ id: 'w2', title: 'Neverwinter', raw: '原文2' });
+      return Promise.reject(new Error('unexpected id: ' + id));
+    });
+
+    const worlds = [
+      { id: 'w1', title: 'Waterdeep', updatedAt: 1 },
+      { id: 'w2', title: 'Neverwinter', updatedAt: 2 },
+    ];
+
+    const { rerender } = render(
+      <WorldTab
+        worlds={worlds}
+        selectedWorldId="w1"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    await waitFor(() => expect(getWorldSpy).toHaveBeenCalledWith('w1'));
+
+    rerender(
+      <WorldTab
+        worlds={worlds}
+        selectedWorldId="w2"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    await waitFor(() => expect(getWorldSpy).toHaveBeenCalledWith('w2'));
+    await waitFor(() => expect(screen.getByDisplayValue('Neverwinter')).toBeInTheDocument());
+
+    await act(async () => {
+      resolveA({ id: 'w1', title: 'Waterdeep', raw: '原文' });
+      await promiseA;
+    });
+
+    expect(screen.getByDisplayValue('Neverwinter')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('Waterdeep')).not.toBeInTheDocument();
   });
 });

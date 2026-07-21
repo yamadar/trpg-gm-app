@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import CharacterTab from './CharacterTab.jsx';
 import * as characterLibraryClient from '../../api/characterLibraryClient.js';
 
@@ -64,5 +64,40 @@ describe('CharacterTab', () => {
     fireEvent.click(screen.getByText('削除する'));
 
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith('w1', 'pc', 'alice'));
+  });
+
+  it('ignores a stale getCharacter response when selection changes before it resolves', async () => {
+    vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+      { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
+      { id: 'w1/pc/bob', worldId: 'w1', kind: 'pc', name: 'bob', revealed: null },
+    ]);
+
+    let resolveA;
+    const promiseA = new Promise((resolve) => {
+      resolveA = resolve;
+    });
+    const getSpy = vi.spyOn(characterLibraryClient, 'getCharacter').mockImplementation((worldId, kind, name) => {
+      if (name === 'alice') return promiseA;
+      if (name === 'bob') return Promise.resolve({ raw: 'bobの本文', revealed: null });
+      return Promise.reject(new Error('unexpected name: ' + name));
+    });
+
+    render(<CharacterTab worldId="w1" />);
+    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('alice'));
+    await waitFor(() => expect(getSpy).toHaveBeenCalledWith('w1', 'pc', 'alice'));
+
+    fireEvent.click(screen.getByText('bob'));
+    await waitFor(() => expect(getSpy).toHaveBeenCalledWith('w1', 'pc', 'bob'));
+    await waitFor(() => expect(screen.getByDisplayValue('bobの本文')).toBeInTheDocument());
+
+    await act(async () => {
+      resolveA({ raw: 'aliceの本文(stale)', revealed: null });
+      await promiseA;
+    });
+
+    expect(screen.getByDisplayValue('bobの本文')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('aliceの本文(stale)')).not.toBeInTheDocument();
   });
 });
