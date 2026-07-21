@@ -11,6 +11,7 @@ export default function Play({ session, setSession, onExit }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const logEndRef = useRef(null);
+  const hasStartedRef = useRef(false);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,7 +60,8 @@ export default function Play({ session, setSession, onExit }) {
   );
 
   useEffect(() => {
-    if (session.log.length === 0 && !busy) {
+    if (session.log.length === 0 && !hasStartedRef.current) {
+      hasStartedRef.current = true;
       runTurn('(セッション開始。導入シーンを描写せよ)', null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

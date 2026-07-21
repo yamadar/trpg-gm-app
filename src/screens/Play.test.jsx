@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import Play from './Play.jsx';
@@ -55,5 +55,15 @@ describe('Play', () => {
     render(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
     expect(screen.getByText('既存のログ')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('fires the opening turn exactly once under React.StrictMode double-invocation', async () => {
+    render(
+      <React.StrictMode>
+        <Harness initialSession={makeSession()} onExit={vi.fn()} />
+      </React.StrictMode>
+    );
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
