@@ -58,3 +58,19 @@ export async function deleteWorld(id) {
     throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
   }
 }
+
+export async function listRegions(worldId) {
+  return apiFetch(`/api/worlds/${worldId}/regions`, { method: 'GET' });
+}
+
+export async function getRegion(worldId, region) {
+  return apiFetch(`/api/worlds/${worldId}/regions/${region}`, { method: 'GET' });
+}
+
+export async function listCategories(worldId) {
+  return apiFetch(`/api/worlds/${worldId}/categories`, { method: 'GET' });
+}
+
+export async function getCategory(worldId, category) {
+  return apiFetch(`/api/worlds/${worldId}/categories/${category}`, { method: 'GET' });
+}

@@ -8,6 +8,10 @@ import {
   getWorld,
   listWorlds,
   deleteWorld,
+  listRegions,
+  getRegion,
+  listCategories,
+  getCategory,
 } from './worldLibraryClient.js';
 
 afterEach(() => {
@@ -116,5 +120,63 @@ describe('deleteWorld', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
     vi.stubGlobal('fetch', fetchMock);
     await expect(deleteWorld('w1')).rejects.toThrow('API error 500: boom');
+  });
+});
+
+describe('listRegions', () => {
+  it('GETs the region id list for a world', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ['waterdeep', 'sword-coast'] });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await listRegions('w1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1/regions', expect.objectContaining({ method: 'GET' }));
+    expect(result).toEqual(['waterdeep', 'sword-coast']);
+  });
+});
+
+describe('getRegion', () => {
+  it('GETs a single region', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'waterdeep', raw: '地域詳細' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await getRegion('w1', 'waterdeep');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/worlds/w1/regions/waterdeep',
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(result).toEqual({ id: 'waterdeep', raw: '地域詳細' });
+  });
+
+  it('throws with status and truncated body on a non-ok response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(getRegion('w1', 'missing')).rejects.toThrow('API error 404: not found');
+  });
+});
+
+describe('listCategories', () => {
+  it('GETs the category id list for a world', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ['magic-system'] });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await listCategories('w1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1/categories', expect.objectContaining({ method: 'GET' }));
+    expect(result).toEqual(['magic-system']);
+  });
+});
+
+describe('getCategory', () => {
+  it('GETs a single category', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'magic-system', raw: 'カテゴリ詳細' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await getCategory('w1', 'magic-system');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/worlds/w1/categories/magic-system',
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(result).toEqual({ id: 'magic-system', raw: 'カテゴリ詳細' });
+  });
+
+  it('throws with status and truncated body on a non-ok response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(getCategory('w1', 'missing')).rejects.toThrow('API error 404: not found');
   });
 });
