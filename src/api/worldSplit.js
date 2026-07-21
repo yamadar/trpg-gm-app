@@ -4,6 +4,15 @@ function slugify(id) {
   return String(id).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 64) || 'untitled';
 }
 
+function dedupeIds(items) {
+  const seen = new Map();
+  return items.map((item) => {
+    const count = (seen.get(item.id) || 0) + 1;
+    seen.set(item.id, count);
+    return count === 1 ? item : { ...item, id: `${item.id}-${count}` };
+  });
+}
+
 export async function splitWorld(rawText, adjustmentRequest) {
   const data = await callClaude({
     model: 'claude-sonnet-4-6',
@@ -26,7 +35,7 @@ export async function splitWorld(rawText, adjustmentRequest) {
   const parsed = parseJsonLoose(text);
   return {
     world: parsed.world,
-    regions: (parsed.regions || []).map((r) => ({ ...r, id: slugify(r.id) })),
-    categories: (parsed.categories || []).map((c) => ({ ...c, id: slugify(c.id) })),
+    regions: dedupeIds((parsed.regions || []).map((r) => ({ ...r, id: slugify(r.id) }))),
+    categories: dedupeIds((parsed.categories || []).map((c) => ({ ...c, id: slugify(c.id) }))),
   };
 }

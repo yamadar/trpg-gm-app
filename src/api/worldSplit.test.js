@@ -78,4 +78,45 @@ describe('splitWorld', () => {
     expect(result.regions).toEqual([]);
     expect(result.categories).toEqual([]);
   });
+
+  it('dedupes two region ids that both slugify to "untitled" instead of dropping one', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '目次',
+            regions: [
+              { id: '魔法体系', title: 'A', content: 'x' },
+              { id: '宗教', title: 'B', content: 'y' },
+            ],
+            categories: [],
+          }),
+        },
+      ],
+    });
+    const result = await splitWorld('テキスト');
+    expect(result.regions).toHaveLength(2);
+    expect(result.regions.map((r) => r.id)).toEqual(['untitled', 'untitled-2']);
+    expect(result.regions[0].title).toBe('A');
+    expect(result.regions[1].title).toBe('B');
+  });
+
+  it('allows a region and a category to share the same slugified id without renaming either', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '目次',
+            regions: [{ id: 'waterdeep', title: 'A', content: 'x' }],
+            categories: [{ id: 'waterdeep', title: 'B', content: 'y' }],
+          }),
+        },
+      ],
+    });
+    const result = await splitWorld('テキスト');
+    expect(result.regions[0].id).toBe('waterdeep');
+    expect(result.categories[0].id).toBe('waterdeep');
+  });
 });
