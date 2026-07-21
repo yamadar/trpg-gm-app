@@ -57,6 +57,18 @@ describe('Character library functions', () => {
     expect(npc.revealed).toBe(true);
   });
 
+  it('saves an npc with revealed explicitly set to false', async () => {
+    await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'npc', name: 'villain', raw: 'x', revealed: false });
+    const npc = await getCharacter(dataStore, textStore, 'w1', 'npc', 'villain');
+    expect(npc.revealed).toBe(false);
+  });
+
+  it('normalizes non-boolean truthy values to true when saving npc revealed', async () => {
+    await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'npc', name: 'villain', raw: 'x', revealed: 1 });
+    const npc = await getCharacter(dataStore, textStore, 'w1', 'npc', 'villain');
+    expect(npc.revealed).toBe(true);
+  });
+
   it('lists characters scoped to a world and kind', async () => {
     await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'pc', name: 'alice', raw: 'a' });
     await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'pc', name: 'bob', raw: 'b' });

@@ -7,7 +7,7 @@ export async function saveCharacter(dataStore, textStore, { worldId, kind, name,
     worldId,
     kind,
     name,
-    revealed: kind === 'npc' ? (revealed !== undefined ? revealed : false) : null,
+    revealed: kind === 'npc' ? !!revealed : null,
     updatedAt: Date.now(),
   };
   await dataStore.set(characterMetaKey(worldId, kind, name), meta);
