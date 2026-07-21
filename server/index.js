@@ -7,6 +7,7 @@ import { createSessionsRouter } from './routes/sessions.js';
 import { createWorldsRouter } from './routes/worlds.js';
 import { createCharactersRouter } from './routes/characters.js';
 import { createScenariosRouter } from './routes/scenarios.js';
+import { createRulesetsRouter } from './routes/rulesets.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 
@@ -30,6 +31,7 @@ export function createApp({
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
   app.use('/api', createScenariosRouter({ dataStore, textStore }));
+  app.use('/api', createRulesetsRouter({ dataStore }));
 
   return app;
 }
