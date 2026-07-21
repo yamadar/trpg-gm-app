@@ -13,11 +13,13 @@ export default function RulesetTab() {
   const [newLabel, setNewLabel] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newHint, setNewHint] = useState('');
+  const [newGrowthUnit, setNewGrowthUnit] = useState('');
 
   const [selectedId, setSelectedId] = useState(null);
   const [editLabel, setEditLabel] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editHint, setEditHint] = useState('');
+  const [editGrowthUnit, setEditGrowthUnit] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -45,6 +47,7 @@ export default function RulesetTab() {
         setEditLabel(r.label);
         setEditDesc(r.desc);
         setEditHint(r.hint || '');
+        setEditGrowthUnit(r.growthUnit || '');
       } catch (e) {
         if (!cancelled) setError('取得に失敗した: ' + e.message);
       }
@@ -59,11 +62,12 @@ export default function RulesetTab() {
     setBusy(true);
     setError('');
     try {
-      await putRuleset(newId, { label: newLabel, desc: newDesc, hint: newHint });
+      await putRuleset(newId, { label: newLabel, desc: newDesc, hint: newHint, growthUnit: newGrowthUnit });
       setNewId('');
       setNewLabel('');
       setNewDesc('');
       setNewHint('');
+      setNewGrowthUnit('');
       setCreating(false);
       await refresh();
     } catch (e) {
@@ -77,7 +81,7 @@ export default function RulesetTab() {
     setBusy(true);
     setError('');
     try {
-      await putRuleset(selectedId, { label: editLabel, desc: editDesc, hint: editHint });
+      await putRuleset(selectedId, { label: editLabel, desc: editDesc, hint: editHint, growthUnit: editGrowthUnit });
       await refresh();
     } catch (e) {
       setError('保存に失敗した: ' + e.message);
@@ -157,6 +161,14 @@ export default function RulesetTab() {
               style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
             />
           </Field>
+          <Field label="成長の呼び名(growthUnit)" hint="任意。未入力なら「経験値」として扱われる。例: 経験値・CP・SP等。">
+            <input
+              value={newGrowthUnit}
+              onChange={(e) => setNewGrowthUnit(e.target.value)}
+              placeholder="例: 経験値"
+              style={inputStyle}
+            />
+          </Field>
           <Button variant="brass" onClick={handleCreate} disabled={busy || !newId || !newLabel}>
             {busy ? '作成中…' : '作成する'}
           </Button>
@@ -178,6 +190,9 @@ export default function RulesetTab() {
               rows={4}
               style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
             />
+          </Field>
+          <Field label="成長の呼び名(growthUnit)" hint="任意。未入力なら「経験値」として扱われる。">
+            <input value={editGrowthUnit} onChange={(e) => setEditGrowthUnit(e.target.value)} style={inputStyle} />
           </Field>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="brass" onClick={handleSave} disabled={busy}>

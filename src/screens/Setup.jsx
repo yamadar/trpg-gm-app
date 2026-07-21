@@ -249,6 +249,7 @@ export default function Setup({ onStart, onCancel }) {
           label: resolvedRuleset.label,
           desc: resolvedRuleset.desc,
           hint: resolvedRuleset.hint,
+          growthUnit: resolvedRuleset.growthUnit || '経験値',
         },
         pc: { raw: pc, goal: pcGoal, bonds: pcBonds },
         state: {
@@ -257,6 +258,7 @@ export default function Setup({ onStart, onCancel }) {
           history_summary: '',
           recent_log: [],
           turn_count: 0,
+          xp: 0,
         },
         log: [],
         updatedAt: Date.now(),

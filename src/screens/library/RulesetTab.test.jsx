@@ -16,7 +16,7 @@ describe('RulesetTab', () => {
     await waitFor(() => expect(screen.getByText('自作ルール')).toBeInTheDocument());
   });
 
-  it('creates a new ruleset via putRuleset', async () => {
+  it('creates a new ruleset via putRuleset, including growthUnit', async () => {
     vi.spyOn(rulesetLibraryClient, 'listRulesets').mockResolvedValue([]);
     const putSpy = vi.spyOn(rulesetLibraryClient, 'putRuleset').mockResolvedValue({});
     render(<RulesetTab />);
@@ -26,10 +26,16 @@ describe('RulesetTab', () => {
     fireEvent.change(screen.getByPlaceholderText('例: homebrew'), { target: { value: 'homebrew' } });
     fireEvent.change(screen.getByPlaceholderText('ラベル'), { target: { value: '自作ルール' } });
     fireEvent.change(screen.getByPlaceholderText('説明'), { target: { value: '独自ルール' } });
+    fireEvent.change(screen.getByPlaceholderText('例: 経験値'), { target: { value: 'CP' } });
     fireEvent.click(screen.getByText('作成する'));
 
     await waitFor(() =>
-      expect(putSpy).toHaveBeenCalledWith('homebrew', { label: '自作ルール', desc: '独自ルール', hint: '' })
+      expect(putSpy).toHaveBeenCalledWith('homebrew', {
+        label: '自作ルール',
+        desc: '独自ルール',
+        hint: '',
+        growthUnit: 'CP',
+      })
     );
   });
 

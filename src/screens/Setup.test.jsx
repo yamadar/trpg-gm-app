@@ -95,6 +95,8 @@ describe('Setup', () => {
     expect(session.scenario.raw).toBe('シナリオ本文');
     expect(session.ruleset.id).toBe('coc7e');
     expect(session.ruleset.label).toBe('CoC7e風');
+    expect(session.ruleset.growthUnit).toBe('経験値');
+    expect(session.state.xp).toBe(0);
   });
 
   it('respects a manual Ruleset pick made after a Scenario recommendedRuleset was applied, instead of reverting it', async () => {
@@ -221,6 +223,7 @@ describe('Setup', () => {
       label: '自作ルール',
       desc: '独自ルール',
       hint: '独自の演出ヒント',
+      growthUnit: '経験値',
     });
   });
 
