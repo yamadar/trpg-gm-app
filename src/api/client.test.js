@@ -1,0 +1,75 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { callClaude, extractText, extractToolUse, parseJsonLoose } from './client.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('callClaude', () => {
+  it('posts to /api/messages and returns the parsed json body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await callClaude({ model: 'x' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/messages',
+      expect.objectContaining({ method: 'POST' })
+    );
+    expect(result).toEqual({ content: [] });
+  });
+
+  it('throws with the status and truncated body when the response is not ok', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => 'server exploded',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callClaude({})).rejects.toThrow('API error 500: server exploded');
+  });
+});
+
+describe('extractText', () => {
+  it('joins text blocks and ignores other block types', () => {
+    const content = [
+      { type: 'text', text: 'line one' },
+      { type: 'tool_use', name: 'roll_check' },
+      { type: 'text', text: 'line two' },
+    ];
+    expect(extractText(content)).toBe('line one\nline two');
+  });
+
+  it('returns an empty string for null content', () => {
+    expect(extractText(null)).toBe('');
+  });
+});
+
+describe('extractToolUse', () => {
+  it('finds the tool_use block', () => {
+    const content = [{ type: 'text', text: 'x' }, { type: 'tool_use', name: 'roll_check' }];
+    expect(extractToolUse(content)).toEqual({ type: 'tool_use', name: 'roll_check' });
+  });
+
+  it('returns undefined when there is no tool_use block', () => {
+    expect(extractToolUse([{ type: 'text', text: 'x' }])).toBeUndefined();
+  });
+});
+
+describe('parseJsonLoose', () => {
+  it('parses raw JSON', () => {
+    expect(parseJsonLoose('{"a": 1}')).toEqual({ a: 1 });
+  });
+
+  it('strips markdown code fences before parsing', () => {
+    expect(parseJsonLoose('```json\n{"a": 1}\n```')).toEqual({ a: 1 });
+  });
+
+  it('throws when no JSON object is found', () => {
+    expect(() => parseJsonLoose('no json here')).toThrow('JSON not found in response');
+  });
+});
