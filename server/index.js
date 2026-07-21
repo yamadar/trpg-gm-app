@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMessagesRouter } from './routes/messages.js';
+import { createSessionsRouter } from './routes/sessions.js';
 import { createFsDataStore } from './storage/dataStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,7 @@ export function createApp({
   app.locals.dataStore = dataStore;
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl }));
+  app.use('/api', createSessionsRouter({ dataStore }));
 
   return app;
 }

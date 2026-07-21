@@ -27,6 +27,12 @@ describe('createApp', () => {
     expect(fetchImpl).toHaveBeenCalledWith('https://api.anthropic.com/v1/messages', expect.anything());
   });
 
+  it('mounts the sessions route', async () => {
+    const res = await request(app).get('/api/sessions');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
   it('404s on unknown routes', async () => {
     const res = await request(app).get('/nope');
     expect(res.status).toBe(404);
