@@ -1,0 +1,81 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { splitWorld } from './worldSplit.js';
+import * as client from './client.js';
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('splitWorld', () => {
+  it('parses the split result from the model response', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '目次',
+            regions: [{ id: 'waterdeep', title: 'ウォーターディープ', content: '詳細' }],
+            categories: [{ id: 'magic-system', title: '魔法体系', content: '詳細' }],
+          }),
+        },
+      ],
+    });
+    const result = await splitWorld('長い世界観テキスト');
+    expect(result.world).toBe('目次');
+    expect(result.regions).toEqual([{ id: 'waterdeep', title: 'ウォーターディープ', content: '詳細' }]);
+    expect(result.categories).toEqual([{ id: 'magic-system', title: '魔法体系', content: '詳細' }]);
+  });
+
+  it('slugifies a region id containing spaces and punctuation', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '目次',
+            regions: [{ id: 'Water Deep!', title: 'A', content: 'x' }],
+            categories: [],
+          }),
+        },
+      ],
+    });
+    const result = await splitWorld('テキスト');
+    expect(result.regions[0].id).toBe('waterdeep');
+  });
+
+  it('falls back to "untitled" when a category id has no ascii characters after slugifying', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '目次',
+            regions: [],
+            categories: [{ id: '魔法体系', title: 'B', content: 'y' }],
+          }),
+        },
+      ],
+    });
+    const result = await splitWorld('テキスト');
+    expect(result.categories[0].id).toBe('untitled');
+  });
+
+  it('includes the adjustment request in the prompt when provided', async () => {
+    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ world: 'x', regions: [], categories: [] }) }],
+    });
+    await splitWorld('原文', '海沿いの街を追加してほしい');
+    const sentMessage = callClaudeMock.mock.calls[0][0].messages[0].content;
+    expect(sentMessage).toContain('原文');
+    expect(sentMessage).toContain('海沿いの街を追加してほしい');
+  });
+
+  it('defaults regions and categories to empty arrays when missing from the response', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ world: 'x' }) }],
+    });
+    const result = await splitWorld('テキスト');
+    expect(result.regions).toEqual([]);
+    expect(result.categories).toEqual([]);
+  });
+});
