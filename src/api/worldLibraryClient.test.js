@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { putWorld, putWorldSource, getWorldSource, putRegion, putCategory } from './worldLibraryClient.js';
+import {
+  putWorld,
+  putWorldSource,
+  getWorldSource,
+  putRegion,
+  putCategory,
+  getWorld,
+  listWorlds,
+  deleteWorld,
+} from './worldLibraryClient.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -63,5 +72,49 @@ describe('putRegion / putCategory', () => {
       '/api/worlds/w1/categories/magic-system',
       expect.objectContaining({ method: 'PUT', body: JSON.stringify({ raw: 'カテゴリ詳細' }) })
     );
+  });
+});
+
+describe('getWorld', () => {
+  it('GETs a world', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'w1', title: 'A', raw: 'x', updatedAt: 1 }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await getWorld('w1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1', expect.objectContaining({ method: 'GET' }));
+    expect(result).toEqual({ id: 'w1', title: 'A', raw: 'x', updatedAt: 1 });
+  });
+
+  it('throws with status and truncated body on a non-ok response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(getWorld('missing')).rejects.toThrow('API error 404: not found');
+  });
+});
+
+describe('listWorlds', () => {
+  it('GETs the full world list', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ id: 'w1', title: 'A' }] });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await listWorlds();
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds', expect.objectContaining({ method: 'GET' }));
+    expect(result).toEqual([{ id: 'w1', title: 'A' }]);
+  });
+});
+
+describe('deleteWorld', () => {
+  it('DELETEs a world and does not attempt to parse a body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deleteWorld('w1')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1', expect.objectContaining({ method: 'DELETE' }));
+  });
+
+  it('throws on a non-ok response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deleteWorld('w1')).rejects.toThrow('API error 500: boom');
   });
 });

@@ -42,3 +42,19 @@ export async function putCategory(worldId, category, raw) {
     body: JSON.stringify({ raw }),
   });
 }
+
+export async function getWorld(id) {
+  return apiFetch(`/api/worlds/${id}`, { method: 'GET' });
+}
+
+export async function listWorlds() {
+  return apiFetch('/api/worlds', { method: 'GET' });
+}
+
+export async function deleteWorld(id) {
+  const res = await fetch(`/api/worlds/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
+  }
+}
