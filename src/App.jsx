@@ -4,10 +4,11 @@ import { listSessions, getSession, saveSession, isStorageAvailable } from './sto
 import Home from './screens/Home.jsx';
 import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
+import Library from './screens/Library.jsx';
 
 export default function App() {
   useGoogleFonts();
-  const [view, setView] = useState('home'); // home | setup | play
+  const [view, setView] = useState('home'); // home | setup | library | play
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [loadingHome, setLoadingHome] = useState(true);
@@ -53,9 +54,16 @@ export default function App() {
         (loadingHome ? (
           <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>
         ) : (
-          <Home sessions={sessions} storageOk={storageOk} onNew={() => setView('setup')} onContinue={handleContinue} />
+          <Home
+            sessions={sessions}
+            storageOk={storageOk}
+            onNew={() => setView('setup')}
+            onContinue={handleContinue}
+            onOpenLibrary={() => setView('library')}
+          />
         ))}
       {view === 'setup' && <Setup onStart={handleStart} onCancel={() => setView('home')} />}
+      {view === 'library' && <Library onClose={() => setView('home')} />}
       {view === 'play' && session && (
         <Play session={session} setSession={setSession} onExit={handleExit} />
       )}

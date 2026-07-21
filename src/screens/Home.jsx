@@ -8,7 +8,7 @@ function lastLineOf(session) {
   return lastGm.text.slice(0, 60) + (lastGm.text.length > 60 ? '…' : '');
 }
 
-export default function Home({ sessions, storageOk, onNew, onContinue }) {
+export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary }) {
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px' }}>
       <h1
@@ -49,9 +49,14 @@ export default function Home({ sessions, storageOk, onNew, onContinue }) {
         </div>
       )}
 
-      <Button variant="brass" onClick={onNew} style={{ marginBottom: 32 }}>
-        + 新規プレイ
-      </Button>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 32 }}>
+        <Button variant="brass" onClick={onNew}>
+          + 新規プレイ
+        </Button>
+        <Button variant="ghost" onClick={onOpenLibrary}>
+          素材ライブラリ
+        </Button>
+      </div>
 
       {sessions.length > 0 && (
         <>
