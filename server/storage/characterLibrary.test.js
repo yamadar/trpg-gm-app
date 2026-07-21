@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './dataStore.js';
 import { createFsTextStore } from './textStore.js';
-import { saveCharacter, getCharacter, listCharacters, deleteCharacter } from './characterLibrary.js';
+import { saveCharacter, getCharacter, listCharacters, deleteCharacter, saveCharacterParsed } from './characterLibrary.js';
 
 let dir;
 let dataStore;
@@ -90,5 +90,47 @@ describe('Character library functions', () => {
     await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'pc', name: 'alice', raw: 'a' });
     await deleteCharacter(dataStore, textStore, 'w1', 'pc', 'alice');
     expect(await getCharacter(dataStore, textStore, 'w1', 'pc', 'alice')).toBeNull();
+  });
+
+  it('initializes parsed and parsedHash to null on save', async () => {
+    await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'pc', name: 'alice', raw: 'a' });
+    const pc = await getCharacter(dataStore, textStore, 'w1', 'pc', 'alice');
+    expect(pc.parsed).toBeNull();
+    expect(pc.parsedHash).toBeNull();
+  });
+});
+
+describe('saveCharacterParsed', () => {
+  it('returns null when the character does not exist', async () => {
+    const result = await saveCharacterParsed(dataStore, 'w1', 'pc', 'missing', {
+      parsed: { goal: 'x', bonds: 'y' },
+      parsedHash: 'h1',
+    });
+    expect(result).toBeNull();
+  });
+
+  it('updates parsed and parsedHash without touching raw text', async () => {
+    await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'pc', name: 'alice', raw: '原文' });
+
+    const updated = await saveCharacterParsed(dataStore, 'w1', 'pc', 'alice', {
+      parsed: { goal: '妹を救う', bonds: '幼馴染' },
+      parsedHash: 'abc123',
+    });
+    expect(updated.parsed).toEqual({ goal: '妹を救う', bonds: '幼馴染' });
+    expect(updated.parsedHash).toBe('abc123');
+
+    const character = await getCharacter(dataStore, textStore, 'w1', 'pc', 'alice');
+    expect(character.raw).toBe('原文');
+    expect(character.parsed).toEqual({ goal: '妹を救う', bonds: '幼馴染' });
+  });
+
+  it('preserves other meta fields (revealed) when updating parsed', async () => {
+    await saveCharacter(dataStore, textStore, { worldId: 'w1', kind: 'npc', name: 'villain', raw: 'x', revealed: true });
+    await saveCharacterParsed(dataStore, 'w1', 'npc', 'villain', {
+      parsed: { goal: 'a', bonds: 'b' },
+      parsedHash: 'h',
+    });
+    const character = await getCharacter(dataStore, textStore, 'w1', 'npc', 'villain');
+    expect(character.revealed).toBe(true);
   });
 });

@@ -8,6 +8,8 @@ export async function saveCharacter(dataStore, textStore, { worldId, kind, name,
     kind,
     name,
     revealed: kind === 'npc' ? !!revealed : null,
+    parsed: null,
+    parsedHash: null,
     updatedAt: Date.now(),
   };
   await dataStore.set(characterMetaKey(worldId, kind, name), meta);
@@ -30,4 +32,12 @@ export async function listCharacters(dataStore, worldId, kind) {
 export async function deleteCharacter(dataStore, textStore, worldId, kind, name) {
   await dataStore.delete(characterMetaKey(worldId, kind, name));
   await textStore.delete(characterDocPath(worldId, kind, name));
+}
+
+export async function saveCharacterParsed(dataStore, worldId, kind, name, { parsed, parsedHash }) {
+  const meta = await dataStore.get(characterMetaKey(worldId, kind, name));
+  if (!meta) return null;
+  const updated = { ...meta, parsed, parsedHash, updatedAt: Date.now() };
+  await dataStore.set(characterMetaKey(worldId, kind, name), updated);
+  return updated;
 }
