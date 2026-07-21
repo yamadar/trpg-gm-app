@@ -21,7 +21,7 @@ export const ROLL_TOOL = {
 };
 
 export function buildSystemPrompt(session) {
-  const rs = RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
+  const rs = session.ruleset || RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
   const flags = session.state.flags || {};
   const flagsText =
     Object.entries(flags)
@@ -31,6 +31,10 @@ export function buildSystemPrompt(session) {
     (session.state.recent_log || [])
       .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
       .join('\n') || '(まだなし)';
+  const pcGoalBondsSection =
+    session.pc.goal || session.pc.bonds
+      ? `\n# PCの目標・因縁(抽出済み)\ngoal: ${session.pc.goal || '(未設定)'}\nbonds: ${session.pc.bonds || '(未設定)'}\n`
+      : '';
 
   return `あなたはTRPGのGM。以下の設定に従い物語を進行する。プレイヤーが楽しめるよう、緊迫感や盛り上がりの演出を大事にすること。
 
@@ -43,7 +47,7 @@ ${session.scenario.raw}
 
 # PC設定
 ${session.pc.raw}
-
+${pcGoalBondsSection}
 # ルール性向: ${rs.label}
 ${rs.hint || '特別な演出指定なし。'}
 判定が必要な場面ではroll_checkツールを呼び出すこと。success_percentはPCの能力・状況・難易度から自分で判断して設定し、結果そのものは自分で決めないこと(ロール結果は別途渡される)。

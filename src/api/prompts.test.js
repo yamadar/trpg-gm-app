@@ -49,4 +49,29 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('物語要約: (まだなし)');
     expect(prompt).toContain('直近のログ\n(まだなし)');
   });
+
+  it('uses session.ruleset when present, without falling back to the static RULESETS lookup', () => {
+    const prompt = buildSystemPrompt(
+      makeSession({
+        rulesetId: 'unknown-static-id',
+        ruleset: { id: 'homebrew', label: '自作ルール', desc: '独自ルール', hint: '独自の演出ヒント' },
+      })
+    );
+    expect(prompt).toContain('ルール性向: 自作ルール');
+    expect(prompt).toContain('独自の演出ヒント');
+  });
+
+  it('adds a goal/bonds section when present on session.pc', () => {
+    const prompt = buildSystemPrompt(
+      makeSession({ pc: { raw: 'PC名: アリス', goal: '真相を暴く', bonds: '姉との再会' } })
+    );
+    expect(prompt).toContain('# PCの目標・因縁(抽出済み)');
+    expect(prompt).toContain('goal: 真相を暴く');
+    expect(prompt).toContain('bonds: 姉との再会');
+  });
+
+  it('omits the goal/bonds section when absent on session.pc', () => {
+    const prompt = buildSystemPrompt(makeSession({ pc: { raw: 'PC名: アリス' } }));
+    expect(prompt).not.toContain('PCの目標・因縁');
+  });
 });
