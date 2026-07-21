@@ -58,4 +58,23 @@ describe('characters routes', () => {
     const get = await request(app).get('/api/worlds/w1/characters/pc/alice');
     expect(get.status).toBe(404);
   });
+
+  it('returns 404 when updating parsed for a missing character', async () => {
+    const res = await request(app)
+      .put('/api/worlds/w1/characters/pc/missing/parsed')
+      .send({ parsed: { goal: 'x', bonds: 'y' }, parsedHash: 'h' });
+    expect(res.status).toBe(404);
+  });
+
+  it('updates parsed and parsedHash without requiring raw', async () => {
+    await request(app).put('/api/worlds/w1/characters/pc/alice').send({ raw: '原文' });
+    const res = await request(app)
+      .put('/api/worlds/w1/characters/pc/alice/parsed')
+      .send({ parsed: { goal: '目標', bonds: '因縁' }, parsedHash: 'abc' });
+    expect(res.status).toBe(200);
+    expect(res.body.parsed).toEqual({ goal: '目標', bonds: '因縁' });
+
+    const get = await request(app).get('/api/worlds/w1/characters/pc/alice');
+    expect(get.body.raw).toBe('原文');
+  });
 });

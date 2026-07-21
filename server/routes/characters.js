@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { saveCharacter, getCharacter, listCharacters, deleteCharacter } from '../storage/characterLibrary.js';
+import { saveCharacter, getCharacter, listCharacters, deleteCharacter, saveCharacterParsed } from '../storage/characterLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 
 export function createCharactersRouter({ dataStore, textStore }) {
@@ -32,6 +32,18 @@ export function createCharactersRouter({ dataStore, textStore }) {
   router.delete('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
     await deleteCharacter(dataStore, textStore, req.params.worldId, req.params.kind, req.params.name);
     res.status(204).end();
+  }));
+
+  router.put('/worlds/:worldId/characters/:kind/:name/parsed', asyncHandler(async (req, res) => {
+    const character = await saveCharacterParsed(dataStore, req.params.worldId, req.params.kind, req.params.name, {
+      parsed: req.body.parsed,
+      parsedHash: req.body.parsedHash,
+    });
+    if (!character) {
+      res.status(404).json({ error: 'character not found' });
+      return;
+    }
+    res.json(character);
   }));
 
   return router;
