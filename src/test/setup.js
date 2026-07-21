@@ -1,12 +1,24 @@
 import { afterEach } from 'vitest';
-import { cleanup } from '@testing-library/react';
-import '@testing-library/jest-dom/vitest';
-import 'fake-indexeddb/auto';
 
-afterEach(() => {
-  cleanup();
-});
+// Guard against node environment where DOM APIs don't exist
+const hasDOM = typeof window !== 'undefined' && typeof Element !== 'undefined';
 
-if (!Element.prototype.scrollIntoView) {
-  Element.prototype.scrollIntoView = () => {};
+if (hasDOM) {
+  // Import React testing libraries only in jsdom environment
+  try {
+    require('@testing-library/jest-dom/vitest');
+    const { cleanup } = require('@testing-library/react');
+    require('fake-indexeddb/auto');
+
+    afterEach(() => {
+      cleanup();
+    });
+  } catch (e) {
+    // Imports failed, skip setup
+  }
+
+  // Add scrollIntoView polyfill if needed
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
 }
