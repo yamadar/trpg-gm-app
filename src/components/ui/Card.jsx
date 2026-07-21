@@ -1,8 +1,9 @@
 import { COLORS } from '../../theme.js';
 
-export default function Card({ children, style }) {
+export default function Card({ children, style, onClick }) {
   return (
     <div
+      onClick={onClick}
       style={{
         background: COLORS.card,
         border: `1px solid ${COLORS.line}`,

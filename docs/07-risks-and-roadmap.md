@@ -19,7 +19,7 @@
 **Phase 1 (MVP)**
 - 単一シナリオ、単一PC、テキストのみ
 - 判定システム実装(tool_use + ローカルロール)
-- state永続化(window.storage)
+- state永続化(IndexedDB)
 
 **Phase 2**
 - キャラクター成長・経験値

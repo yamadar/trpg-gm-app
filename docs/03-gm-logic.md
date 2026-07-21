@@ -19,7 +19,7 @@
      "choices": ["選択肢1", "選択肢2", "選択肢3"]
    }
    ```
-5. Game Engineがstate_updateを検証・確定・保存(window.storage)
+5. Game Engineがstate_updateを検証・確定・保存(IndexedDB)
 6. UIにnarrative・choices反映
 
 **要約トリガー**: recent_logが一定件数超えたら、古い分をhistory_summaryに圧縮(別APIコール or 同コール内で指示)。

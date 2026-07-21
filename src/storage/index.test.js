@@ -16,6 +16,11 @@ describe('client session storage', () => {
     expect(await isStorageAvailable()).toBe(true);
   });
 
+  it('cleans up the internal ping record after checking availability', async () => {
+    await isStorageAvailable();
+    expect(await getSession('__ping__')).toBeNull();
+  });
+
   it('returns null for a missing session', async () => {
     expect(await getSession('missing')).toBeNull();
   });

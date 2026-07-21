@@ -181,19 +181,18 @@ export default function Setup({ onStart, onCancel }) {
               {RULESETS.map((r) => (
                 <Card
                   key={r.id}
+                  onClick={() => setRulesetId(r.id)}
                   style={{
                     cursor: 'pointer',
                     borderColor: rulesetId === r.id ? COLORS.brass : COLORS.line,
                     background: rulesetId === r.id ? COLORS.paperDark : COLORS.card,
                   }}
                 >
-                  <div onClick={() => setRulesetId(r.id)}>
-                    <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
-                      {r.label}
-                    </div>
-                    <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
-                      {r.desc}
-                    </div>
+                  <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
+                    {r.label}
+                  </div>
+                  <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
+                    {r.desc}
                   </div>
                 </Card>
               ))}

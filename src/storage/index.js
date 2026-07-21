@@ -1,4 +1,4 @@
-import { putSession, getSessionById, getAllSessions } from './indexedDbStore.js';
+import { putSession, getSessionById, getAllSessions, deleteSession } from './indexedDbStore.js';
 
 const PING_ID = '__ping__';
 
@@ -7,6 +7,7 @@ export async function isStorageAvailable() {
     if (!('indexedDB' in window)) return false;
     await putSession({ id: PING_ID, updatedAt: Date.now() });
     const r = await getSessionById(PING_ID);
+    await deleteSession(PING_ID);
     return !!r;
   } catch (e) {
     console.error('storage availability check failed', e);

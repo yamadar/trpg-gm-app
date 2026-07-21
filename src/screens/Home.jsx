@@ -67,69 +67,63 @@ export default function Home({ sessions, storageOk, onNew, onContinue }) {
             続きから再開
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {sessions
-              .slice()
-              .sort((a, b) => b.updatedAt - a.updatedAt)
-              .map((s) => (
-                <Card key={s.id} style={{ cursor: 'pointer' }}>
-                  <div
-                    onClick={() => onContinue(s.id)}
-                    style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'baseline',
-                          gap: 8,
-                          marginBottom: 4,
-                        }}
-                      >
-                        <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>
-                          {s.title}
+            {sessions.map((s) => (
+              <Card key={s.id} style={{ cursor: 'pointer' }} onClick={() => onContinue(s.id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        gap: 8,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>
+                        {s.title}
+                      </div>
+                      {s.state?.current_scene && (
+                        <div
+                          style={{
+                            fontFamily: F_MONO,
+                            fontSize: 11,
+                            color: COLORS.brassDark,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          シーン: {s.state.current_scene}
+                          {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
                         </div>
-                        {s.state?.current_scene && (
-                          <div
-                            style={{
-                              fontFamily: F_MONO,
-                              fontSize: 11,
-                              color: COLORS.brassDark,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            シーン: {s.state.current_scene}
-                            {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
-                          </div>
-                        )}
-                      </div>
-                      <div
-                        style={{
-                          fontFamily: F_BODY,
-                          fontSize: 13,
-                          color: COLORS.inkSoft,
-                          opacity: 0.8,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {lastLineOf(s)}
-                      </div>
+                      )}
                     </div>
                     <div
                       style={{
-                        fontFamily: F_MONO,
-                        fontSize: 12,
-                        color: COLORS.brass,
-                        alignSelf: 'center',
+                        fontFamily: F_BODY,
+                        fontSize: 13,
+                        color: COLORS.inkSoft,
+                        opacity: 0.8,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      続ける →
+                      {lastLineOf(s)}
                     </div>
                   </div>
-                </Card>
-              ))}
+                  <div
+                    style={{
+                      fontFamily: F_MONO,
+                      fontSize: 12,
+                      color: COLORS.brass,
+                      alignSelf: 'center',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    続ける →
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
         </>
       )}
