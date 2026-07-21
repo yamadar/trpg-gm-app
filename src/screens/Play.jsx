@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
 import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
+import { putSessionToServer } from '../api/sessionSyncClient.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
@@ -51,6 +52,7 @@ export default function Play({ session, setSession, onExit }) {
         };
         setSession(updated);
         await saveSession(updated);
+        putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
       } catch (e) {
         console.error(e);
         setError('GM応答の取得に失敗した: ' + e.message);

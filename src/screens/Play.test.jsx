@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import Play from './Play.jsx';
+import * as sessionSyncClient from '../api/sessionSyncClient.js';
 
 function makeSession(overrides = {}) {
   return {
@@ -45,6 +46,10 @@ beforeEach(() => {
       }),
     })
   );
+  // sessionSyncClient.putSessionToServer also calls the global fetch mock above; stub it
+  // out by default so it doesn't inflate fetch-call-count assertions in unrelated tests.
+  // The dedicated sync test below overrides this with its own mockRejectedValue.
+  vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
 });
 
 describe('Play', () => {
@@ -82,5 +87,14 @@ describe('Play', () => {
     render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(screen.getByText('経験値: 5')).toBeInTheDocument();
+  });
+
+  it('syncs the updated session to the server after a turn, without blocking on failure', async () => {
+    const putSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockRejectedValue(new Error('offline'));
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    await waitFor(() => expect(putSpy).toHaveBeenCalled());
+    // 同期失敗してもUIはエラー表示しない(ゲーム進行は止めない)
+    expect(screen.queryByText(/GM応答の取得に失敗した/)).not.toBeInTheDocument();
   });
 });
