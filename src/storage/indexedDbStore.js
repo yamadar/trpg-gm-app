@@ -35,11 +35,6 @@ export async function getAllSessions() {
   return db.getAll(STORE_SESSIONS);
 }
 
-export async function clearAllSessions() {
-  const db = await getDb();
-  await db.clear(STORE_SESSIONS);
-}
-
 export async function closeDb() {
   if (dbInstance) {
     const db = await dbInstance;
