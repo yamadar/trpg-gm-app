@@ -28,7 +28,7 @@ export function createApp({
   app.locals.textStore = textStore;
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl }));
-  app.use('/api', createSessionsRouter({ dataStore }));
+  app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
   app.use('/api', createScenariosRouter({ dataStore, textStore }));

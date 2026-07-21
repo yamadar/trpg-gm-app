@@ -2,6 +2,10 @@ export function sessionKey(sessionId) {
   return `sessions/${sessionId}`;
 }
 
+export function sessionNovelDocPath(sessionId) {
+  return `sessions/${sessionId}/novel.md`;
+}
+
 export function worldMetaKey(worldId) {
   return `worlds/${worldId}`;
 }

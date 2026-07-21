@@ -7,16 +7,31 @@ import express from 'express';
 import request from 'supertest';
 import { createSessionsRouter } from './sessions.js';
 import { createFsDataStore } from '../storage/dataStore.js';
+import { createFsTextStore } from '../storage/textStore.js';
 
 let dir;
+let dataStore;
+let textStore;
 let app;
+
+function buildApp(opts = {}) {
+  // Use `'apiKey' in opts` rather than a destructured default so that an
+  // explicit `{ apiKey: undefined }` (used to simulate "no API key
+  // configured") is not silently overwritten by the default value — a
+  // destructured default (`{ apiKey = 'test-key' }`) triggers on any
+  // `undefined` value, explicit or not.
+  const apiKey = 'apiKey' in opts ? opts.apiKey : 'test-key';
+  const { fetchImpl } = opts;
+  app = express();
+  app.use(express.json());
+  app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl }));
+}
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-route-test-'));
-  const dataStore = createFsDataStore(dir);
-  app = express();
-  app.use(express.json());
-  app.use('/api', createSessionsRouter({ dataStore }));
+  dataStore = createFsDataStore(dir);
+  textStore = createFsTextStore(dir);
+  buildApp();
 });
 
 afterEach(async () => {
@@ -44,9 +59,60 @@ describe('sessions routes', () => {
     expect(res.body.map((s) => s.id).sort()).toEqual(['s1', 's2']);
   });
 
-  it('returns 501 for the novelize placeholder', async () => {
-    await request(app).put('/api/sessions/s1').send({ title: 'A' });
+  it('returns 404 from novelize when the session does not exist', async () => {
+    const res = await request(app).post('/api/sessions/missing/novelize');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 from novelize when no API key is configured', async () => {
+    buildApp({ apiKey: undefined });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
     const res = await request(app).post('/api/sessions/s1/novelize');
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(500);
+  });
+
+  it('generates and stores a novelization from the session log, retrievable via GET', async () => {
+    const fetchImpl = async (url, options) => {
+      const body = JSON.parse(options.body);
+      expect(url).toBe('https://api.anthropic.com/v1/messages');
+      expect(body.messages[0].content).toContain('波止場を調べる');
+      return {
+        ok: true,
+        json: async () => ({ content: [{ type: 'text', text: '小説化された本文。' }] }),
+      };
+    };
+    buildApp({ fetchImpl });
+
+    await request(app)
+      .put('/api/sessions/s1')
+      .send({
+        title: 'A',
+        log: [
+          { role: 'player', text: '波止場を調べる' },
+          { role: 'gm', text: '波止場には誰もいなかった。' },
+        ],
+      });
+
+    const postRes = await request(app).post('/api/sessions/s1/novelize');
+    expect(postRes.status).toBe(200);
+    expect(postRes.body).toEqual({ ok: true });
+
+    const getRes = await request(app).get('/api/sessions/s1/novel');
+    expect(getRes.status).toBe(200);
+    expect(getRes.body).toEqual({ text: '小説化された本文。' });
+  });
+
+  it('returns 404 from GET novel when nothing has been generated yet', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
+    const res = await request(app).get('/api/sessions/s1/novel');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 502 from novelize when the upstream call fails', async () => {
+    const fetchImpl = async () => ({ ok: false, status: 500, text: async () => 'boom' });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
+    const res = await request(app).post('/api/sessions/s1/novelize');
+    expect(res.status).toBe(502);
   });
 });
