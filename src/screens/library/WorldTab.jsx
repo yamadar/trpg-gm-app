@@ -4,7 +4,17 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Field from '../../components/ui/Field.jsx';
 import ConfirmModal from '../../components/library/ConfirmModal.jsx';
-import { getWorld, deleteWorld, putRegion, putCategory, putWorldSource } from '../../api/worldLibraryClient.js';
+import {
+  getWorld,
+  deleteWorld,
+  putRegion,
+  putCategory,
+  putWorldSource,
+  listRegions,
+  getRegion,
+  listCategories,
+  getCategory,
+} from '../../api/worldLibraryClient.js';
 import { importWorld, reimportWorld } from '../../api/worldImport.js';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
@@ -17,7 +27,8 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
   const [editTitle, setEditTitle] = useState('');
   const [editRaw, setEditRaw] = useState('');
   const [adjustmentRequest, setAdjustmentRequest] = useState('');
-  const [splitResult, setSplitResult] = useState(null);
+  const [regions, setRegions] = useState([]); // [{id, title, content}] content may be null until fetched
+  const [categories, setCategories] = useState([]);
   const [editingRegionId, setEditingRegionId] = useState(null);
   const [regionDraft, setRegionDraft] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState(null);
@@ -32,7 +43,8 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       setDetail(null);
       return;
     }
-    setSplitResult(null);
+    setRegions([]);
+    setCategories([]);
     setError('');
     let cancelled = false;
     (async () => {
@@ -42,6 +54,13 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         setDetail(world);
         setEditTitle(world.title);
         setEditRaw(world.raw);
+        const [regionIds, categoryIds] = await Promise.all([
+          listRegions(selectedWorldId),
+          listCategories(selectedWorldId),
+        ]);
+        if (cancelled) return;
+        setRegions(regionIds.map((id) => ({ id, title: id, content: null })));
+        setCategories(categoryIds.map((id) => ({ id, title: id, content: null })));
       } catch (e) {
         if (!cancelled) setError('World取得に失敗した: ' + e.message);
       }
@@ -56,7 +75,8 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     setError('');
     try {
       const split = await importWorld(newId, newTitle, newRaw);
-      setSplitResult(split);
+      setRegions(split.regions.map((r) => ({ id: r.id, title: r.title, content: r.content })));
+      setCategories(split.categories.map((c) => ({ id: c.id, title: c.title, content: c.content })));
       setCreating(false);
       const createdId = newId;
       setNewId('');
@@ -79,7 +99,8 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         await putWorldSource(selectedWorldId, editRaw);
       }
       const split = await reimportWorld(selectedWorldId, editTitle, adjustmentRequest || undefined);
-      setSplitResult(split);
+      setRegions(split.regions.map((r) => ({ id: r.id, title: r.title, content: r.content })));
+      setCategories(split.categories.map((c) => ({ id: c.id, title: c.title, content: c.content })));
       setAdjustmentRequest('');
       await onWorldsChanged();
       const world = await getWorld(selectedWorldId);
@@ -93,15 +114,40 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     }
   }
 
+  async function startEditingRegion(region) {
+    setEditingRegionId(region.id);
+    if (region.content !== null) {
+      setRegionDraft(region.content);
+      return;
+    }
+    try {
+      const full = await getRegion(selectedWorldId, region.id);
+      setRegionDraft(full.raw);
+    } catch (e) {
+      setError('地域の取得に失敗した: ' + e.message);
+    }
+  }
+
+  async function startEditingCategory(category) {
+    setEditingCategoryId(category.id);
+    if (category.content !== null) {
+      setCategoryDraft(category.content);
+      return;
+    }
+    try {
+      const full = await getCategory(selectedWorldId, category.id);
+      setCategoryDraft(full.raw);
+    } catch (e) {
+      setError('カテゴリの取得に失敗した: ' + e.message);
+    }
+  }
+
   async function handleSaveRegion(regionId) {
     setBusy(true);
     setError('');
     try {
       await putRegion(selectedWorldId, regionId, regionDraft);
-      setSplitResult((prev) => ({
-        ...prev,
-        regions: prev.regions.map((r) => (r.id === regionId ? { ...r, content: regionDraft } : r)),
-      }));
+      setRegions((prev) => prev.map((r) => (r.id === regionId ? { ...r, content: regionDraft } : r)));
       setEditingRegionId(null);
     } catch (e) {
       setError('地域の保存に失敗した: ' + e.message);
@@ -115,10 +161,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     setError('');
     try {
       await putCategory(selectedWorldId, categoryId, categoryDraft);
-      setSplitResult((prev) => ({
-        ...prev,
-        categories: prev.categories.map((c) => (c.id === categoryId ? { ...c, content: categoryDraft } : c)),
-      }));
+      setCategories((prev) => prev.map((c) => (c.id === categoryId ? { ...c, content: categoryDraft } : c)));
       setEditingCategoryId(null);
     } catch (e) {
       setError('カテゴリの保存に失敗した: ' + e.message);
@@ -239,85 +282,81 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
             </Button>
           </div>
 
-          {splitResult && (
-            <div>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.brassDark, marginBottom: 8 }}>
-                地域(region)
-              </div>
-              {splitResult.regions.map((r) => (
-                <Card key={r.id} style={{ marginBottom: 8 }}>
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 6 }}>
-                    {r.title}
-                  </div>
-                  {editingRegionId === r.id ? (
-                    <>
-                      <textarea
-                        value={regionDraft}
-                        onChange={(e) => setRegionDraft(e.target.value)}
-                        rows={6}
-                        style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY, marginBottom: 8 }}
-                      />
-                      <Button variant="brass" onClick={() => handleSaveRegion(r.id)} disabled={busy}>
-                        保存
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        setEditingRegionId(r.id);
-                        setRegionDraft(r.content);
-                      }}
-                    >
-                      編集
-                    </Button>
-                  )}
-                </Card>
-              ))}
-
-              <div
-                style={{
-                  fontFamily: F_DISPLAY,
-                  fontSize: 13,
-                  color: COLORS.brassDark,
-                  marginBottom: 8,
-                  marginTop: 12,
-                }}
-              >
-                カテゴリ(category)
-              </div>
-              {splitResult.categories.map((c) => (
-                <Card key={c.id} style={{ marginBottom: 8 }}>
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 6 }}>
-                    {c.title}
-                  </div>
-                  {editingCategoryId === c.id ? (
-                    <>
-                      <textarea
-                        value={categoryDraft}
-                        onChange={(e) => setCategoryDraft(e.target.value)}
-                        rows={6}
-                        style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY, marginBottom: 8 }}
-                      />
-                      <Button variant="brass" onClick={() => handleSaveCategory(c.id)} disabled={busy}>
-                        保存
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        setEditingCategoryId(c.id);
-                        setCategoryDraft(c.content);
-                      }}
-                    >
-                      編集
-                    </Button>
-                  )}
-                </Card>
-              ))}
+          <div>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.brassDark, marginBottom: 8 }}>
+              地域(region)
             </div>
-          )}
+            {regions.map((r) => (
+              <Card key={r.id} style={{ marginBottom: 8 }}>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 6 }}>
+                  {r.title}
+                </div>
+                {editingRegionId === r.id ? (
+                  <>
+                    <textarea
+                      value={regionDraft}
+                      onChange={(e) => setRegionDraft(e.target.value)}
+                      rows={6}
+                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY, marginBottom: 8 }}
+                    />
+                    <Button variant="brass" onClick={() => handleSaveRegion(r.id)} disabled={busy}>
+                      保存
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="ghost" onClick={() => startEditingRegion(r)}>
+                    編集
+                  </Button>
+                )}
+              </Card>
+            ))}
+            {regions.length === 0 && (
+              <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.faint, marginBottom: 8 }}>
+                地域は無い。
+              </div>
+            )}
+
+            <div
+              style={{
+                fontFamily: F_DISPLAY,
+                fontSize: 13,
+                color: COLORS.brassDark,
+                marginBottom: 8,
+                marginTop: 12,
+              }}
+            >
+              カテゴリ(category)
+            </div>
+            {categories.map((c) => (
+              <Card key={c.id} style={{ marginBottom: 8 }}>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 6 }}>
+                  {c.title}
+                </div>
+                {editingCategoryId === c.id ? (
+                  <>
+                    <textarea
+                      value={categoryDraft}
+                      onChange={(e) => setCategoryDraft(e.target.value)}
+                      rows={6}
+                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY, marginBottom: 8 }}
+                    />
+                    <Button variant="brass" onClick={() => handleSaveCategory(c.id)} disabled={busy}>
+                      保存
+                    </Button>
+                  </>
+                ) : (
+                  <Button variant="ghost" onClick={() => startEditingCategory(c)}>
+                    編集
+                  </Button>
+                )}
+              </Card>
+            ))}
+            {categories.length === 0 && (
+              <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.faint }}>
+                カテゴリは無い。
+              </div>
+            )}
+          </div>
         </Card>
       )}
 

@@ -6,6 +6,8 @@ import * as worldImport from '../../api/worldImport.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue([]);
+  vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue([]);
 });
 
 describe('WorldTab', () => {
@@ -168,5 +170,45 @@ describe('WorldTab', () => {
 
     expect(screen.getByDisplayValue('Neverwinter')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('Waterdeep')).not.toBeInTheDocument();
+  });
+
+  it('shows the region/category id list for a pre-existing world without a fresh split', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
+    worldLibraryClient.listRegions.mockResolvedValue(['harbor']);
+    worldLibraryClient.listCategories.mockResolvedValue(['magic-system']);
+
+    render(
+      <WorldTab
+        worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+        selectedWorldId="w1"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('harbor')).toBeInTheDocument());
+    expect(screen.getByText('magic-system')).toBeInTheDocument();
+  });
+
+  it("lazily fetches a region's content via getRegion when editing one sourced from the id-only list", async () => {
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
+    worldLibraryClient.listRegions.mockResolvedValue(['harbor']);
+    const getRegionSpy = vi.spyOn(worldLibraryClient, 'getRegion').mockResolvedValue({ id: 'harbor', raw: '港の詳細本文' });
+
+    render(
+      <WorldTab
+        worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+        selectedWorldId="w1"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('harbor')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('編集'));
+
+    await waitFor(() => expect(getRegionSpy).toHaveBeenCalledWith('w1', 'harbor'));
+    await waitFor(() => expect(screen.getByDisplayValue('港の詳細本文')).toBeInTheDocument());
   });
 });
