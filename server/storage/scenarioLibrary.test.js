@@ -45,4 +45,22 @@ describe('Scenario library functions', () => {
     await deleteScenario(dataStore, textStore, 'w1', 'sc1');
     expect(await getScenario(dataStore, textStore, 'w1', 'sc1')).toBeNull();
   });
+
+  it('saves a scenario with a recommended ruleset', async () => {
+    await saveScenario(dataStore, textStore, {
+      worldId: 'w1',
+      id: 'sc1',
+      title: 'A',
+      raw: 'a',
+      recommendedRuleset: 'coc7e',
+    });
+    const scenario = await getScenario(dataStore, textStore, 'w1', 'sc1');
+    expect(scenario.recommendedRuleset).toBe('coc7e');
+  });
+
+  it('defaults recommendedRuleset to null when not specified', async () => {
+    await saveScenario(dataStore, textStore, { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
+    const scenario = await getScenario(dataStore, textStore, 'w1', 'sc1');
+    expect(scenario.recommendedRuleset).toBeNull();
+  });
 });

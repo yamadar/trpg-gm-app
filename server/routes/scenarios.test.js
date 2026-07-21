@@ -52,4 +52,12 @@ describe('scenarios routes', () => {
     const get = await request(app).get('/api/worlds/w1/scenarios/sc1');
     expect(get.status).toBe(404);
   });
+
+  it('saves and retrieves a scenario with a recommended ruleset', async () => {
+    await request(app)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: 'A', raw: 'a', recommendedRuleset: 'coc7e' });
+    const res = await request(app).get('/api/worlds/w1/scenarios/sc1');
+    expect(res.body.recommendedRuleset).toBe('coc7e');
+  });
 });

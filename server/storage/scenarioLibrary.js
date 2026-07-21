@@ -1,8 +1,14 @@
 import { scenarioMetaKey, scenarioDocPath } from './paths.js';
 
-export async function saveScenario(dataStore, textStore, { worldId, id, title, raw }) {
+export async function saveScenario(dataStore, textStore, { worldId, id, title, raw, recommendedRuleset }) {
   await textStore.write(scenarioDocPath(worldId, id), raw);
-  const meta = { id, worldId, title, updatedAt: Date.now() };
+  const meta = {
+    id,
+    worldId,
+    title,
+    recommendedRuleset: recommendedRuleset ?? null,
+    updatedAt: Date.now(),
+  };
   await dataStore.set(scenarioMetaKey(worldId, id), meta);
   return { ...meta, raw };
 }

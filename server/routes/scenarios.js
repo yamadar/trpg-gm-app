@@ -24,6 +24,7 @@ export function createScenariosRouter({ dataStore, textStore }) {
       id: req.params.id,
       title: req.body.title,
       raw: req.body.raw,
+      recommendedRuleset: req.body.recommendedRuleset,
     });
     res.json(scenario);
   }));
