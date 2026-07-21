@@ -1,8 +1,5 @@
 import { callClaude, extractText, parseJsonLoose } from './client.js';
-
-function slugify(id) {
-  return String(id).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 64) || 'untitled';
-}
+import { slugify } from '../utils/slugify.js';
 
 function dedupeIds(items) {
   const used = new Set();
