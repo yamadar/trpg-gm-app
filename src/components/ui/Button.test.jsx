@@ -20,4 +20,9 @@ describe('Button', () => {
     fireEvent.click(screen.getByText('Go'));
     expect(onClick).not.toHaveBeenCalled();
   });
+
+  it('sets the native disabled attribute when disabled', () => {
+    render(<Button disabled>Go</Button>);
+    expect(screen.getByText('Go')).toBeDisabled();
+  });
 });

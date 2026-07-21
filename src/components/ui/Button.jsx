@@ -24,6 +24,7 @@ export default function Button({ children, onClick, disabled, variant = 'primary
   return (
     <button
       onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       style={{ ...base, ...variants[variant], ...style }}
       onMouseDown={(e) => {
         if (!disabled) e.currentTarget.style.transform = 'scale(0.97)';
