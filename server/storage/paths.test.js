@@ -4,6 +4,7 @@ import {
   sessionKey,
   worldMetaKey,
   worldDocPath,
+  worldSourceDocPath,
   regionDocPath,
   categoryDocPath,
   characterDocPath,
@@ -22,6 +23,7 @@ describe('storage paths', () => {
   it('builds world paths', () => {
     expect(worldMetaKey('waterdeep')).toBe('worlds/waterdeep');
     expect(worldDocPath('waterdeep')).toBe('worlds/waterdeep/world.md');
+    expect(worldSourceDocPath('waterdeep')).toBe('worlds/waterdeep/source.md');
   });
 
   it('builds region and category paths', () => {

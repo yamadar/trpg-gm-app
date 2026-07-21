@@ -10,6 +10,10 @@ export function worldDocPath(worldId) {
   return `worlds/${worldId}/world.md`;
 }
 
+export function worldSourceDocPath(worldId) {
+  return `worlds/${worldId}/source.md`;
+}
+
 export function regionDocPath(worldId, region) {
   return `worlds/${worldId}/regions/${region}.md`;
 }
