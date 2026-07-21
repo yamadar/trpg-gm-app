@@ -4,7 +4,7 @@ import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Field from '../../components/ui/Field.jsx';
 import ConfirmModal from '../../components/library/ConfirmModal.jsx';
-import { getWorld, deleteWorld, putRegion, putCategory } from '../../api/worldLibraryClient.js';
+import { getWorld, deleteWorld, putRegion, putCategory, putWorldSource } from '../../api/worldLibraryClient.js';
 import { importWorld, reimportWorld } from '../../api/worldImport.js';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
@@ -70,6 +70,9 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     setBusy(true);
     setError('');
     try {
+      if (editRaw !== detail.raw) {
+        await putWorldSource(selectedWorldId, editRaw);
+      }
       const split = await reimportWorld(selectedWorldId, editTitle, adjustmentRequest || undefined);
       setSplitResult(split);
       setAdjustmentRequest('');

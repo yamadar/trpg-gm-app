@@ -45,6 +45,7 @@ describe('WorldTab', () => {
 
   it('loads and shows the selected world for editing, with region/category breakdown after a reimport', async () => {
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
+    const putWorldSourceSpy = vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
     const reimportSpy = vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({
       world: '目次',
       regions: [{ id: 'harbor', title: '港', content: '港の詳細' }],
@@ -65,6 +66,37 @@ describe('WorldTab', () => {
 
     await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined));
     await waitFor(() => expect(screen.getByText('港')).toBeInTheDocument());
+    expect(putWorldSourceSpy).not.toHaveBeenCalled();
+  });
+
+  it('persists edited raw text via putWorldSource before reimporting when editRaw was changed', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
+    const putWorldSourceSpy = vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
+    const reimportSpy = vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({
+      world: '目次',
+      regions: [],
+      categories: [],
+    });
+
+    render(
+      <WorldTab
+        worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+        selectedWorldId="w1"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+    fireEvent.change(screen.getByDisplayValue('原文'), { target: { value: '編集後の本文' } });
+    fireEvent.click(screen.getByText('保存して再分割'));
+
+    await waitFor(() => expect(putWorldSourceSpy).toHaveBeenCalledWith('w1', '編集後の本文'));
+    await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined));
+
+    const putOrder = putWorldSourceSpy.mock.invocationCallOrder[0];
+    const reimportOrder = reimportSpy.mock.invocationCallOrder[0];
+    expect(putOrder).toBeLessThan(reimportOrder);
   });
 
   it('deletes a world after confirmation', async () => {
