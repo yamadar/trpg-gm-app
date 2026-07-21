@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
+import { novelizeSession, getNovel } from '../api/sessionSyncClient.js';
 
 function lastLineOf(session) {
   const lastGm = [...session.log].reverse().find((e) => e.role === 'gm');
@@ -8,7 +10,35 @@ function lastLineOf(session) {
   return lastGm.text.slice(0, 60) + (lastGm.text.length > 60 ? '…' : '');
 }
 
+function sanitizeFilename(title) {
+  return (title || 'session').replace(/[\\/:*?"<>|]/g, '_');
+}
+
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary }) {
+  const [novelizingId, setNovelizingId] = useState(null);
+  const [novelizeError, setNovelizeError] = useState({});
+
+  async function handleNovelize(e, session) {
+    e.stopPropagation();
+    setNovelizingId(session.id);
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      await novelizeSession(session.id);
+      const { text } = await getNovel(session.id);
+      const blob = new Blob([text], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${sanitizeFilename(session.title)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setNovelizeError((prev) => ({ ...prev, [session.id]: '小説化に失敗した: ' + err.message }));
+    } finally {
+      setNovelizingId(null);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px' }}>
       <h1
@@ -114,17 +144,31 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
                     >
                       {lastLineOf(s)}
                     </div>
+                    {novelizeError[s.id] && (
+                      <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.stamp, marginTop: 4 }}>
+                        {novelizeError[s.id]}
+                      </div>
+                    )}
                   </div>
-                  <div
-                    style={{
-                      fontFamily: F_MONO,
-                      fontSize: 12,
-                      color: COLORS.brass,
-                      alignSelf: 'center',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    続ける →
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    <div
+                      style={{
+                        fontFamily: F_MONO,
+                        fontSize: 12,
+                        color: COLORS.brass,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      続ける →
+                    </div>
+                    <Button
+                      variant="ghost"
+                      onClick={(e) => handleNovelize(e, s)}
+                      disabled={novelizingId === s.id}
+                      style={{ fontSize: 11, padding: '4px 8px' }}
+                    >
+                      {novelizingId === s.id ? '小説化中…' : '小説化'}
+                    </Button>
                   </div>
                 </div>
               </Card>
