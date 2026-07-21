@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createMessagesRouter } from './routes/messages.js';
 import { createSessionsRouter } from './routes/sessions.js';
 import { createWorldsRouter } from './routes/worlds.js';
+import { createCharactersRouter } from './routes/characters.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 
@@ -26,6 +27,7 @@ export function createApp({
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl }));
   app.use('/api', createSessionsRouter({ dataStore }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
+  app.use('/api', createCharactersRouter({ dataStore, textStore }));
 
   return app;
 }
