@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMessagesRouter } from './routes/messages.js';
 import { createSessionsRouter } from './routes/sessions.js';
+import { createWorldsRouter } from './routes/worlds.js';
 import { createFsDataStore } from './storage/dataStore.js';
+import { createFsTextStore } from './storage/textStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,10 +19,13 @@ export function createApp({
   app.use(express.json({ limit: '2mb' }));
 
   const dataStore = createFsDataStore(dataDir);
+  const textStore = createFsTextStore(dataDir);
   app.locals.dataStore = dataStore;
+  app.locals.textStore = textStore;
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl }));
   app.use('/api', createSessionsRouter({ dataStore }));
+  app.use('/api', createWorldsRouter({ dataStore, textStore }));
 
   return app;
 }
