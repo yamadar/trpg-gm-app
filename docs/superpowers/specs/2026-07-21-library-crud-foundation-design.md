@@ -44,11 +44,18 @@ World・Character・Scenarioは「生テキスト(textStore)」+「軽量メタ�
 
 ## 4. paths.js の変更
 
-`server/storage/paths.js`の`worldMetaKey(worldId)`を現在の`worlds/${worldId}/world`から`worlds/${worldId}`に変更する。
+`server/storage/paths.js`の`worldMetaKey(worldId)`を現在の`worlds/${worldId}/world`から`worlds/${worldId}`に変更する。**同じ理由で`scenarioMetaKey(worldId, scenarioId)`も`worlds/${worldId}/scenarios/${scenarioId}/scenario.parsed`から`worlds/${worldId}/scenarios/${scenarioId}`に変更する**(下記参照)。
 
-**理由**: `dataStore.list(prefix)`は指定prefix直下の`.json`ファイルのみを列挙する実装であり、1階層ネストした`worlds/{worldId}/world.json`は拾えない。World一覧を取得するには`dataStore.list('worlds')`が`worlds/{worldId}.json`を直接見つけられる必要があるため、フラットな配置に変更する。
+**理由**: `dataStore.list(prefix)`は指定prefix直下の`.json`ファイルのみを列挙する実装であり、1階層ネストしたファイルは拾えない。
 
-`characterMetaKey`・`scenarioMetaKey`は元々`worlds/{worldId}/{kind}/`・`worlds/{worldId}/scenarios/{scenarioId}/`の直下に配置される設計であり、それぞれ`dataStore.list('worlds/{worldId}/pc')`等で一覧取得可能なため変更不要。
+- World一覧を取得するには`dataStore.list('worlds')`が`worlds/{worldId}.json`を直接見つけられる必要がある → `worldMetaKey`をフラット化
+- Scenario一覧を取得するには`dataStore.list('worlds/{worldId}/scenarios')`が`worlds/{worldId}/scenarios/{scenarioId}.json`を直接見つけられる必要がある。現状の`scenarioMetaKey`は`.../scenarios/{scenarioId}/scenario.parsed`と、`{scenarioId}/`というディレクトリを1階層余分に挟んでいるため一覧化できない → `scenarioMetaKey`もフラット化。`scenarioDocPath`(生テキスト側、`.../scenarios/{scenarioId}/scenario.md`)はtextStoreの一覧化ニーズがないため変更不要(同じ`{scenarioId}`という名前がメタ用の`.json`ファイルと生テキスト用のディレクトリ名で並存するが、ファイルとディレクトリなので衝突しない)
+
+`characterMetaKey`は元々`worlds/{worldId}/{kind}/`の直下に配置される設計であり、`dataStore.list('worlds/{worldId}/pc')`等で一覧取得可能なため変更不要。
+
+### textStore への delete 追加
+
+`server/storage/textStore.js`は現状`read`/`write`/`list`のみを持ち`delete`を持たない。World/Character/ScenarioのCRUDには削除操作が必要で、生テキスト側(textStore)も削除できる必要があるため、`dataStore.delete`と同じパターン(`fs.unlink`、`ENOENT`は無視)で`delete(path)`を追加する。
 
 この変更に伴い、`server/storage/paths.test.js`の該当アサーション(`worldMetaKey('waterdeep')`が`'worlds/waterdeep/world'`を返すことを期待している箇所)を`'worlds/waterdeep'`に更新する。
 
