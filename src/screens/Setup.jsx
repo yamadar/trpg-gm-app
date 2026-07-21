@@ -7,6 +7,8 @@ import { importWorld } from '../api/worldImport.js';
 import { listScenarios, getScenario, putScenario } from '../api/scenarioLibraryClient.js';
 import { listCharacters, getCharacter, putCharacter } from '../api/characterLibraryClient.js';
 import { slugify } from '../utils/slugify.js';
+import { listRulesets } from '../api/rulesetLibraryClient.js';
+import { getOrParseCharacter } from '../api/characterSheetCache.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Field from '../components/ui/Field.jsx';
@@ -41,6 +43,7 @@ export default function Setup({ onStart, onCancel }) {
   const [selectedScenario, setSelectedScenario] = useState(null); // { id, title, raw, recommendedRuleset } | null
 
   const [rulesetId, setRulesetId] = useState('simple');
+  const [customRulesets, setCustomRulesets] = useState([]);
 
   // PC
   const [pcMode, setPcMode] = useState('new'); // existing | new
@@ -55,6 +58,7 @@ export default function Setup({ onStart, onCancel }) {
   const pcTokenRef = useRef(0);
 
   const worldId = worldMode === 'existing' ? selectedWorld?.id ?? null : null;
+  const allRulesets = [...RULESETS, ...customRulesets];
 
   const steps = ['世界観', 'シナリオ', 'ルール', 'PC', '確認'];
 
@@ -62,6 +66,12 @@ export default function Setup({ onStart, onCancel }) {
     listWorlds()
       .then(setExistingWorlds)
       .catch((e) => setError('World一覧の取得に失敗した: ' + e.message));
+  }, []);
+
+  useEffect(() => {
+    listRulesets()
+      .then(setCustomRulesets)
+      .catch((e) => setError('カスタムRuleset一覧の取得に失敗した: ' + e.message));
   }, []);
 
   useEffect(() => {
@@ -85,10 +95,10 @@ export default function Setup({ onStart, onCancel }) {
   }, [worldId]);
 
   useEffect(() => {
-    if (selectedScenario?.recommendedRuleset && RULESETS.some((r) => r.id === selectedScenario.recommendedRuleset)) {
+    if (selectedScenario?.recommendedRuleset && allRulesets.some((r) => r.id === selectedScenario.recommendedRuleset)) {
       setRulesetId(selectedScenario.recommendedRuleset);
     }
-  }, [selectedScenario]);
+  }, [selectedScenario, allRulesets]);
 
   async function selectWorld(id) {
     const tok = ++worldTokenRef.current;
@@ -194,15 +204,39 @@ export default function Setup({ onStart, onCancel }) {
       }
 
       let pc;
+      let pcGoal;
+      let pcBonds;
+      let pcLibraryName = null;
+
       if (pcMode === 'existing' && selectedPC) {
         pc = selectedPC.raw;
+        pcLibraryName = selectedPC.name;
       } else {
         pc = pcRaw || '(自由記述なし)';
         if (resolvedWorldId && pcRaw) {
           const pcId = makeId('pc');
-          await trySaveToLibrary(() => putCharacter(resolvedWorldId, 'pc', pcId, { raw: pcRaw, revealed: undefined }));
+          let pcSaved = false;
+          await trySaveToLibrary(async () => {
+            await putCharacter(resolvedWorldId, 'pc', pcId, { raw: pcRaw, revealed: undefined });
+            pcSaved = true;
+          });
+          if (pcSaved) {
+            pcLibraryName = pcId;
+          }
         }
       }
+
+      if (resolvedWorldId && pcLibraryName) {
+        try {
+          const parsed = await getOrParseCharacter(resolvedWorldId, 'pc', pcLibraryName);
+          pcGoal = parsed.goal;
+          pcBonds = parsed.bonds;
+        } catch (e) {
+          console.error('goal/bonds parse failed', e);
+        }
+      }
+
+      const resolvedRuleset = allRulesets.find((r) => r.id === rulesetId) || RULESETS[0];
 
       const session = {
         id: 'sess_' + Date.now(),
@@ -210,7 +244,13 @@ export default function Setup({ onStart, onCancel }) {
         world: { raw: worldRawForSession, summary: worldSummary },
         scenario: { raw: scenario },
         rulesetId,
-        pc: { raw: pc },
+        ruleset: {
+          id: resolvedRuleset.id,
+          label: resolvedRuleset.label,
+          desc: resolvedRuleset.desc,
+          hint: resolvedRuleset.hint,
+        },
+        pc: { raw: pc, goal: pcGoal, bonds: pcBonds },
         state: {
           current_scene: '冒頭',
           flags: {},
@@ -444,7 +484,7 @@ export default function Setup({ onStart, onCancel }) {
         {step === 2 && (
           <Field label="ルール性向" hint="判定は成功率%に統一して実行する(どのルールでも公平に判定できる)。ここでの選択は主に演出の色付けに使う。">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {RULESETS.map((r) => (
+              {allRulesets.map((r) => (
                 <Card
                   key={r.id}
                   onClick={() => setRulesetId(r.id)}

@@ -6,6 +6,8 @@ import * as worldImport from '../api/worldImport.js';
 import * as scenarioLibraryClient from '../api/scenarioLibraryClient.js';
 import * as characterLibraryClient from '../api/characterLibraryClient.js';
 import * as sessionApi from '../api/session.js';
+import * as rulesetLibraryClient from '../api/rulesetLibraryClient.js';
+import * as characterSheetCache from '../api/characterSheetCache.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -13,6 +15,7 @@ beforeEach(() => {
   // worldIdが確定するテスト(既存World選択・新規World作成)ではPCステップのuseEffectが
   // listCharacters(worldId, 'pc')を呼ぶため、未モックの実fetchを避けるデフォルトを用意する。
   vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([]);
+  vi.spyOn(rulesetLibraryClient, 'listRulesets').mockResolvedValue([]);
 });
 
 describe('Setup', () => {
@@ -90,6 +93,8 @@ describe('Setup', () => {
     expect(session.rulesetId).toBe('coc7e');
     expect(session.world.raw).toBe('要約本文');
     expect(session.scenario.raw).toBe('シナリオ本文');
+    expect(session.ruleset.id).toBe('coc7e');
+    expect(session.ruleset.label).toBe('CoC7e風');
   });
 
   it('creates a new World in the library and starts the session with the split summary', async () => {
@@ -144,5 +149,95 @@ describe('Setup', () => {
     const session = onStart.mock.calls[0][0];
     expect(session.world.raw).toBe('世界観の原文');
     expect(session.world.summary).toBe('世界観の原文');
+  });
+
+  it('lists custom Rulesets from the library and embeds the resolved ruleset into the session', async () => {
+    vi.spyOn(rulesetLibraryClient, 'listRulesets').mockResolvedValue([
+      { id: 'homebrew', label: '自作ルール', desc: '独自ルール', hint: '独自の演出ヒント', updatedAt: 1 },
+    ]);
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    await waitFor(() => expect(screen.getByText('自作ルール')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('自作ルール'));
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.rulesetId).toBe('homebrew');
+    expect(session.ruleset).toEqual({
+      id: 'homebrew',
+      label: '自作ルール',
+      desc: '独自ルール',
+      hint: '独自の演出ヒント',
+    });
+  });
+
+  it("embeds the selected PC's parsed goal/bonds into the session when the PC is library-linked", async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    characterLibraryClient.listCharacters.mockResolvedValue([
+      { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
+    ]);
+    vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
+      raw: 'PC名: アリス',
+      revealed: null,
+      name: 'alice',
+    });
+    vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockResolvedValue({
+      goal: '真相を暴く',
+      bonds: '姉との再会',
+    });
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('alice'));
+    await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalledWith('w1', 'pc', 'alice'));
+
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(characterSheetCache.getOrParseCharacter).toHaveBeenCalledWith('w1', 'pc', 'alice');
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.goal).toBe('真相を暴く');
+    expect(session.pc.bonds).toBe('姉との再会');
+  });
+
+  it('does not attempt to resolve goal/bonds when the PC has no library link', async () => {
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const getOrParseSpy = vi.spyOn(characterSheetCache, 'getOrParseCharacter');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(getOrParseSpy).not.toHaveBeenCalled();
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.goal).toBeUndefined();
+    expect(session.pc.bonds).toBeUndefined();
   });
 });
