@@ -45,6 +45,12 @@ describe('createApp', () => {
     expect(res.body).toEqual([]);
   });
 
+  it('mounts the world content routes', async () => {
+    const res = await request(app).get('/api/worlds/w1/regions');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
   it('404s on unknown routes', async () => {
     const res = await request(app).get('/nope');
     expect(res.status).toBe(404);
