@@ -37,4 +37,14 @@ describe('createFsTextStore', () => {
   it('returns an empty list for a missing prefix', async () => {
     expect(await store.list('worlds/missing')).toEqual([]);
   });
+
+  it('deletes a file', async () => {
+    await store.write('worlds/x/world.md', 'content');
+    await store.delete('worlds/x/world.md');
+    expect(await store.read('worlds/x/world.md')).toBeNull();
+  });
+
+  it('does not throw when deleting a missing file', async () => {
+    await expect(store.delete('worlds/missing.md')).resolves.not.toThrow();
+  });
 });

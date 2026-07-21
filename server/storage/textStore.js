@@ -29,5 +29,12 @@ export function createFsTextStore(rootDir) {
         throw e;
       }
     },
+    async delete(p) {
+      try {
+        await fs.unlink(fullPath(p));
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e;
+      }
+    },
   };
 }

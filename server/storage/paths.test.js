@@ -20,7 +20,7 @@ describe('storage paths', () => {
   });
 
   it('builds world paths', () => {
-    expect(worldMetaKey('waterdeep')).toBe('worlds/waterdeep/world');
+    expect(worldMetaKey('waterdeep')).toBe('worlds/waterdeep');
     expect(worldDocPath('waterdeep')).toBe('worlds/waterdeep/world.md');
   });
 
@@ -37,7 +37,7 @@ describe('storage paths', () => {
 
   it('builds scenario and campaign paths', () => {
     expect(scenarioDocPath('waterdeep', 'sc1')).toBe('worlds/waterdeep/scenarios/sc1/scenario.md');
-    expect(scenarioMetaKey('waterdeep', 'sc1')).toBe('worlds/waterdeep/scenarios/sc1/scenario.parsed');
+    expect(scenarioMetaKey('waterdeep', 'sc1')).toBe('worlds/waterdeep/scenarios/sc1');
     expect(campaignMetaKey('waterdeep', 'cp1')).toBe('worlds/waterdeep/campaigns/cp1/campaign');
   });
 

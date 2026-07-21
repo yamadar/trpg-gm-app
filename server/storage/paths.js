@@ -3,7 +3,7 @@ export function sessionKey(sessionId) {
 }
 
 export function worldMetaKey(worldId) {
-  return `worlds/${worldId}/world`;
+  return `worlds/${worldId}`;
 }
 
 export function worldDocPath(worldId) {
@@ -31,7 +31,7 @@ export function scenarioDocPath(worldId, scenarioId) {
 }
 
 export function scenarioMetaKey(worldId, scenarioId) {
-  return `worlds/${worldId}/scenarios/${scenarioId}/scenario.parsed`;
+  return `worlds/${worldId}/scenarios/${scenarioId}`;
 }
 
 export function campaignMetaKey(worldId, campaignId) {
