@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
 import { RULESETS } from '../data/rulesets.js';
 import { summarizeWorld, generateScenario } from '../api/session.js';
@@ -58,7 +58,7 @@ export default function Setup({ onStart, onCancel }) {
   const pcTokenRef = useRef(0);
 
   const worldId = worldMode === 'existing' ? selectedWorld?.id ?? null : null;
-  const allRulesets = [...RULESETS, ...customRulesets];
+  const allRulesets = useMemo(() => [...RULESETS, ...customRulesets], [customRulesets]);
 
   const steps = ['世界観', 'シナリオ', 'ルール', 'PC', '確認'];
 

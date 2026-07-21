@@ -97,6 +97,51 @@ describe('Setup', () => {
     expect(session.ruleset.label).toBe('CoC7e風');
   });
 
+  it('respects a manual Ruleset pick made after a Scenario recommendedRuleset was applied, instead of reverting it', async () => {
+    // 回帰テスト: allRulesetsがuseMemoで安定化される前は、毎render新しい配列参照になり、
+    // それをdepsに持つuseEffectが毎render再実行されてrecommendedRulesetに巻き戻していた。
+    // そのためユーザーがRulesetを手動で選び直しても、直後のrenderで上書きされてしまっていた。
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+      { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: 'coc7e' },
+    ]);
+    vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+      id: 'sc1',
+      title: '失踪事件',
+      raw: 'シナリオ本文',
+      recommendedRuleset: 'coc7e',
+    });
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World: 既存
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('失踪事件'));
+    await waitFor(() => expect(scenarioLibraryClient.getScenario).toHaveBeenCalledWith('w1', 'sc1'));
+
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset (coc7eが推奨として自動選択される)
+    await waitFor(() => expect(screen.getByText('CoC7e風')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('シンプル')); // 手動でsimpleに選び直す
+
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.rulesetId).toBe('simple');
+    expect(session.rulesetId).not.toBe('coc7e');
+    expect(session.ruleset.id).toBe('simple');
+    expect(session.ruleset.label).toBe('シンプル');
+  });
+
   it('creates a new World in the library and starts the session with the split summary', async () => {
     vi.spyOn(worldImport, 'importWorld').mockResolvedValue({ world: '分割済み要約', regions: [], categories: [] });
     // scenarioModeは既定の'paste'のままscenarioRawを空で進めるため、handleStart内の
