@@ -1,23 +1,24 @@
 import { Router } from 'express';
 import { saveCharacter, getCharacter, listCharacters, deleteCharacter } from '../storage/characterLibrary.js';
+import { asyncHandler } from './asyncHandler.js';
 
 export function createCharactersRouter({ dataStore, textStore }) {
   const router = Router();
 
-  router.get('/worlds/:worldId/characters/:kind', async (req, res) => {
+  router.get('/worlds/:worldId/characters/:kind', asyncHandler(async (req, res) => {
     res.json(await listCharacters(dataStore, req.params.worldId, req.params.kind));
-  });
+  }));
 
-  router.get('/worlds/:worldId/characters/:kind/:name', async (req, res) => {
+  router.get('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
     const character = await getCharacter(dataStore, textStore, req.params.worldId, req.params.kind, req.params.name);
     if (!character) {
       res.status(404).json({ error: 'character not found' });
       return;
     }
     res.json(character);
-  });
+  }));
 
-  router.put('/worlds/:worldId/characters/:kind/:name', async (req, res) => {
+  router.put('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
     const character = await saveCharacter(dataStore, textStore, {
       worldId: req.params.worldId,
       kind: req.params.kind,
@@ -26,12 +27,12 @@ export function createCharactersRouter({ dataStore, textStore }) {
       revealed: req.body.revealed,
     });
     res.json(character);
-  });
+  }));
 
-  router.delete('/worlds/:worldId/characters/:kind/:name', async (req, res) => {
+  router.delete('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
     await deleteCharacter(dataStore, textStore, req.params.worldId, req.params.kind, req.params.name);
     res.status(204).end();
-  });
+  }));
 
   return router;
 }

@@ -53,4 +53,10 @@ describe('worlds routes', () => {
     const get = await request(app).get('/api/worlds/w1');
     expect(get.status).toBe(404);
   });
+
+  it('returns a 5xx error instead of hanging when raw is missing from the PUT body', async () => {
+    const res = await request(app).put('/api/worlds/w1').send({ title: 'A' });
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(res.status).toBeLessThan(600);
+  });
 });

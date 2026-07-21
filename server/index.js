@@ -33,6 +33,11 @@ export function createApp({
   app.use('/api', createScenariosRouter({ dataStore, textStore }));
   app.use('/api', createRulesetsRouter({ dataStore }));
 
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500).json({ error: 'internal server error' });
+  });
+
   return app;
 }
 
