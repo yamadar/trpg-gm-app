@@ -1,0 +1,60 @@
+// @vitest-environment node
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { createFsDataStore } from './dataStore.js';
+import { createFsTextStore } from './textStore.js';
+import { saveWorld, getWorld, listWorlds, deleteWorld } from './worldLibrary.js';
+
+let dir;
+let dataStore;
+let textStore;
+
+beforeEach(async () => {
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'world-library-test-'));
+  dataStore = createFsDataStore(dir);
+  textStore = createFsTextStore(dir);
+});
+
+afterEach(async () => {
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+describe('World library functions', () => {
+  it('returns null for a missing world', async () => {
+    expect(await getWorld(dataStore, textStore, 'missing')).toBeNull();
+  });
+
+  it('saves and retrieves a world with its raw text', async () => {
+    await saveWorld(dataStore, textStore, { id: 'w1', title: 'Waterdeep', raw: '# 世界観' });
+    const world = await getWorld(dataStore, textStore, 'w1');
+    expect(world).toMatchObject({ id: 'w1', title: 'Waterdeep', raw: '# 世界観' });
+    expect(typeof world.updatedAt).toBe('number');
+  });
+
+  it('lists saved worlds without their raw text', async () => {
+    await saveWorld(dataStore, textStore, { id: 'w1', title: 'A', raw: 'raw-a' });
+    await saveWorld(dataStore, textStore, { id: 'w2', title: 'B', raw: 'raw-b' });
+    const worlds = await listWorlds(dataStore);
+    expect(worlds.map((w) => w.id).sort()).toEqual(['w1', 'w2']);
+    expect(worlds[0].raw).toBeUndefined();
+  });
+
+  it('returns an empty list when there are no worlds', async () => {
+    expect(await listWorlds(dataStore)).toEqual([]);
+  });
+
+  it('deletes a world and its raw text', async () => {
+    await saveWorld(dataStore, textStore, { id: 'w1', title: 'A', raw: 'raw-a' });
+    await deleteWorld(dataStore, textStore, 'w1');
+    expect(await getWorld(dataStore, textStore, 'w1')).toBeNull();
+  });
+
+  it('overwrites an existing world on save (no create/update distinction)', async () => {
+    await saveWorld(dataStore, textStore, { id: 'w1', title: 'Old', raw: 'old' });
+    await saveWorld(dataStore, textStore, { id: 'w1', title: 'New', raw: 'new' });
+    const world = await getWorld(dataStore, textStore, 'w1');
+    expect(world).toMatchObject({ title: 'New', raw: 'new' });
+  });
+});
