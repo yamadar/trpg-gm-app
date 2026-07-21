@@ -102,6 +102,36 @@ describe('splitWorld', () => {
     expect(result.regions[1].title).toBe('B');
   });
 
+  it('re-dedupes against emitted ids when a collision id already matches an original id', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '目次',
+            regions: [
+              { id: '魔法体系', title: 'A', content: 'x' },
+              { id: '宗教', title: 'B', content: 'y' },
+              { id: 'Untitled-2', title: 'C', content: 'z' },
+            ],
+            categories: [],
+          }),
+        },
+      ],
+    });
+    const result = await splitWorld('テキスト');
+    expect(result.regions).toHaveLength(3);
+    const ids = result.regions.map((r) => r.id);
+    expect(ids).toEqual(['untitled', 'untitled-2', 'untitled-2-2']);
+    expect(new Set(ids).size).toBe(3);
+    expect(result.regions.find((r) => r.id === 'untitled').title).toBe('A');
+    expect(result.regions.find((r) => r.id === 'untitled').content).toBe('x');
+    expect(result.regions.find((r) => r.id === 'untitled-2').title).toBe('B');
+    expect(result.regions.find((r) => r.id === 'untitled-2').content).toBe('y');
+    expect(result.regions.find((r) => r.id === 'untitled-2-2').title).toBe('C');
+    expect(result.regions.find((r) => r.id === 'untitled-2-2').content).toBe('z');
+  });
+
   it('allows a region and a category to share the same slugified id without renaming either', async () => {
     vi.spyOn(client, 'callClaude').mockResolvedValue({
       content: [

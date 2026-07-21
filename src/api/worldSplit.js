@@ -5,11 +5,16 @@ function slugify(id) {
 }
 
 function dedupeIds(items) {
-  const seen = new Map();
+  const used = new Set();
   return items.map((item) => {
-    const count = (seen.get(item.id) || 0) + 1;
-    seen.set(item.id, count);
-    return count === 1 ? item : { ...item, id: `${item.id}-${count}` };
+    let candidate = item.id;
+    let suffix = 2;
+    while (used.has(candidate)) {
+      candidate = `${item.id}-${suffix}`;
+      suffix += 1;
+    }
+    used.add(candidate);
+    return candidate === item.id ? item : { ...item, id: candidate };
   });
 }
 
