@@ -74,4 +74,17 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt(makeSession({ pc: { raw: 'PC名: アリス' } }));
     expect(prompt).not.toContain('PCの目標・因縁');
   });
+
+  it('instructs the GM to consider xp_gained using the growthUnit label', () => {
+    const prompt = buildSystemPrompt(
+      makeSession({ ruleset: { id: 'gurps', label: 'GURPS風', desc: '', hint: '', growthUnit: 'CP' } })
+    );
+    expect(prompt).toContain('xp_gained');
+    expect(prompt).toContain('CP');
+  });
+
+  it('falls back to "経験値" as the growthUnit label when session.ruleset is absent', () => {
+    const prompt = buildSystemPrompt(makeSession());
+    expect(prompt).toContain('経験値');
+  });
 });

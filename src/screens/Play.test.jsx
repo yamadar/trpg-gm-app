@@ -35,7 +35,11 @@ beforeEach(() => {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({ narrative: '物語が始まった。', state_update: {}, choices: ['進む'] }),
+            text: JSON.stringify({
+              narrative: '物語が始まった。',
+              state_update: { xp_gained: 5 },
+              choices: ['進む'],
+            }),
           },
         ],
       }),
@@ -65,5 +69,18 @@ describe('Play', () => {
     );
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('accumulates xp_gained into session.state.xp and displays it with the growthUnit label', async () => {
+    const session = makeSession({ ruleset: { id: 'gurps', label: 'GURPS風', desc: '', hint: '', growthUnit: 'CP' } });
+    render(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    expect(screen.getByText('CP: 5')).toBeInTheDocument();
+  });
+
+  it('defaults the growth label to "経験値" when session.ruleset is absent', async () => {
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    expect(screen.getByText('経験値: 5')).toBeInTheDocument();
   });
 });

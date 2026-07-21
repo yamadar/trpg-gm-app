@@ -22,6 +22,7 @@ export const ROLL_TOOL = {
 
 export function buildSystemPrompt(session) {
   const rs = session.ruleset || RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
+  const growthUnit = session.ruleset?.growthUnit || '経験値';
   const flags = session.state.flags || {};
   const flagsText =
     Object.entries(flags)
@@ -65,6 +66,6 @@ ${recentLog}
 
 # 出力形式(厳守)
 説明文やコードブロック記号を一切付けず、次のJSONのみを出力すること:
-{"narrative": "地の文(150〜250字程度)", "state_update": {"current_scene": "更新後のシーン名", "flags": {"追加/更新分のみ": true}, "history_summary": "更新後の物語要約(300字程度)"}, "choices": ["選択肢1", "選択肢2", "選択肢3"]}
-choices は自由記述を促したい場面では空配列 [] でよい。flags は新規/更新分のみでよい(既存分は保持される)。`;
+{"narrative": "地の文(150〜250字程度)", "state_update": {"current_scene": "更新後のシーン名", "flags": {"追加/更新分のみ": true}, "history_summary": "更新後の物語要約(300字程度)", "xp_gained": 0}, "choices": ["選択肢1", "選択肢2", "選択肢3"]}
+choices は自由記述を促したい場面では空配列 [] でよい。flags は新規/更新分のみでよい(既存分は保持される)。xp_gained は物語が進展・成功した節目でのみ${growthUnit}として適切と思われる量を設定し(呼び名・量の目安はルール性向のヒントに従う)、通常は0でよい。`;
 }

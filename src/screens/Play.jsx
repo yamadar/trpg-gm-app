@@ -25,6 +25,7 @@ export default function Play({ session, setSession, onExit }) {
         const { result, roll } = await takeTurn(session, playerText);
 
         const newFlags = { ...session.state.flags, ...(result.state_update?.flags || {}) };
+        const newXp = (session.state.xp || 0) + (result.state_update?.xp_gained || 0);
         const newLog = [...session.log];
         if (displayText) newLog.push({ role: 'player', text: displayText });
         newLog.push({ role: 'gm', text: result.narrative, choices: result.choices || [], roll });
@@ -43,6 +44,7 @@ export default function Play({ session, setSession, onExit }) {
             history_summary: result.state_update?.history_summary ?? session.state.history_summary,
             recent_log: recent,
             turn_count: session.state.turn_count + 1,
+            xp: newXp,
           },
           log: newLog,
           updatedAt: Date.now(),
@@ -102,6 +104,9 @@ export default function Play({ session, setSession, onExit }) {
           </div>
           <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
             シーン: {session.state.current_scene}
+          </div>
+          <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
+            {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
           </div>
         </div>
         <Button variant="ghost" onClick={onExit}>
