@@ -24,9 +24,21 @@ describe('Ruleset library functions', () => {
   });
 
   it('saves and retrieves a ruleset', async () => {
-    await saveRuleset(dataStore, { id: 'homebrew', label: '自作ルール', desc: '独自ルール', hint: '演出ヒント' });
+    await saveRuleset(dataStore, {
+      id: 'homebrew',
+      label: '自作ルール',
+      desc: '独自ルール',
+      hint: '演出ヒント',
+      growthUnit: 'CP',
+    });
     const ruleset = await getRuleset(dataStore, 'homebrew');
-    expect(ruleset).toMatchObject({ id: 'homebrew', label: '自作ルール', desc: '独自ルール', hint: '演出ヒント' });
+    expect(ruleset).toMatchObject({
+      id: 'homebrew',
+      label: '自作ルール',
+      desc: '独自ルール',
+      hint: '演出ヒント',
+      growthUnit: 'CP',
+    });
     expect(typeof ruleset.updatedAt).toBe('number');
   });
 

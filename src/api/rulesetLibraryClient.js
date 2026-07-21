@@ -11,11 +11,11 @@ export async function getRuleset(id) {
   return apiFetch(`/api/rulesets/${id}`, { method: 'GET' });
 }
 
-export async function putRuleset(id, { label, desc, hint }) {
+export async function putRuleset(id, { label, desc, hint, growthUnit }) {
   return apiFetch(`/api/rulesets/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label, desc, hint }),
+    body: JSON.stringify({ label, desc, hint, growthUnit }),
   });
 }
 

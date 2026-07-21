@@ -30,10 +30,18 @@ describe('rulesets routes', () => {
   });
 
   it('saves and retrieves a ruleset', async () => {
-    await request(app).put('/api/rulesets/homebrew').send({ label: '自作ルール', desc: '独自ルール', hint: 'ヒント' });
+    await request(app)
+      .put('/api/rulesets/homebrew')
+      .send({ label: '自作ルール', desc: '独自ルール', hint: 'ヒント', growthUnit: 'CP' });
     const res = await request(app).get('/api/rulesets/homebrew');
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ id: 'homebrew', label: '自作ルール', desc: '独自ルール', hint: 'ヒント' });
+    expect(res.body).toMatchObject({
+      id: 'homebrew',
+      label: '自作ルール',
+      desc: '独自ルール',
+      hint: 'ヒント',
+      growthUnit: 'CP',
+    });
   });
 
   it('lists saved rulesets', async () => {

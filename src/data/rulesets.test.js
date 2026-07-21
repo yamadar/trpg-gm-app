@@ -8,17 +8,26 @@ describe('RULESETS', () => {
     expect(new Set(ids).size).toBe(4);
   });
 
-  it('every entry has id/label/desc/hint fields', () => {
+  it('every entry has id/label/desc/hint/growthUnit fields', () => {
     for (const r of RULESETS) {
       expect(r).toHaveProperty('id');
       expect(r).toHaveProperty('label');
       expect(r).toHaveProperty('desc');
       expect(r).toHaveProperty('hint');
+      expect(r).toHaveProperty('growthUnit');
     }
   });
 
   it('includes the simple ruleset with no hint', () => {
     const simple = RULESETS.find((r) => r.id === 'simple');
     expect(simple.hint).toBe('');
+  });
+
+  it('uses "CP" as the growthUnit for gurps and "経験値" for the others', () => {
+    const byId = Object.fromEntries(RULESETS.map((r) => [r.id, r]));
+    expect(byId.simple.growthUnit).toBe('経験値');
+    expect(byId.coc7e.growthUnit).toBe('経験値');
+    expect(byId.dnd5e.growthUnit).toBe('経験値');
+    expect(byId.gurps.growthUnit).toBe('CP');
   });
 });

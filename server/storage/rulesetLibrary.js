@@ -1,7 +1,7 @@
 import { rulesetMetaKey } from './paths.js';
 
-export async function saveRuleset(dataStore, { id, label, desc, hint }) {
-  const meta = { id, label, desc, hint, updatedAt: Date.now() };
+export async function saveRuleset(dataStore, { id, label, desc, hint, growthUnit }) {
+  const meta = { id, label, desc, hint, growthUnit, updatedAt: Date.now() };
   await dataStore.set(rulesetMetaKey(id), meta);
   return meta;
 }

@@ -22,15 +22,15 @@ describe('getRuleset', () => {
 });
 
 describe('putRuleset', () => {
-  it('PUTs label, desc, and hint', async () => {
+  it('PUTs label, desc, hint, and growthUnit', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'homebrew' }) });
     vi.stubGlobal('fetch', fetchMock);
-    await putRuleset('homebrew', { label: '自作ルール', desc: '独自ルール', hint: '演出ヒント' });
+    await putRuleset('homebrew', { label: '自作ルール', desc: '独自ルール', hint: '演出ヒント', growthUnit: 'CP' });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/rulesets/homebrew',
       expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify({ label: '自作ルール', desc: '独自ルール', hint: '演出ヒント' }),
+        body: JSON.stringify({ label: '自作ルール', desc: '独自ルール', hint: '演出ヒント', growthUnit: 'CP' }),
       })
     );
   });

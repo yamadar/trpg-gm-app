@@ -24,6 +24,7 @@ export function createRulesetsRouter({ dataStore }) {
       label: req.body.label,
       desc: req.body.desc,
       hint: req.body.hint,
+      growthUnit: req.body.growthUnit,
     });
     res.json(ruleset);
   }));
