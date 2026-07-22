@@ -3,6 +3,8 @@ import { sessionKey, sessionNovelDocPath } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
+const NOVELIZE_TIMEOUT_MS = 120000;
+
 function extractText(content) {
   return (content || [])
     .filter((b) => b.type === 'text')
@@ -53,29 +55,34 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
       return;
     }
     const transcript = logToTranscript(session.log);
-    const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 8000,
-        system: NOVELIZE_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: transcript }],
-      }),
-    });
-    if (!upstream.ok) {
-      const t = await upstream.text().catch(() => '');
-      res.status(502).json({ error: `upstream request failed: ${t.slice(0, 200)}` });
-      return;
+    try {
+      const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8000,
+          system: NOVELIZE_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: transcript }],
+        }),
+        signal: AbortSignal.timeout(NOVELIZE_TIMEOUT_MS),
+      });
+      if (!upstream.ok) {
+        const t = await upstream.text().catch(() => '');
+        res.status(502).json({ error: `upstream request failed: ${t.slice(0, 200)}` });
+        return;
+      }
+      const data = await upstream.json();
+      const text = extractText(data.content);
+      await textStore.write(sessionNovelDocPath(req.params.id), text);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(502).json({ error: `upstream request failed: ${e.message}` });
     }
-    const data = await upstream.json();
-    const text = extractText(data.content);
-    await textStore.write(sessionNovelDocPath(req.params.id), text);
-    res.json({ ok: true });
   }));
 
   router.get('/sessions/:id/novel', asyncHandler(async (req, res) => {

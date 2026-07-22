@@ -47,4 +47,15 @@ describe('POST /messages', () => {
 
     expect(res.status).toBe(502);
   });
+
+  it('returns 502 when the upstream fetch is aborted (timeout)', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createMessagesRouter({ apiKey: 'test-key', fetchImpl }));
+
+    const res = await request(app).post('/api/messages').send({ model: 'x', messages: [] });
+
+    expect(res.status).toBe(502);
+  });
 });

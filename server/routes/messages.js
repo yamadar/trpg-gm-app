@@ -1,5 +1,7 @@
 import { Router } from 'express';
 
+const MESSAGES_TIMEOUT_MS = 120000;
+
 export function createMessagesRouter({ apiKey, fetchImpl = fetch }) {
   const router = Router();
 
@@ -17,6 +19,7 @@ export function createMessagesRouter({ apiKey, fetchImpl = fetch }) {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(MESSAGES_TIMEOUT_MS),
       });
       const text = await upstream.text();
       res.status(upstream.status);
