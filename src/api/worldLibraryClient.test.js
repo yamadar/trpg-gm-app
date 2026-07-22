@@ -12,6 +12,8 @@ import {
   getRegion,
   listCategories,
   getCategory,
+  deleteRegion,
+  deleteCategory,
 } from './worldLibraryClient.js';
 
 afterEach(() => {
@@ -178,6 +180,21 @@ describe('getCategory', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
     vi.stubGlobal('fetch', fetchMock);
     await expect(getCategory('w1', 'missing')).rejects.toThrow('API error 404: not found');
+  });
+});
+
+describe('deleteRegion / deleteCategory', () => {
+  it('DELETEs a region (encoded) and does not parse a body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deleteRegion('w1', 'harbor')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1/regions/harbor', expect.objectContaining({ method: 'DELETE' }));
+  });
+  it('DELETEs a category', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal('fetch', fetchMock);
+    await deleteCategory('w1', 'magic');
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1/categories/magic', expect.objectContaining({ method: 'DELETE' }));
   });
 });
 

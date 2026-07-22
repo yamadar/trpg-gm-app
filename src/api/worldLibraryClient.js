@@ -74,3 +74,23 @@ export async function listCategories(worldId) {
 export async function getCategory(worldId, category) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/categories/${encodeURIComponent(category)}`, { method: 'GET' });
 }
+
+export async function deleteRegion(worldId, region) {
+  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/regions/${encodeURIComponent(region)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
+  }
+}
+
+export async function deleteCategory(worldId, category) {
+  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/categories/${encodeURIComponent(category)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
+  }
+}

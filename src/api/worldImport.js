@@ -1,5 +1,15 @@
 import { splitWorld } from './worldSplit.js';
-import { putWorld, putWorldSource, getWorldSource, putRegion, putCategory } from './worldLibraryClient.js';
+import {
+  putWorld,
+  putWorldSource,
+  getWorldSource,
+  putRegion,
+  putCategory,
+  listRegions,
+  listCategories,
+  deleteRegion,
+  deleteCategory,
+} from './worldLibraryClient.js';
 
 async function saveSplitResult(worldId, title, split) {
   await putWorld(worldId, { title, raw: split.world });
@@ -17,6 +27,15 @@ export async function importWorld(worldId, title, rawText) {
 export async function reimportWorld(worldId, title, adjustmentRequest) {
   const source = await getWorldSource(worldId);
   const split = await splitWorld(source.raw, adjustmentRequest);
+
+  const newRegionIds = new Set(split.regions.map((r) => r.id));
+  const newCategoryIds = new Set(split.categories.map((c) => c.id));
+  const [existingRegions, existingCategories] = await Promise.all([listRegions(worldId), listCategories(worldId)]);
+  await Promise.all(existingRegions.filter((id) => !newRegionIds.has(id)).map((id) => deleteRegion(worldId, id)));
+  await Promise.all(
+    existingCategories.filter((id) => !newCategoryIds.has(id)).map((id) => deleteCategory(worldId, id))
+  );
+
   await saveSplitResult(worldId, title, split);
   return split;
 }

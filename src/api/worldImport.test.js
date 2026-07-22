@@ -38,10 +38,34 @@ describe('reimportWorld', () => {
       categories: [],
     });
     const putWorldSpy = vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
+    vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue([]);
+    vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue([]);
 
     await reimportWorld('w1', 'Waterdeep World', '海沿いの街を追加して');
 
     expect(splitSpy).toHaveBeenCalledWith('保存済み原文', '海沿いの街を追加して');
     expect(putWorldSpy).toHaveBeenCalledWith('w1', { title: 'Waterdeep World', raw: '更新後の目次' });
+  });
+
+  it('prunes regions/categories that are absent from the new split', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorldSource').mockResolvedValue({ raw: '原文' });
+    vi.spyOn(worldSplit, 'splitWorld').mockResolvedValue({
+      world: '目次',
+      regions: [{ id: 'harbor', title: '港', content: 'x' }],
+      categories: [],
+    });
+    vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue(['harbor', 'old-region']);
+    vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue(['old-cat']);
+    vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
+    vi.spyOn(worldLibraryClient, 'putRegion').mockResolvedValue({});
+    vi.spyOn(worldLibraryClient, 'putCategory').mockResolvedValue({});
+    const delRegion = vi.spyOn(worldLibraryClient, 'deleteRegion').mockResolvedValue();
+    const delCategory = vi.spyOn(worldLibraryClient, 'deleteCategory').mockResolvedValue();
+
+    await reimportWorld('w1', 'W', undefined);
+
+    expect(delRegion).toHaveBeenCalledWith('w1', 'old-region');
+    expect(delRegion).not.toHaveBeenCalledWith('w1', 'harbor');
+    expect(delCategory).toHaveBeenCalledWith('w1', 'old-cat');
   });
 });
