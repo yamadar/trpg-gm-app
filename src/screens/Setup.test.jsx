@@ -335,4 +335,22 @@ describe('Setup', () => {
     const session = onStart.mock.calls[0][0];
     expect(session.scenario.raw).not.toBe('w1のシナリオ');
   });
+
+  it('surfaces a fatal error and does not start the session when scenario generation fails', async () => {
+    vi.spyOn(sessionApi, 'generateScenario').mockRejectedValue(new Error('LLM down'));
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    // World(既定skip) -> Scenario(既定paste空) -> Ruleset -> PC -> 確認
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(screen.getByText(/開始処理に失敗した/)).toBeInTheDocument());
+    expect(onStart).not.toHaveBeenCalled();
+    // busy解除でボタン文言が"ゲーム開始"へ戻る(準備中…のままにならない)
+    expect(screen.getByText('ゲーム開始')).toBeInTheDocument();
+  });
 });
