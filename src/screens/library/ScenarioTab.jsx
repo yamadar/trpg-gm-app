@@ -26,6 +26,7 @@ export default function ScenarioTab({ worldId }) {
   async function refresh() {
     if (!worldId) return;
     try {
+      setError('');
       setScenarios(await listScenarios(worldId));
     } catch (e) {
       setError('一覧取得に失敗した: ' + e.message);

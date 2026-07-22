@@ -27,6 +27,7 @@ export default function RulesetTab() {
 
   async function refresh() {
     try {
+      setError('');
       setRulesets(await listRulesets());
     } catch (e) {
       setError('一覧取得に失敗した: ' + e.message);

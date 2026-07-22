@@ -18,9 +18,15 @@ export default function Library({ onClose }) {
   const [tab, setTab] = useState('world');
   const [worlds, setWorlds] = useState([]);
   const [selectedWorldId, setSelectedWorldId] = useState(null);
+  const [worldsError, setWorldsError] = useState('');
 
   const refreshWorlds = useCallback(async () => {
-    setWorlds(await listWorlds());
+    try {
+      setWorlds(await listWorlds());
+      setWorldsError('');
+    } catch (e) {
+      setWorldsError('World一覧の取得に失敗した: ' + e.message);
+    }
   }, []);
 
   useEffect(() => {
@@ -35,6 +41,10 @@ export default function Library({ onClose }) {
           閉じる
         </Button>
       </div>
+
+      {worldsError && (
+        <div style={{ color: COLORS.stamp, fontSize: 13, marginBottom: 12 }}>{worldsError}</div>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
         {TABS.map((t) => (

@@ -44,4 +44,10 @@ describe('Library', () => {
     fireEvent.click(screen.getByText('閉じる'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('shows an error banner when listWorlds fails on mount', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' }));
+    render(<Library onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText(/World一覧の取得に失敗した/)).toBeInTheDocument());
+  });
 });

@@ -25,6 +25,7 @@ export default function CharacterTab({ worldId }) {
   async function refresh() {
     if (!worldId) return;
     try {
+      setError('');
       setCharacters(await listCharacters(worldId, kind));
     } catch (e) {
       setError('一覧取得に失敗した: ' + e.message);
