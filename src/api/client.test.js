@@ -72,4 +72,16 @@ describe('parseJsonLoose', () => {
   it('throws when no JSON object is found', () => {
     expect(() => parseJsonLoose('no json here')).toThrow('JSON not found in response');
   });
+
+  it('throws when the JSON object is truncated with no closing brace', () => {
+    expect(() => parseJsonLoose('{"narrative": "途中で切れ')).toThrow('JSON not found in response');
+  });
+
+  it('extracts the object when prose follows the closing brace', () => {
+    expect(parseJsonLoose('{"a": 1}\n以上です。よろしく。')).toEqual({ a: 1 });
+  });
+
+  it('extracts the object when a prologue precedes a fenced block', () => {
+    expect(parseJsonLoose('了解しました。\n```json\n{"a": 1}\n```\nさらに続きます')).toEqual({ a: 1 });
+  });
 });
