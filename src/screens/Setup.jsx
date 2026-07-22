@@ -6,7 +6,7 @@ import { listWorlds, getWorld } from '../api/worldLibraryClient.js';
 import { importWorld } from '../api/worldImport.js';
 import { listScenarios, getScenario, putScenario } from '../api/scenarioLibraryClient.js';
 import { listCharacters, getCharacter, putCharacter } from '../api/characterLibraryClient.js';
-import { slugify } from '../utils/slugify.js';
+import { makeId } from '../utils/makeId.js';
 import { listRulesets } from '../api/rulesetLibraryClient.js';
 import { getOrParseCharacter } from '../api/characterSheetCache.js';
 import Card from '../components/ui/Card.jsx';
@@ -14,10 +14,6 @@ import Button from '../components/ui/Button.jsx';
 import Field from '../components/ui/Field.jsx';
 import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
-
-function makeId(base) {
-  return slugify(base || 'untitled') + '-' + Date.now();
-}
 
 export default function Setup({ onStart, onCancel }) {
   const [step, setStep] = useState(0);
@@ -75,6 +71,7 @@ export default function Setup({ onStart, onCancel }) {
   }, []);
 
   useEffect(() => {
+    setSelectedScenario(null);
     if (!worldId) {
       setExistingScenarios([]);
       return;
@@ -85,6 +82,7 @@ export default function Setup({ onStart, onCancel }) {
   }, [worldId]);
 
   useEffect(() => {
+    setSelectedPC(null);
     if (!worldId) {
       setExistingPCs([]);
       return;
@@ -168,15 +166,16 @@ export default function Setup({ onStart, onCancel }) {
           worldSummary = worldRaw || '(特に指定なし)';
         }
       } else {
-        worldRawForSession = worldRaw;
-        worldSummary = worldRaw.length > 1500 ? await summarizeWorld(worldRaw) : worldRaw || '(特に指定なし)';
+        worldRawForSession = '';
+        worldSummary = '(特に指定なし)';
       }
 
+      const pcForGen = pcMode === 'existing' && selectedPC ? selectedPC.raw : pcRaw;
       let scenario;
       if (scenarioMode === 'existing' && selectedScenario) {
         scenario = selectedScenario.raw;
       } else if (scenarioMode === 'generate') {
-        scenario = await generateScenario(genre, pcRaw, worldSummary);
+        scenario = await generateScenario(genre, pcForGen, worldSummary);
         if (resolvedWorldId) {
           const scenarioId = makeId(scenarioTitle || genre);
           await trySaveToLibrary(() =>
@@ -190,7 +189,7 @@ export default function Setup({ onStart, onCancel }) {
       } else {
         scenario = scenarioRaw;
         if (!scenario) {
-          scenario = await generateScenario('自由なジャンルで', pcRaw, worldSummary);
+          scenario = await generateScenario('自由なジャンルで', pcForGen, worldSummary);
         } else if (resolvedWorldId) {
           const scenarioId = makeId(scenarioTitle);
           await trySaveToLibrary(() =>
@@ -239,7 +238,7 @@ export default function Setup({ onStart, onCancel }) {
       const resolvedRuleset = allRulesets.find((r) => r.id === rulesetId) || RULESETS[0];
 
       const session = {
-        id: 'sess_' + Date.now(),
+        id: 'sess_' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
         title: title || 'セッション ' + new Date().toLocaleDateString('ja-JP'),
         world: { raw: worldRawForSession, summary: worldSummary },
         scenario: { raw: scenario },
@@ -578,22 +577,18 @@ export default function Setup({ onStart, onCancel }) {
             </Field>
             <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft }}>
               世界観・シナリオ・ルール・PCの準備ができたらゲームを開始する。
-              {worldMode === 'skip' && worldRaw.length > 1500 && ' 世界観は長いため開始時に自動で要約する。'}
               {worldMode === 'new' && ' 世界観は開始時に素材ライブラリへ保存され、自動で地域/カテゴリに分割される。'}
               {scenarioMode === 'generate' && ' シナリオはAIが開始時に生成する。'}
             </div>
-            {error && (
-              <div style={{ color: COLORS.stamp, fontSize: 13, marginTop: 12 }}>{error}</div>
-            )}
-            {libraryWarning && (
-              <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 8 }}>{libraryWarning}</div>
-            )}
           </>
         )}
       </Card>
 
+      {error && <div style={{ color: COLORS.stamp, fontSize: 13, marginTop: 12 }}>{error}</div>}
+      {libraryWarning && <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 8 }}>{libraryWarning}</div>}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 20 }}>
-        <Button variant="ghost" onClick={step === 0 ? onCancel : () => setStep(step - 1)}>
+        <Button variant="ghost" onClick={step === 0 ? onCancel : () => setStep(step - 1)} disabled={busy}>
           {step === 0 ? 'やめる' : '戻る'}
         </Button>
         {step < steps.length - 1 ? (

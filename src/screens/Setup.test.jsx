@@ -166,7 +166,7 @@ describe('Setup', () => {
 
     await waitFor(() => expect(onStart).toHaveBeenCalled());
     expect(worldImport.importWorld).toHaveBeenCalledWith(
-      expect.stringMatching(/^testworld-\d+$/),
+      expect.stringMatching(/^testworld-\d+-[a-z0-9]{4}$/),
       'Test World',
       '世界観の原文'
     );
@@ -287,5 +287,52 @@ describe('Setup', () => {
     const session = onStart.mock.calls[0][0];
     expect(session.pc.goal).toBeUndefined();
     expect(session.pc.bonds).toBeUndefined();
+  });
+
+  it('clears a previously selected Scenario when the World changes', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([
+      { id: 'w1', title: 'World1', updatedAt: 1 },
+      { id: 'w2', title: 'World2', updatedAt: 2 },
+    ]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockImplementation((id) =>
+      Promise.resolve({ id, title: id === 'w1' ? 'World1' : 'World2', raw: '要約' })
+    );
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockImplementation((wid) =>
+      Promise.resolve(wid === 'w1' ? [{ id: 'sc1', worldId: 'w1', title: 'シナリオ1', recommendedRuleset: null }] : [])
+    );
+    vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+      id: 'sc1',
+      title: 'シナリオ1',
+      raw: 'w1のシナリオ',
+      recommendedRuleset: null,
+    });
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成シナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('World1')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('World1'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalledWith('w1'));
+    fireEvent.click(screen.getByText('次へ')); // Scenario
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('シナリオ1')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('シナリオ1'));
+    await waitFor(() => expect(scenarioLibraryClient.getScenario).toHaveBeenCalled());
+
+    // Worldステップに戻り、別のWorldへ切り替える
+    fireEvent.click(screen.getByText('戻る'));
+    fireEvent.click(screen.getByText('World2'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalledWith('w2'));
+
+    // 確認まで進めて開始 → World Aのシナリオは残っていない(生成側へ落ちる)
+    fireEvent.click(screen.getByText('次へ')); // Scenario
+    fireEvent.click(screen.getByText('次へ')); // Ruleset
+    fireEvent.click(screen.getByText('次へ')); // PC
+    fireEvent.click(screen.getByText('次へ')); // 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.scenario.raw).not.toBe('w1のシナリオ');
   });
 });
