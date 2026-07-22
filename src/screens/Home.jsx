@@ -26,7 +26,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
     try {
       await novelizeSession(session.id);
-      const { text } = await getNovel(session.id);
+      const { text, stale } = await getNovel(session.id);
       const blob = new Blob([text], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -36,6 +36,12 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 0);
+      if (stale) {
+        setNovelizeError((prev) => ({
+          ...prev,
+          [session.id]: 'ダウンロードした小説は最新のログを反映していない可能性があります。',
+        }));
+      }
     } catch (err) {
       setNovelizeError((prev) => ({ ...prev, [session.id]: '小説化に失敗した: ' + err.message }));
     } finally {

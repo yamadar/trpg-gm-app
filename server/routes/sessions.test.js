@@ -78,7 +78,7 @@ describe('sessions routes', () => {
       expect(body.messages[0].content).toContain('波止場を調べる');
       return {
         ok: true,
-        json: async () => ({ content: [{ type: 'text', text: '小説化された本文。' }] }),
+        json: async () => ({ content: [{ type: 'text', text: '小説化された本文。' }], stop_reason: 'end_turn' }),
       };
     };
     buildApp({ fetchImpl });
@@ -99,7 +99,36 @@ describe('sessions routes', () => {
 
     const getRes = await request(app).get('/api/sessions/s1/novel');
     expect(getRes.status).toBe(200);
-    expect(getRes.body).toEqual({ text: '小説化された本文。' });
+    expect(getRes.body).toEqual({ text: '小説化された本文。', stale: false });
+  });
+
+  it('marks the novel stale after the session advances past the novelized turn', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: { turn_count: 3 } });
+    await request(app).post('/api/sessions/s1/novelize');
+    // セッションが進行(turn_count 3 → 5)
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: { turn_count: 5 } });
+    const res = await request(app).get('/api/sessions/s1/novel');
+    expect(res.body.stale).toBe(true);
+  });
+
+  it('rejects a truncated (max_tokens) novelization without saving', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    const res = await request(app).post('/api/sessions/s1/novelize');
+    expect(res.status).toBe(502);
+    const get = await request(app).get('/api/sessions/s1/novel');
+    expect(get.status).toBe(404); // 保存されていない
+  });
+
+  it('rejects an empty novelization without saving', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    const res = await request(app).post('/api/sessions/s1/novelize');
+    expect(res.status).toBe(502);
   });
 
   it('returns 404 from GET novel when nothing has been generated yet', async () => {

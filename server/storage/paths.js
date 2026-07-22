@@ -6,6 +6,10 @@ export function sessionNovelDocPath(sessionId) {
   return `sessions/${sessionId}/novel.md`;
 }
 
+export function sessionNovelMetaKey(sessionId) {
+  return `sessions/${sessionId}/novel`;
+}
+
 export function worldMetaKey(worldId) {
   return `worlds/${worldId}`;
 }

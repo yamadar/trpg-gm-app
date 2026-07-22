@@ -49,7 +49,7 @@ describe('Home', () => {
 
   it('novelizes a session and triggers a file download when "小説化" is clicked, without navigating into the session', async () => {
     const novelizeSpy = vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ ok: true });
-    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '小説本文' });
+    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '小説本文', stale: false });
     const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
     const revokeObjectURLSpy = vi.fn();
     vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: revokeObjectURLSpy });
@@ -97,7 +97,7 @@ describe('Home', () => {
           resolvers[id] = resolve;
         })
     );
-    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '本文' });
+    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '本文', stale: false });
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:x'), revokeObjectURL: vi.fn() });
 
     const sessions = [

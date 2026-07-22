@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { sessionKey, sessionNovelDocPath } from '../storage/paths.js';
+import { sessionKey, sessionNovelDocPath, sessionNovelMetaKey } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
@@ -77,8 +77,20 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
         return;
       }
       const data = await upstream.json();
+      if (data.stop_reason === 'max_tokens') {
+        res.status(502).json({ error: 'novelization was truncated (max_tokens); not saved' });
+        return;
+      }
       const text = extractText(data.content);
+      if (!text) {
+        res.status(502).json({ error: 'novelization produced empty output; not saved' });
+        return;
+      }
       await textStore.write(sessionNovelDocPath(req.params.id), text);
+      await dataStore.set(sessionNovelMetaKey(req.params.id), {
+        turnCount: session.state?.turn_count ?? null,
+        updatedAt: Date.now(),
+      });
       res.json({ ok: true });
     } catch (e) {
       res.status(502).json({ error: `upstream request failed: ${e.message}` });
@@ -91,7 +103,11 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
       res.status(404).json({ error: 'novel not found' });
       return;
     }
-    res.json({ text });
+    const meta = await dataStore.get(sessionNovelMetaKey(req.params.id));
+    const session = await dataStore.get(sessionKey(req.params.id));
+    const currentTurn = session?.state?.turn_count ?? null;
+    const stale = meta && meta.turnCount != null && currentTurn != null ? meta.turnCount !== currentTurn : false;
+    res.json({ text, stale });
   }));
 
   return router;
