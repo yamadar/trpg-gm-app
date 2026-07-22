@@ -10,17 +10,19 @@ function lastLineOf(session) {
   return lastGm.text.slice(0, 60) + (lastGm.text.length > 60 ? '…' : '');
 }
 
-function sanitizeFilename(title) {
-  return (title || 'session').replace(/[\\/:*?"<>|]/g, '_');
+export function sanitizeFilename(title) {
+  const cleaned = (title || 'session').replace(/[\\/:*?"<>|]/g, '_');
+  const trimmed = cleaned.replace(/^\.+/, '').trim();
+  return trimmed.length > 0 ? cleaned : 'session';
 }
 
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary }) {
-  const [novelizingId, setNovelizingId] = useState(null);
+  const [novelizing, setNovelizing] = useState({});
   const [novelizeError, setNovelizeError] = useState({});
 
   async function handleNovelize(e, session) {
     e.stopPropagation();
-    setNovelizingId(session.id);
+    setNovelizing((prev) => ({ ...prev, [session.id]: true }));
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
     try {
       await novelizeSession(session.id);
@@ -30,12 +32,18 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       const a = document.createElement('a');
       a.href = url;
       a.download = `${sanitizeFilename(session.title)}.md`;
+      document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (err) {
       setNovelizeError((prev) => ({ ...prev, [session.id]: '小説化に失敗した: ' + err.message }));
     } finally {
-      setNovelizingId(null);
+      setNovelizing((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
     }
   }
 
@@ -164,10 +172,10 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
                     <Button
                       variant="ghost"
                       onClick={(e) => handleNovelize(e, s)}
-                      disabled={novelizingId === s.id}
+                      disabled={!!novelizing[s.id]}
                       style={{ fontSize: 11, padding: '4px 8px' }}
                     >
-                      {novelizingId === s.id ? '小説化中…' : '小説化'}
+                      {novelizing[s.id] ? '小説化中…' : '小説化'}
                     </Button>
                   </div>
                 </div>

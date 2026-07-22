@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import Home from './Home.jsx';
+import Home, { sanitizeFilename } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 
 beforeEach(() => {
@@ -76,5 +76,38 @@ describe('Home', () => {
     fireEvent.click(screen.getByText('小説化'));
 
     await waitFor(() => expect(screen.getByText(/小説化に失敗した/)).toBeInTheDocument());
+  });
+
+  it('sanitizes filesystem-unsafe and dot-only titles', () => {
+    expect(sanitizeFilename('a/b:c')).toBe('a_b_c');
+    expect(sanitizeFilename('..')).toBe('session');
+    expect(sanitizeFilename('')).toBe('session');
+    expect(sanitizeFilename('普通のタイトル')).toBe('普通のタイトル');
+  });
+
+  it('keeps each session novelize button independent (concurrent guard is per-session)', async () => {
+    let resolveA;
+    vi.spyOn(sessionSyncClient, 'novelizeSession').mockImplementation((id) =>
+      id === 's1'
+        ? new Promise((r) => {
+            resolveA = r;
+          })
+        : Promise.resolve({ ok: true })
+    );
+    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '本文' });
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:x'), revokeObjectURL: vi.fn() });
+
+    const sessions = [
+      { id: 's1', title: 'A', updatedAt: 2, state: {}, log: [] },
+      { id: 's2', title: 'B', updatedAt: 1, state: {}, log: [] },
+    ];
+    render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    const buttons = screen.getAllByText('小説化');
+    fireEvent.click(buttons[0]); // s1の小説化を開始(pendingのまま)
+    await waitFor(() => expect(screen.getByText('小説化中…')).toBeInTheDocument());
+    // s1が「小説化中…」になっても、s2のボタンは独立して「小説化」のまま(単一ガードではない)
+    expect(screen.getAllByText('小説化').length).toBe(1);
+    if (resolveA) resolveA({ ok: true });
+    vi.restoreAllMocks();
   });
 });
