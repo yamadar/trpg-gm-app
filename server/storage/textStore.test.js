@@ -47,4 +47,16 @@ describe('createFsTextStore', () => {
   it('does not throw when deleting a missing file', async () => {
     await expect(store.delete('worlds/missing.md')).resolves.not.toThrow();
   });
+
+  it('deleteDir removes an entire directory subtree', async () => {
+    await store.write('worlds/w1/regions/a.md', 'A');
+    await store.write('worlds/w1/categories/b.md', 'B');
+    await store.deleteDir('worlds/w1');
+    expect(await store.list('worlds/w1/regions')).toEqual([]);
+    expect(await store.list('worlds/w1/categories')).toEqual([]);
+  });
+
+  it('deleteDir is a no-op for a missing directory', async () => {
+    await expect(store.deleteDir('worlds/missing')).resolves.toBeUndefined();
+  });
 });

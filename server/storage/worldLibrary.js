@@ -22,5 +22,5 @@ export async function listWorlds(dataStore) {
 
 export async function deleteWorld(dataStore, textStore, id) {
   await dataStore.delete(worldMetaKey(id));
-  await textStore.delete(worldDocPath(id));
+  await textStore.deleteDir(`worlds/${id}`);
 }

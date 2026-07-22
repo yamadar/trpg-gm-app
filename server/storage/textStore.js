@@ -36,5 +36,8 @@ export function createFsTextStore(rootDir) {
         if (e.code !== 'ENOENT') throw e;
       }
     },
+    async deleteDir(prefix) {
+      await fs.rm(fullPath(prefix), { recursive: true, force: true });
+    },
   };
 }

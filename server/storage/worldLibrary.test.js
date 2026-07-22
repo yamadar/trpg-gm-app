@@ -57,4 +57,14 @@ describe('World library functions', () => {
     const world = await getWorld(dataStore, textStore, 'w1');
     expect(world).toMatchObject({ title: 'New', raw: 'new' });
   });
+
+  it('deleteWorld also removes region/category/scenario sub-content', async () => {
+    await saveWorld(dataStore, textStore, { id: 'w1', title: 'W', raw: '本文' });
+    await textStore.write('worlds/w1/regions/harbor.md', '港');
+    await textStore.write('worlds/w1/categories/magic.md', '魔法');
+    await deleteWorld(dataStore, textStore, 'w1');
+    expect(await getWorld(dataStore, textStore, 'w1')).toBeNull();
+    expect(await textStore.list('worlds/w1/regions')).toEqual([]);
+    expect(await textStore.list('worlds/w1/categories')).toEqual([]);
+  });
 });
