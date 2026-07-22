@@ -248,4 +248,64 @@ describe('WorldTab', () => {
     });
     expect(screen.queryByDisplayValue('w1の港の本文(stale)')).not.toBeInTheDocument();
   });
+
+  it('discards a stale getRegion resolution after re-editing the same region id in a different world (epoch guard)', async () => {
+    // Both worlds have a region literally called "shared" (same id, different content).
+    // w1's fetch is left pending while we switch to w2 and re-open the SAME region id
+    // there (w2's fetch resolves immediately). If the epoch guard in startEditingRegion
+    // were missing, w1's late resolution would clobber the textarea that is now showing
+    // w2's freshly-fetched content — even though editingRegionId ('shared') never changed
+    // across the switch, so a state-reset-only test would never observe the leak.
+    vi.spyOn(worldLibraryClient, 'getWorld').mockImplementation((id) =>
+      Promise.resolve({ id, title: id === 'w1' ? 'Waterdeep' : 'Neverwinter', raw: '原文' })
+    );
+    worldLibraryClient.listRegions.mockResolvedValue(['shared']);
+    worldLibraryClient.listCategories.mockResolvedValue([]);
+
+    let resolveW1Region;
+    const w1RegionPromise = new Promise((r) => {
+      resolveW1Region = r;
+    });
+    vi.spyOn(worldLibraryClient, 'getRegion').mockImplementation((worldId, regionId) => {
+      if (worldId === 'w1' && regionId === 'shared') return w1RegionPromise;
+      if (worldId === 'w2' && regionId === 'shared') return Promise.resolve({ id: 'shared', raw: 'w2の共有本文' });
+      return Promise.reject(new Error('unexpected getRegion call: ' + worldId + '/' + regionId));
+    });
+
+    const worlds = [
+      { id: 'w1', title: 'Waterdeep', updatedAt: 1 },
+      { id: 'w2', title: 'Neverwinter', updatedAt: 2 },
+    ];
+
+    const { rerender } = render(
+      <WorldTab worlds={worlds} selectedWorldId="w1" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
+    );
+    await waitFor(() => expect(screen.getByText('shared')).toBeInTheDocument());
+
+    // Start editing w1's "shared" region; getRegion('w1', 'shared') stays pending.
+    fireEvent.click(screen.getByText('編集'));
+
+    // Switch to w2 before w1's fetch resolves. The [selectedWorldId] effect resets
+    // editingRegionId to null and bumps worldEpochRef.current.
+    rerender(
+      <WorldTab worlds={worlds} selectedWorldId="w2" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
+    );
+    await waitFor(() => expect(screen.getByDisplayValue('Neverwinter')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('shared')).toBeInTheDocument());
+
+    // Re-enter edit mode on w2's "shared" region (same id). getRegion('w2', 'shared')
+    // resolves immediately, so the textarea shows w2's content again.
+    fireEvent.click(screen.getByText('編集'));
+    await waitFor(() => expect(screen.getByDisplayValue('w2の共有本文')).toBeInTheDocument());
+
+    // Now let w1's stale fetch resolve late.
+    await act(async () => {
+      resolveW1Region({ id: 'shared', raw: 'w1の共有本文(stale)' });
+      await w1RegionPromise;
+    });
+
+    // The epoch guard must discard w1's stale resolution; w2's visible edit stays intact.
+    expect(screen.getByDisplayValue('w2の共有本文')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('w1の共有本文(stale)')).not.toBeInTheDocument();
+  });
 });
