@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Home, { sanitizeFilename } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 
@@ -86,13 +86,16 @@ describe('Home', () => {
   });
 
   it('keeps each session novelize button independent (concurrent guard is per-session)', async () => {
-    let resolveA;
-    vi.spyOn(sessionSyncClient, 'novelizeSession').mockImplementation((id) =>
-      id === 's1'
-        ? new Promise((r) => {
-            resolveA = r;
-          })
-        : Promise.resolve({ ok: true })
+    // 単一のnovelizingId状態だと、s1がpending中にs2を開始すると
+    // novelizingIdが'id2'に書き換わり、s1のボタンが「小説化中…」から
+    // 「小説化」に戻って再度クリック可能になってしまう(古いバグ)。
+    // このテストはその回帰を検出できるよう、両方を同時にpendingにして検証する。
+    const resolvers = {};
+    vi.spyOn(sessionSyncClient, 'novelizeSession').mockImplementation(
+      (id) =>
+        new Promise((resolve) => {
+          resolvers[id] = resolve;
+        })
     );
     vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '本文' });
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:x'), revokeObjectURL: vi.fn() });
@@ -102,12 +105,26 @@ describe('Home', () => {
       { id: 's2', title: 'B', updatedAt: 1, state: {}, log: [] },
     ];
     render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
-    const buttons = screen.getAllByText('小説化');
-    fireEvent.click(buttons[0]); // s1の小説化を開始(pendingのまま)
-    await waitFor(() => expect(screen.getByText('小説化中…')).toBeInTheDocument());
-    // s1が「小説化中…」になっても、s2のボタンは独立して「小説化」のまま(単一ガードではない)
-    expect(screen.getAllByText('小説化').length).toBe(1);
-    if (resolveA) resolveA({ ok: true });
+
+    // s1の小説化を開始(pendingのまま)
+    fireEvent.click(screen.getAllByText('小説化')[0]);
+    await waitFor(() => expect(screen.getAllByText('小説化中…').length).toBe(1));
+    expect(screen.getAllByText('小説化').length).toBe(1); // s2はまだ「小説化」のまま
+
+    // s1がまだpendingの間にs2の小説化も開始
+    fireEvent.click(screen.getAllByText('小説化')[0]);
+    await waitFor(() => expect(screen.getAllByText('小説化中…').length).toBe(2));
+    // 単一のnovelizingIdガードでは、s2を開始した瞬間にs1が「小説化」へ
+    // 戻ってしまうため、この時点で両方が同時に「小説化中…」にはならない。
+    expect(screen.queryAllByText('小説化').length).toBe(0);
+
+    // 後始末: 両方のpendingなpromiseを解決してunhandled rejectionを防ぐ
+    await act(async () => {
+      resolvers.s1({ ok: true });
+      resolvers.s2({ ok: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     vi.restoreAllMocks();
   });
 });
