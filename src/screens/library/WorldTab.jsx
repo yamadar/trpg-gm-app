@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, inputStyle } from '../../theme.js';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -38,11 +38,18 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const worldEpochRef = useRef(0);
+
   useEffect(() => {
     if (!selectedWorldId) {
       setDetail(null);
       return;
     }
+    worldEpochRef.current += 1;
+    setEditingRegionId(null);
+    setRegionDraft('');
+    setEditingCategoryId(null);
+    setCategoryDraft('');
     setRegions([]);
     setCategories([]);
     setError('');
@@ -120,11 +127,13 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       setRegionDraft(region.content);
       return;
     }
+    const epoch = worldEpochRef.current;
     try {
       const full = await getRegion(selectedWorldId, region.id);
+      if (worldEpochRef.current !== epoch) return;
       setRegionDraft(full.raw);
     } catch (e) {
-      setError('地域の取得に失敗した: ' + e.message);
+      if (worldEpochRef.current === epoch) setError('地域の取得に失敗した: ' + e.message);
     }
   }
 
@@ -134,11 +143,13 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       setCategoryDraft(category.content);
       return;
     }
+    const epoch = worldEpochRef.current;
     try {
       const full = await getCategory(selectedWorldId, category.id);
+      if (worldEpochRef.current !== epoch) return;
       setCategoryDraft(full.raw);
     } catch (e) {
-      setError('カテゴリの取得に失敗した: ' + e.message);
+      if (worldEpochRef.current === epoch) setError('カテゴリの取得に失敗した: ' + e.message);
     }
   }
 

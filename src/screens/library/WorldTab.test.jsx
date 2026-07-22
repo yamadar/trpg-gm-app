@@ -211,4 +211,41 @@ describe('WorldTab', () => {
     await waitFor(() => expect(getRegionSpy).toHaveBeenCalledWith('w1', 'harbor'));
     await waitFor(() => expect(screen.getByDisplayValue('港の詳細本文')).toBeInTheDocument());
   });
+
+  it('does not apply a late getRegion result after the world was switched', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorld').mockImplementation((id) =>
+      Promise.resolve({ id, title: id === 'w1' ? 'Waterdeep' : 'Neverwinter', raw: '原文' })
+    );
+    // Both worlds happen to have a region called "harbor" (same id, different content) —
+    // this is what makes the leak observable: without the fix, the stale w1 draft would
+    // render straight into w2's identically-named region.
+    worldLibraryClient.listRegions.mockResolvedValue(['harbor']);
+    worldLibraryClient.listCategories.mockResolvedValue([]);
+    let resolveRegion;
+    vi.spyOn(worldLibraryClient, 'getRegion').mockReturnValue(
+      new Promise((r) => {
+        resolveRegion = r;
+      })
+    );
+
+    const worlds = [
+      { id: 'w1', title: 'Waterdeep', updatedAt: 1 },
+      { id: 'w2', title: 'Neverwinter', updatedAt: 2 },
+    ];
+    const { rerender } = render(
+      <WorldTab worlds={worlds} selectedWorldId="w1" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
+    );
+    await waitFor(() => expect(screen.getByText('harbor')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('編集'));
+    // まだgetRegionは未解決。この間にWorldを切り替える。
+    rerender(
+      <WorldTab worlds={worlds} selectedWorldId="w2" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
+    );
+    await waitFor(() => expect(screen.getByDisplayValue('Neverwinter')).toBeInTheDocument());
+    // 遅れてw1のregionが解決しても、編集テキストエリアには反映されない。
+    await act(async () => {
+      resolveRegion({ id: 'harbor', raw: 'w1の港の本文(stale)' });
+    });
+    expect(screen.queryByDisplayValue('w1の港の本文(stale)')).not.toBeInTheDocument();
+  });
 });
