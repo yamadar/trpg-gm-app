@@ -3,6 +3,7 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
 import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
 import { putSessionToServer } from '../api/sessionSyncClient.js';
+import { normalizeTurnResult } from '../api/turnResult.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
@@ -11,6 +12,7 @@ export default function Play({ session, setSession, onExit }) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [saveWarning, setSaveWarning] = useState('');
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
 
@@ -24,38 +26,50 @@ export default function Play({ session, setSession, onExit }) {
       setError('');
       try {
         const { result, roll } = await takeTurn(session, playerText);
+        const norm = normalizeTurnResult(result);
 
-        const newFlags = { ...session.state.flags, ...(result.state_update?.flags || {}) };
-        const newXp = (session.state.xp || 0) + (result.state_update?.xp_gained || 0);
+        const newFlags = norm.stateUpdate.flags
+          ? { ...session.state.flags, ...norm.stateUpdate.flags }
+          : session.state.flags;
+        const newXp = (Number.isFinite(session.state.xp) ? session.state.xp : 0) + norm.stateUpdate.xpGain;
         const newLog = [...session.log];
         if (displayText) newLog.push({ role: 'player', text: displayText });
-        newLog.push({ role: 'gm', text: result.narrative, choices: result.choices || [], roll });
+        newLog.push({ role: 'gm', text: norm.narrative, choices: norm.choices, roll });
 
         const recent = [...(session.state.recent_log || [])];
         if (displayText) recent.push({ role: 'player', text: displayText });
-        recent.push({ role: 'gm', text: result.narrative });
+        recent.push({ role: 'gm', text: norm.narrative });
         while (recent.length > 12) recent.shift(); // 簡易履歴管理。Phase2で要約圧縮に置き換え予定
 
         const updated = {
           ...session,
           state: {
             ...session.state,
-            current_scene: result.state_update?.current_scene || session.state.current_scene,
+            current_scene: norm.stateUpdate.current_scene ?? session.state.current_scene,
             flags: newFlags,
-            history_summary: result.state_update?.history_summary ?? session.state.history_summary,
+            history_summary: norm.stateUpdate.history_summary ?? session.state.history_summary,
             recent_log: recent,
-            turn_count: session.state.turn_count + 1,
+            turn_count: (Number.isFinite(session.state.turn_count) ? session.state.turn_count : 0) + 1,
             xp: newXp,
           },
           log: newLog,
           updatedAt: Date.now(),
         };
         setSession(updated);
-        await saveSession(updated);
+        const saved = await saveSession(updated);
+        if (!saved) {
+          setSaveWarning(
+            'セッションの保存に失敗した。ブラウザの保存領域を確認してください(このターンは保存されていない可能性があります)。'
+          );
+        } else {
+          setSaveWarning('');
+        }
         putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
+        return true;
       } catch (e) {
         console.error(e);
         setError('GM応答の取得に失敗した: ' + e.message);
+        return false;
       } finally {
         setBusy(false);
       }
@@ -71,11 +85,12 @@ export default function Play({ session, setSession, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function submitFree() {
+  async function submitFree() {
     if (!input.trim() || busy) return;
     const text = input.trim();
     setInput('');
-    runTurn(text, text);
+    const ok = await runTurn(text, text);
+    if (!ok) setInput(text);
   }
 
   function submitChoice(choice) {
@@ -166,6 +181,7 @@ export default function Play({ session, setSession, onExit }) {
           </div>
         )}
         {error && <div style={{ color: COLORS.stamp, fontSize: 13 }}>{error}</div>}
+        {saveWarning && <div style={{ color: COLORS.stamp, fontSize: 12 }}>{saveWarning}</div>}
         <div ref={logEndRef} />
       </div>
 
@@ -184,7 +200,9 @@ export default function Play({ session, setSession, onExit }) {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submitFree()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitFree();
+            }}
             placeholder="PCの行動を自由に書く…"
             style={{ ...inputStyle, flex: 1 }}
             disabled={busy}

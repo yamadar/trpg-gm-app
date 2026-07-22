@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
+import * as storage from '../storage/index.js';
 
 function makeSession(overrides = {}) {
   return {
@@ -96,5 +97,48 @@ describe('Play', () => {
     await waitFor(() => expect(putSpy).toHaveBeenCalled());
     // 同期失敗してもUIはエラー表示しない(ゲーム進行は止めない)
     expect(screen.queryByText(/GM応答の取得に失敗した/)).not.toBeInTheDocument();
+  });
+
+  it('does not corrupt state.xp when the model returns a string xp_gained', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ narrative: '進行', state_update: { xp_gained: '5' }, choices: [] }),
+          },
+        ],
+      }),
+    });
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('進行')).toBeInTheDocument());
+    // "05"のような文字列連結ではなく数値の5であること
+    expect(screen.getByText('経験値: 5')).toBeInTheDocument();
+  });
+
+  it('keeps the previous scene when the model returns an invalid current_scene', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ narrative: '進行', state_update: { current_scene: '' }, choices: [] }),
+          },
+        ],
+      }),
+    });
+    render(<Harness initialSession={makeSession({ state: { current_scene: '元のシーン', flags: {}, history_summary: '', recent_log: [], turn_count: 0, xp: 0 } })} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('進行')).toBeInTheDocument());
+    expect(screen.getByText('シーン: 元のシーン')).toBeInTheDocument();
+  });
+
+  it('shows a save warning when saveSession fails but keeps playing', async () => {
+    // spyOnは既定で元実装を呼ぶが、mockResolvedValueOnceで開始ターンの1回だけfalseを返させ、
+    // 以降は元実装に戻るため後続テストへ副作用が漏れない(このテストファイルにafterEachのリセットは無い)。
+    vi.spyOn(storage, 'saveSession').mockResolvedValueOnce(false);
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
   });
 });
