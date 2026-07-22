@@ -72,4 +72,25 @@ describe('evaluateRoll', () => {
     expect(result.success).toBe(true);
     expect(Number.isNaN(result.success_percent)).toBe(false);
   });
+
+  it('falls back to 50 when successPercent is null', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.49); // roll = 50
+    const result = evaluateRoll(null);
+    expect(result.success_percent).toBe(50);
+    expect(result.success).toBe(true);
+  });
+
+  it('falls back to 50 when successPercent is an empty string', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.49); // roll = 50
+    const result = evaluateRoll('');
+    expect(result.success_percent).toBe(50);
+    expect(result.success).toBe(true);
+  });
+
+  it('falls back to 50 when successPercent is false', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.49); // roll = 50
+    const result = evaluateRoll(false);
+    expect(result.success_percent).toBe(50);
+    expect(result.success).toBe(true);
+  });
 });
