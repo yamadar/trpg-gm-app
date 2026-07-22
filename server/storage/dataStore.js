@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+let tmpCounter = 0;
+
 export function createFsDataStore(rootDir) {
   function fullPath(key) {
     return path.join(rootDir, `${key}.json`);
@@ -19,7 +21,9 @@ export function createFsDataStore(rootDir) {
     async set(key, value) {
       const file = fullPath(key);
       await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, JSON.stringify(value, null, 2), 'utf-8');
+      const tmp = `${file}.tmp-${process.pid}-${tmpCounter++}`;
+      await fs.writeFile(tmp, JSON.stringify(value, null, 2), 'utf-8');
+      await fs.rename(tmp, file);
     },
     async list(prefix) {
       const dir = path.join(rootDir, prefix);

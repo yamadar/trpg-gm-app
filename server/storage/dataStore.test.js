@@ -43,4 +43,12 @@ describe('createFsDataStore', () => {
     await store.delete('sessions/a');
     expect(await store.get('sessions/a')).toBeNull();
   });
+
+  it('overwrites cleanly and leaves no .tmp files', async () => {
+    await store.set('a/b', { v: 1 });
+    await store.set('a/b', { v: 2 });
+    expect(await store.get('a/b')).toEqual({ v: 2 });
+    const files = await fs.readdir(path.join(dir, 'a'));
+    expect(files.some((f) => f.includes('.tmp'))).toBe(false);
+  });
 });
