@@ -60,3 +60,12 @@ describe('deleteRuleset', () => {
     await expect(deleteRuleset('homebrew')).rejects.toThrow('API error 500: boom');
   });
 });
+
+describe('URL encoding', () => {
+  it('encodes special characters in the ruleset id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await getRuleset('a/b');
+    expect(fetchMock).toHaveBeenCalledWith('/api/rulesets/a%2Fb', expect.objectContaining({ method: 'GET' }));
+  });
+});

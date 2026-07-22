@@ -54,3 +54,12 @@ describe('getNovel', () => {
     await expect(getNovel('s1')).rejects.toThrow('API error 404: not found');
   });
 });
+
+describe('URL encoding', () => {
+  it('encodes the session id for novelizeSession', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await novelizeSession('s/1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s%2F1/novelize', expect.objectContaining({ method: 'POST' }));
+  });
+});

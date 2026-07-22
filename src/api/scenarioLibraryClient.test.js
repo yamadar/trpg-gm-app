@@ -66,3 +66,15 @@ describe('deleteScenario', () => {
     await expect(deleteScenario('w1', 'sc1')).rejects.toThrow('API error 500: boom');
   });
 });
+
+describe('URL encoding', () => {
+  it('encodes worldId/id segments for getScenario', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await getScenario('w#1', 's/2');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/worlds/w%231/scenarios/s%2F2',
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+});

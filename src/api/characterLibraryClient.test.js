@@ -84,3 +84,15 @@ describe('putCharacterParsed', () => {
     );
   });
 });
+
+describe('URL encoding', () => {
+  it('encodes worldId/kind/name segments for getCharacter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await getCharacter('w#1', 'pc', 'a/b');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/worlds/w%231/characters/pc/a%2Fb',
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+});

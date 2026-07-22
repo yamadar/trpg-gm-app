@@ -8,11 +8,11 @@ async function apiFetch(url, options) {
 }
 
 export async function getRuleset(id) {
-  return apiFetch(`/api/rulesets/${id}`, { method: 'GET' });
+  return apiFetch(`/api/rulesets/${encodeURIComponent(id)}`, { method: 'GET' });
 }
 
 export async function putRuleset(id, { label, desc, hint, growthUnit }) {
-  return apiFetch(`/api/rulesets/${id}`, {
+  return apiFetch(`/api/rulesets/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ label, desc, hint, growthUnit }),
@@ -24,7 +24,7 @@ export async function listRulesets() {
 }
 
 export async function deleteRuleset(id) {
-  const res = await fetch(`/api/rulesets/${id}`, { method: 'DELETE' });
+  const res = await fetch(`/api/rulesets/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (!res.ok) {
     const t = await res.text().catch(() => '');
     throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);

@@ -8,7 +8,7 @@ async function apiFetch(url, options) {
 }
 
 export async function putSessionToServer(session) {
-  return apiFetch(`/api/sessions/${session.id}`, {
+  return apiFetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(session),
@@ -16,9 +16,9 @@ export async function putSessionToServer(session) {
 }
 
 export async function novelizeSession(id) {
-  return apiFetch(`/api/sessions/${id}/novelize`, { method: 'POST' });
+  return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novelize`, { method: 'POST' });
 }
 
 export async function getNovel(id) {
-  return apiFetch(`/api/sessions/${id}/novel`, { method: 'GET' });
+  return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel`, { method: 'GET' });
 }

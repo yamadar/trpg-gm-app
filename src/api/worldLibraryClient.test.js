@@ -180,3 +180,12 @@ describe('getCategory', () => {
     await expect(getCategory('w1', 'missing')).rejects.toThrow('API error 404: not found');
   });
 });
+
+describe('URL encoding', () => {
+  it('encodes special characters in the world id for getWorld', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    await getWorld('a/b#c');
+    expect(fetchMock).toHaveBeenCalledWith('/api/worlds/a%2Fb%23c', expect.objectContaining({ method: 'GET' }));
+  });
+});
