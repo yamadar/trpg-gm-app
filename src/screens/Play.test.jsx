@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
@@ -140,5 +140,89 @@ describe('Play', () => {
     vi.spyOn(storage, 'saveSession').mockResolvedValueOnce(false);
     render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
+  });
+
+  it('logs the player utterance and fetches a new GM turn when free input is submitted', async () => {
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '森へ進む' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(screen.getByText('森へ進む')).toBeInTheDocument());
+    // 開始ターン + 送信ターンで計2回
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    // 送信時に入力欄はクリアされる
+    expect(box.value).toBe('');
+  });
+
+  it('advances a turn when a choice button is clicked', async () => {
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    fireEvent.click(screen.getByText('進む')); // GM応答の選択肢ボタン
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+  });
+
+  it('submits on Enter when IME composition is not active', async () => {
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '扉を開ける' } });
+    fireEvent.keyDown(box, { key: 'Enter' }); // isComposing未指定=false相当
+    await waitFor(() => expect(screen.getByText('扉を開ける')).toBeInTheDocument());
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not submit on Enter while IME composition is active', async () => {
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '変換中' } });
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true }); // IME変換確定のEnter
+    // 送信されない: fetchは開始ターンの1回のまま、入力は保持
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(box.value).toBe('変換中');
+  });
+
+  it('shows an error and restores the submitted input when the model returns unparseable output', async () => {
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    // 次のターンだけJSONを含まないテキストを返す(parseJsonLooseが投げる)
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: 'ここにJSONは無い' }] }),
+    });
+    // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '罠を調べる' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(screen.getByText(/GM応答の取得に失敗した/)).toBeInTheDocument());
+    // busy解除後、送信した入力が入力欄へ復元される
+    expect(box.value).toBe('罠を調べる');
+  });
+
+  it('persists the session via saveSession after a turn (regression pin)', async () => {
+    const saveSpy = vi.spyOn(storage, 'saveSession'); // 既定は本実装を呼ぶ(fake-indexeddb)
+    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    await waitFor(() => expect(saveSpy).toHaveBeenCalled());
   });
 });
