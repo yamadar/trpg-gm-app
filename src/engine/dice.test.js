@@ -50,4 +50,26 @@ describe('evaluateRoll', () => {
     const result = evaluateRoll(60);
     expect(result.degree).toBe('fumble');
   });
+
+  it('does not label a successful roll as a fumble at high success percents', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.96); // roll = 97
+    const result = evaluateRoll(100); // clamped to 99, so 97 <= 99 → success
+    expect(result.success).toBe(true);
+    expect(result.degree).toBe('success');
+  });
+
+  it('labels a failing high roll as a fumble', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.96); // roll = 97
+    const result = evaluateRoll(50);
+    expect(result.success).toBe(false);
+    expect(result.degree).toBe('fumble');
+  });
+
+  it('falls back to a neutral 50 when successPercent is not a finite number', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.49); // roll = 50
+    const result = evaluateRoll(undefined);
+    expect(result.success_percent).toBe(50);
+    expect(result.success).toBe(true);
+    expect(Number.isNaN(result.success_percent)).toBe(false);
+  });
 });
