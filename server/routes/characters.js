@@ -23,6 +23,10 @@ export function createCharactersRouter({ dataStore, textStore }) {
   }));
 
   router.put('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
+    if (typeof req.body.raw !== 'string') {
+      res.status(400).json({ error: 'raw is required' });
+      return;
+    }
     const character = await saveCharacter(dataStore, textStore, {
       worldId: req.params.worldId,
       kind: req.params.kind,

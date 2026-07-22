@@ -144,4 +144,9 @@ describe('sessions routes', () => {
     const res = await request(app).post('/api/sessions/s1/novelize');
     expect(res.status).toBe(502);
   });
+
+  it('returns 400 when the session body is not an object', async () => {
+    const res = await request(app).put('/api/sessions/s1').set('Content-Type', 'application/json').send('"a string"');
+    expect(res.status).toBe(400);
+  });
 });

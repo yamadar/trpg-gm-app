@@ -22,6 +22,10 @@ export function createScenariosRouter({ dataStore, textStore }) {
   }));
 
   router.put('/worlds/:worldId/scenarios/:id', asyncHandler(async (req, res) => {
+    if (typeof req.body.raw !== 'string' || typeof req.body.title !== 'string') {
+      res.status(400).json({ error: 'title and raw are required' });
+      return;
+    }
     const scenario = await saveScenario(dataStore, textStore, {
       worldId: req.params.worldId,
       id: req.params.id,

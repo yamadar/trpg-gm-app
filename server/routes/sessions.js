@@ -39,6 +39,10 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
   }));
 
   router.put('/sessions/:id', asyncHandler(async (req, res) => {
+    if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body)) {
+      res.status(400).json({ error: 'session body must be an object' });
+      return;
+    }
     const session = { ...req.body, id: req.params.id };
     await dataStore.set(sessionKey(req.params.id), session);
     res.json(session);

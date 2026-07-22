@@ -43,9 +43,17 @@ describe('POST /messages', () => {
     app.use(express.json());
     app.use('/api', createMessagesRouter({ apiKey: 'test-key', fetchImpl }));
 
-    const res = await request(app).post('/api/messages').send({});
+    const res = await request(app).post('/api/messages').send({ model: 'x', messages: [] });
 
     expect(res.status).toBe(502);
+  });
+
+  it('returns 400 when messages is not an array', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createMessagesRouter({ apiKey: 'k', fetchImpl: vi.fn() }));
+    const res = await request(app).post('/api/messages').send({ model: 'x' });
+    expect(res.status).toBe(400);
   });
 
   it('returns 502 when the upstream fetch is aborted (timeout)', async () => {

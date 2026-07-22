@@ -21,6 +21,10 @@ export function createRulesetsRouter({ dataStore }) {
   }));
 
   router.put('/rulesets/:id', asyncHandler(async (req, res) => {
+    if (typeof req.body.label !== 'string') {
+      res.status(400).json({ error: 'label is required' });
+      return;
+    }
     const ruleset = await saveRuleset(dataStore, {
       id: req.params.id,
       label: req.body.label,

@@ -54,10 +54,9 @@ describe('worlds routes', () => {
     expect(get.status).toBe(404);
   });
 
-  it('returns a 5xx error instead of hanging when raw is missing from the PUT body', async () => {
-    const res = await request(app).put('/api/worlds/w1').send({ title: 'A' });
-    expect(res.status).toBeGreaterThanOrEqual(500);
-    expect(res.status).toBeLessThan(600);
+  it('returns 400 when raw is missing on PUT', async () => {
+    const res = await request(app).put('/api/worlds/w1').send({ title: 'T' });
+    expect(res.status).toBe(400);
   });
 
   it('rejects a traversal id with 400', async () => {

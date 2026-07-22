@@ -10,6 +10,14 @@ export function createMessagesRouter({ apiKey, fetchImpl = fetch }) {
       res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
       return;
     }
+    if (!Array.isArray(req.body?.messages)) {
+      res.status(400).json({ error: 'messages must be an array' });
+      return;
+    }
+    if (Number(req.body.max_tokens) > 16000) {
+      res.status(400).json({ error: 'max_tokens too large' });
+      return;
+    }
     try {
       const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
         method: 'POST',

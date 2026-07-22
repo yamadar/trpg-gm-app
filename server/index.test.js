@@ -22,7 +22,7 @@ afterEach(async () => {
 
 describe('createApp', () => {
   it('mounts the messages route and proxies via the injected fetchImpl', async () => {
-    const res = await request(app).post('/api/messages').send({});
+    const res = await request(app).post('/api/messages').send({ messages: [] });
     expect(res.status).toBe(200);
     expect(fetchImpl).toHaveBeenCalledWith('https://api.anthropic.com/v1/messages', expect.anything());
   });
@@ -54,5 +54,11 @@ describe('createApp', () => {
   it('404s on unknown routes', async () => {
     const res = await request(app).get('/nope');
     expect(res.status).toBe(404);
+  });
+
+  it('preserves a thrown error status via the global handler', async () => {
+    // 既知の400経路(不正なsession body)を通し、500ではなく400が返ることを確認
+    const res = await request(app).put('/api/sessions/s1').set('Content-Type', 'application/json').send('"x"');
+    expect(res.status).toBe(400);
   });
 });

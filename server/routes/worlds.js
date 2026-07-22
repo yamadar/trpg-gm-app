@@ -21,6 +21,10 @@ export function createWorldsRouter({ dataStore, textStore }) {
   }));
 
   router.put('/worlds/:id', asyncHandler(async (req, res) => {
+    if (typeof req.body.raw !== 'string' || typeof req.body.title !== 'string') {
+      res.status(400).json({ error: 'title and raw are required' });
+      return;
+    }
     const world = await saveWorld(dataStore, textStore, {
       id: req.params.id,
       title: req.body.title,

@@ -37,7 +37,8 @@ export function createApp({
 
   app.use((err, req, res, next) => {
     console.error(err);
-    res.status(500).json({ error: 'internal server error' });
+    const status = typeof err.status === 'number' ? err.status : typeof err.statusCode === 'number' ? err.statusCode : 500;
+    res.status(status).json({ error: err.message || 'internal server error' });
   });
 
   return app;

@@ -30,6 +30,10 @@ export function createWorldContentRouter({ textStore }) {
   }));
 
   router.put('/worlds/:worldId/source', asyncHandler(async (req, res) => {
+    if (typeof req.body.raw !== 'string') {
+      res.status(400).json({ error: 'raw is required' });
+      return;
+    }
     await saveWorldSource(textStore, req.params.worldId, req.body.raw);
     res.json({ raw: req.body.raw });
   }));
@@ -48,6 +52,10 @@ export function createWorldContentRouter({ textStore }) {
   }));
 
   router.put('/worlds/:worldId/regions/:region', asyncHandler(async (req, res) => {
+    if (typeof req.body.raw !== 'string') {
+      res.status(400).json({ error: 'raw is required' });
+      return;
+    }
     await saveRegion(textStore, req.params.worldId, req.params.region, req.body.raw);
     res.json({ id: req.params.region, raw: req.body.raw });
   }));
@@ -71,6 +79,10 @@ export function createWorldContentRouter({ textStore }) {
   }));
 
   router.put('/worlds/:worldId/categories/:category', asyncHandler(async (req, res) => {
+    if (typeof req.body.raw !== 'string') {
+      res.status(400).json({ error: 'raw is required' });
+      return;
+    }
     await saveCategory(textStore, req.params.worldId, req.params.category, req.body.raw);
     res.json({ id: req.params.category, raw: req.body.raw });
   }));
