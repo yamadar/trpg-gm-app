@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { saveCharacter, getCharacter, listCharacters, deleteCharacter, saveCharacterParsed } from '../storage/characterLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
+import { idParamGuard, kindParamGuard } from './validateId.js';
 
 export function createCharactersRouter({ dataStore, textStore }) {
   const router = Router();
+  router.param('worldId', idParamGuard);
+  router.param('kind', kindParamGuard);
+  router.param('name', idParamGuard);
 
   router.get('/worlds/:worldId/characters/:kind', asyncHandler(async (req, res) => {
     res.json(await listCharacters(dataStore, req.params.worldId, req.params.kind));

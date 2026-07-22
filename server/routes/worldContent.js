@@ -12,9 +12,13 @@ import {
   deleteCategory,
 } from '../storage/worldContentLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
+import { idParamGuard } from './validateId.js';
 
 export function createWorldContentRouter({ textStore }) {
   const router = Router();
+  router.param('worldId', idParamGuard);
+  router.param('region', idParamGuard);
+  router.param('category', idParamGuard);
 
   router.get('/worlds/:worldId/source', asyncHandler(async (req, res) => {
     const raw = await getWorldSource(textStore, req.params.worldId);

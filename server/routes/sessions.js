@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { sessionKey, sessionNovelDocPath } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
+import { idParamGuard } from './validateId.js';
 
 function extractText(content) {
   return (content || [])
@@ -18,6 +19,7 @@ const NOVELIZE_SYSTEM_PROMPT =
 
 export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl = fetch }) {
   const router = Router();
+  router.param('id', idParamGuard);
 
   router.get('/sessions', asyncHandler(async (req, res) => {
     const keys = await dataStore.list('sessions');

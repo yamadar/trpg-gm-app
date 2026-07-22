@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { saveWorld, getWorld, listWorlds, deleteWorld } from '../storage/worldLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
+import { idParamGuard } from './validateId.js';
 
 export function createWorldsRouter({ dataStore, textStore }) {
   const router = Router();
+  router.param('id', idParamGuard);
 
   router.get('/worlds', asyncHandler(async (req, res) => {
     res.json(await listWorlds(dataStore));

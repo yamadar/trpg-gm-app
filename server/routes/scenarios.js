@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { saveScenario, getScenario, listScenarios, deleteScenario } from '../storage/scenarioLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
+import { idParamGuard } from './validateId.js';
 
 export function createScenariosRouter({ dataStore, textStore }) {
   const router = Router();
+  router.param('worldId', idParamGuard);
+  router.param('id', idParamGuard);
 
   router.get('/worlds/:worldId/scenarios', asyncHandler(async (req, res) => {
     res.json(await listScenarios(dataStore, req.params.worldId));

@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { saveRuleset, getRuleset, listRulesets, deleteRuleset } from '../storage/rulesetLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
+import { idParamGuard } from './validateId.js';
 
 export function createRulesetsRouter({ dataStore }) {
   const router = Router();
+  router.param('id', idParamGuard);
 
   router.get('/rulesets', asyncHandler(async (req, res) => {
     res.json(await listRulesets(dataStore));

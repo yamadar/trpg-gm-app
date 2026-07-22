@@ -59,4 +59,9 @@ describe('worlds routes', () => {
     expect(res.status).toBeGreaterThanOrEqual(500);
     expect(res.status).toBeLessThan(600);
   });
+
+  it('rejects a traversal id with 400', async () => {
+    const res = await request(app).get('/api/worlds/..%2F..%2Fescape');
+    expect(res.status).toBe(400);
+  });
 });
