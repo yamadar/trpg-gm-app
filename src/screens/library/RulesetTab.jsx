@@ -208,6 +208,7 @@ export default function RulesetTab() {
       <ConfirmModal
         open={deleteTarget !== null}
         message={`Ruleset「${deleteTarget}」を削除する。よいか?`}
+        confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />

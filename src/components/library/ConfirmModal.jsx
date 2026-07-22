@@ -2,7 +2,7 @@ import { COLORS, F_BODY } from '../../theme.js';
 import Card from '../ui/Card.jsx';
 import Button from '../ui/Button.jsx';
 
-export default function ConfirmModal({ open, message, onConfirm, onCancel }) {
+export default function ConfirmModal({ open, message, confirmDisabled, onConfirm, onCancel }) {
   if (!open) return null;
   return (
     <div
@@ -22,7 +22,7 @@ export default function ConfirmModal({ open, message, onConfirm, onCancel }) {
           <Button variant="ghost" onClick={onCancel}>
             キャンセル
           </Button>
-          <Button variant="brass" onClick={onConfirm}>
+          <Button variant="brass" onClick={onConfirm} disabled={confirmDisabled}>
             削除する
           </Button>
         </div>

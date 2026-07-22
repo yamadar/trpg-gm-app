@@ -226,6 +226,7 @@ export default function CharacterTab({ worldId }) {
       <ConfirmModal
         open={deleteTarget !== null}
         message={`Character「${deleteTarget}」を削除する。よいか?`}
+        confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />

@@ -22,4 +22,15 @@ describe('ConfirmModal', () => {
     fireEvent.click(screen.getByText('キャンセル'));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('disables the confirm button when confirmDisabled is true', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmModal open={true} message="削除しますか?" confirmDisabled onConfirm={onConfirm} onCancel={vi.fn()} />
+    );
+    const btn = screen.getByText('削除する');
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

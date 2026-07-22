@@ -363,6 +363,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       <ConfirmModal
         open={deleteTarget !== null}
         message={`World「${deleteTarget}」を削除する。よいか?`}
+        confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />

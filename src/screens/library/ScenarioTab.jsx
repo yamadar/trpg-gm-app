@@ -234,6 +234,7 @@ export default function ScenarioTab({ worldId }) {
       <ConfirmModal
         open={deleteTarget !== null}
         message={`Scenario「${deleteTarget}」を削除する。よいか?`}
+        confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
