@@ -26,6 +26,7 @@ function AppInner() {
   const [loadingHome, setLoadingHome] = useState(true);
   const [storageOk, setStorageOk] = useState(true);
   const [authError, setAuthError] = useState(false);
+  const [uploadingSessions, setUploadingSessions] = useState(false);
   const takeover = useSessionTakeover();
 
   useEffect(() => {
@@ -78,7 +79,13 @@ function AppInner() {
       <ConfirmModal
         open={takeover.pendingCount > 0}
         message={`このブラウザに保存されたセッション${takeover.pendingCount}件をアカウントに保存しますか?`}
-        onConfirm={takeover.confirm}
+        confirmLabel="保存する"
+        confirmDisabled={uploadingSessions}
+        onConfirm={async () => {
+          setUploadingSessions(true);
+          await takeover.confirm();
+          setUploadingSessions(false);
+        }}
         onCancel={takeover.dismiss}
       />
       {authError && (
