@@ -4,6 +4,7 @@ import Button from '../ui/Button.jsx';
 import Field from '../ui/Field.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { patchMe } from '../../api/authClient.js';
+import { navigateToUser } from '../../router/useHashRoute.js';
 import LoginModal from './LoginModal.jsx';
 
 const menuItemStyle = {
@@ -103,6 +104,15 @@ export default function AuthBar() {
             style={menuItemStyle}
             onClick={() => {
               setMenuOpen(false);
+              navigateToUser(user.id);
+            }}
+          >
+            自分のページ
+          </button>
+          <button
+            style={menuItemStyle}
+            onClick={() => {
+              setMenuOpen(false);
               setEditOpen(true);
             }}
           >
@@ -135,6 +145,7 @@ export default function AuthBar() {
 
 function ProfileEditModal({ user, onClose, onSaved }) {
   const [displayName, setDisplayName] = useState(user.displayName || '');
+  const [bio, setBio] = useState(user.bio ?? '');
   const [clearAvatar, setClearAvatar] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -143,7 +154,7 @@ function ProfileEditModal({ user, onClose, onSaved }) {
     setSaving(true);
     setError('');
     try {
-      const patch = { displayName };
+      const patch = { displayName, bio };
       if (clearAvatar) patch.avatarUrl = null;
       await patchMe(patch);
       await onSaved();
@@ -178,6 +189,14 @@ function ProfileEditModal({ user, onClose, onSaved }) {
             style={inputStyle}
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+          />
+        </Field>
+        <Field label="自己紹介" hint="他のユーザーの公開ページに表示される(最大500文字)">
+          <textarea
+            style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+            rows={4}
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
           />
         </Field>
         <label

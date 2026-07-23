@@ -3,7 +3,8 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { listPublic, getPublic } from '../api/shareClient.js';
-import PublicItemDetail, { publicMetaLine } from '../components/share/PublicItemDetail.jsx';
+import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
+import { navigateToUser } from '../router/useHashRoute.js';
 
 const TABS = [
   { key: 'novels', label: '小説' },
@@ -109,7 +110,27 @@ export default function Gallery({ onClose }) {
                     )}
                   </div>
                   <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginTop: 4 }}>
-                    {publicMetaLine(it)}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToUser(it.ownerId);
+                      }}
+                      style={{
+                        font: 'inherit',
+                        fontFamily: 'inherit',
+                        fontSize: 'inherit',
+                        color: 'inherit',
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      {it.ownerName}
+                    </button>
+                    {` ・ ${new Date(it.publishedAt).toLocaleDateString('ja-JP')}`}
                   </div>
                   {tab === 'scenarios' && it.recommendedRuleset && (
                     <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginTop: 4 }}>
@@ -141,7 +162,14 @@ export default function Gallery({ onClose }) {
           <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
         </div>
       ) : (
-        detail && <PublicItemDetail type={tab} item={detail} onBack={backToList} />
+        detail && (
+          <PublicItemDetail
+            type={tab}
+            item={detail}
+            onBack={backToList}
+            onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+          />
+        )
       )}
     </div>
   );

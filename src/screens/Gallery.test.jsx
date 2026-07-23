@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Gallery from './Gallery.jsx';
 import * as shareClient from '../api/shareClient.js';
@@ -10,6 +10,10 @@ const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
 
 beforeEach(() => {
   vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  window.location.hash = '';
 });
 
 describe('Gallery', () => {
@@ -329,6 +333,66 @@ describe('Gallery', () => {
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
     await waitFor(() => expect(screen.getByText('先に世界観を作成してください')).toBeInTheDocument());
+  });
+
+  it('navigates to the author page when a card author name is clicked, without opening the detail', async () => {
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
+      if (type === 'novels') {
+        return [
+          {
+            publicId: 'n1',
+            title: 'Epic Adventure',
+            ownerName: 'Henry',
+            ownerId: 'usr_henry',
+            publishedAt: PUBLISHED_AT,
+          },
+        ];
+      }
+      return [];
+    });
+    const getPublicSpy = vi.spyOn(shareClient, 'getPublic');
+    renderWithAuth(<Gallery onClose={vi.fn()} />);
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels'));
+    await screen.findByText('Epic Adventure');
+
+    fireEvent.click(screen.getByText('Henry'));
+
+    expect(window.location.hash).toBe('#/u/usr_henry');
+    expect(getPublicSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText('← 一覧に戻る')).not.toBeInTheDocument();
+    expect(screen.getByText('Epic Adventure')).toBeInTheDocument();
+  });
+
+  it('navigates to the author page from the detail view via onAuthorClick', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
+      if (type === 'worlds') {
+        return [
+          { publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'usr_alice', publishedAt: PUBLISHED_AT },
+        ];
+      }
+      return [];
+    });
+    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'p1',
+      title: 'World A',
+      ownerName: 'Alice',
+      ownerId: 'usr_alice',
+      publishedAt: PUBLISHED_AT,
+      raw: 'メイン本文',
+      regions: [],
+      categories: [],
+    });
+    renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('世界観'));
+    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('World A'));
+    await screen.findByText('メイン本文');
+
+    const alice = screen.getByText('Alice');
+    expect(alice.tagName).toBe('BUTTON');
+    fireEvent.click(alice);
+
+    expect(window.location.hash).toBe('#/u/usr_alice');
   });
 
   it('calls onClose when the close button is clicked', () => {

@@ -4,7 +4,10 @@ import { AuthContext } from '../../auth/AuthContext.jsx';
 import { renderWithAuth } from '../../test/renderWithAuth.jsx';
 import AuthBar from './AuthBar.jsx';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.location.hash = '';
+});
 
 function renderWithContext(value, ui = <AuthBar />) {
   return render(<AuthContext.Provider value={value}>{ui}</AuthContext.Provider>);
@@ -59,6 +62,17 @@ describe('AuthBar', () => {
     expect(container.querySelector('img')).toHaveAttribute('src', 'https://example.com/a.png');
   });
 
+  it('navigates to my own user page and closes the menu when "自分のページ" is clicked', () => {
+    renderWithAuth(<AuthBar />, {
+      user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
+    });
+    fireEvent.click(screen.getByText('テスト'));
+    fireEvent.click(screen.getByText('自分のページ'));
+
+    expect(window.location.hash).toBe('#/u/usr_test');
+    expect(screen.queryByText('ログアウト')).not.toBeInTheDocument();
+  });
+
   it('calls logout when the logout menu item is clicked', () => {
     const logout = vi.fn();
     renderWithContext({
@@ -92,8 +106,55 @@ describe('AuthBar', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     const [url, options] = f.mock.calls[0];
     expect(url).toBe('/api/me');
-    expect(JSON.parse(options.body)).toEqual({ displayName: '新しい名前' });
+    expect(JSON.parse(options.body)).toEqual({ displayName: '新しい名前', bio: '' });
     await waitFor(() => expect(screen.queryByText('保存')).toBeNull());
+  });
+
+  it('pre-fills the bio textarea with the user\'s current bio', () => {
+    const { container } = renderWithContext({
+      user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null, bio: '既存の自己紹介' },
+      loading: false,
+      refresh: vi.fn(),
+      logout: vi.fn(),
+    });
+    fireEvent.click(screen.getByText('テスト'));
+    fireEvent.click(screen.getByText('プロフィール編集'));
+
+    expect(container.querySelector('textarea').value).toBe('既存の自己紹介');
+  });
+
+  it('defaults the bio textarea to an empty string when the user has no bio', () => {
+    const { container } = renderWithContext({
+      user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
+      loading: false,
+      refresh: vi.fn(),
+      logout: vi.fn(),
+    });
+    fireEvent.click(screen.getByText('テスト'));
+    fireEvent.click(screen.getByText('プロフィール編集'));
+
+    expect(container.querySelector('textarea').value).toBe('');
+  });
+
+  it('includes the edited bio in the patchMe payload on save', async () => {
+    const refresh = vi.fn().mockResolvedValue();
+    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: {} }) });
+    vi.stubGlobal('fetch', f);
+    const { container } = renderWithContext({
+      user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null, bio: '' },
+      loading: false,
+      refresh,
+      logout: vi.fn(),
+    });
+    fireEvent.click(screen.getByText('テスト'));
+    fireEvent.click(screen.getByText('プロフィール編集'));
+
+    fireEvent.change(container.querySelector('textarea'), { target: { value: 'よろしくお願いします' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    const [, options] = f.mock.calls[0];
+    expect(JSON.parse(options.body)).toEqual({ displayName: 'テスト', bio: 'よろしくお願いします' });
   });
 
   it('clears the avatar when the checkbox is checked before saving', async () => {
@@ -113,7 +174,7 @@ describe('AuthBar', () => {
 
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     const [, options] = f.mock.calls[0];
-    expect(JSON.parse(options.body)).toEqual({ displayName: 'テスト', avatarUrl: null });
+    expect(JSON.parse(options.body)).toEqual({ displayName: 'テスト', bio: '', avatarUrl: null });
   });
 
   it('shows an error in the profile modal when saving fails, and keeps the modal open', async () => {
