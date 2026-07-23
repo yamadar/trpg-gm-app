@@ -83,4 +83,12 @@ describe('POST /messages', () => {
     expect(consume).toHaveBeenCalledWith(undefined, 'messages'); // req.userIdはスタブなしなのでundefined
     expect(fetchImpl).toHaveBeenCalled();
   });
+
+  it('returns an error status instead of hanging when usage.consume rejects', async () => {
+    const usage = { consume: vi.fn().mockRejectedValue(new Error('disk full')) };
+    buildApp({ usage, fetchImpl: vi.fn() });
+    const res = await request(app).post('/api/messages').send({ messages: [] });
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(res.body).toHaveProperty('error');
+  });
 });

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import { createApp } from '../../server/index.js';
+import { createTestUserSession } from '../../server/auth/testHelpers.js';
 import { putCharacter, getCharacter } from './characterLibraryClient.js';
 import { putWorld, putRegion, listRegions, deleteWorld } from './worldLibraryClient.js';
 
@@ -14,10 +15,14 @@ let app;
 beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fx5-integration-'));
   app = createApp({ apiKey: 'test-key', dataDir });
+  // ルーター配線に認証(requireAuth)が挟まったため、シムからの全リクエストに
+  // ログイン済みセッションのCookieを付与する(実クライアントはブラウザが
+  // 自動的にCookieを送るが、このシムは手動でヘッダーを組み立てているため)。
+  const { cookie } = await createTestUserSession(app.locals.dataStore);
   // 実クライアントは相対URLでglobal fetchを呼ぶ。supertestで実appへ往復させるシムに差し替える。
   vi.stubGlobal('fetch', async (url, options = {}) => {
     const method = (options.method || 'GET').toLowerCase();
-    let req = request(app)[method](url);
+    let req = request(app)[method](url).set('Cookie', cookie);
     if (options.headers) req = req.set(options.headers);
     if (options.body != null) req = req.send(options.body); // JSON文字列。Content-Typeは.setで設定済み
     const res = await req;
