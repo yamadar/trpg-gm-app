@@ -1,11 +1,4 @@
-async function apiFetch(url, options) {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
-  return res.json();
-}
+import { apiFetch } from './apiFetch.js';
 
 export async function putSessionToServer(session) {
   return apiFetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
@@ -21,4 +14,8 @@ export async function novelizeSession(id) {
 
 export async function getNovel(id) {
   return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel`, { method: 'GET' });
+}
+
+export async function listServerSessions() {
+  return apiFetch('/api/sessions');
 }
