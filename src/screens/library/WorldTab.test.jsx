@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import WorldTab from './WorldTab.jsx';
 import * as worldLibraryClient from '../../api/worldLibraryClient.js';
 import * as worldImport from '../../api/worldImport.js';
+import * as shareClient from '../../api/shareClient.js';
+import { renderWithAuth } from '../../test/renderWithAuth.jsx';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -307,5 +309,96 @@ describe('WorldTab', () => {
     // The epoch guard must discard w1's stale resolution; w2's visible edit stays intact.
     expect(screen.getByDisplayValue('w2の共有本文')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('w1の共有本文(stale)')).not.toBeInTheDocument();
+  });
+
+  describe('publish controls', () => {
+    it('does not render publish controls or fetch published state when logged out', async () => {
+      const publishedSpy = vi.spyOn(shareClient, 'publishedWorlds');
+      render(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId={null}
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn()}
+        />
+      );
+      expect(screen.getByText('Waterdeep')).toBeInTheDocument();
+      expect(screen.queryByText('公開')).not.toBeInTheDocument();
+      expect(publishedSpy).not.toHaveBeenCalled();
+    });
+
+    it('shows a 公開中 badge for a published world and a 公開 button for an unpublished one', async () => {
+      vi.spyOn(shareClient, 'publishedWorlds').mockResolvedValue({ w1: 'pub-w1' });
+      renderWithAuth(
+        <WorldTab
+          worlds={[
+            { id: 'w1', title: 'Waterdeep', updatedAt: 1 },
+            { id: 'w2', title: 'Neverwinter', updatedAt: 2 },
+          ]}
+          selectedWorldId={null}
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.getByText('再公開')).toBeInTheDocument();
+      expect(screen.getByText('公開解除')).toBeInTheDocument();
+      expect(screen.getAllByText('公開')).toHaveLength(1);
+    });
+
+    it('clicking 公開 calls publishWorld with the world id and flips to the badge', async () => {
+      vi.spyOn(shareClient, 'publishedWorlds').mockResolvedValue({});
+      const publishSpy = vi.spyOn(shareClient, 'publishWorld').mockResolvedValue({ publicId: 'pub-w1' });
+      renderWithAuth(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId={null}
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(shareClient.publishedWorlds).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('公開'));
+
+      await waitFor(() => expect(publishSpy).toHaveBeenCalledWith('w1'));
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.queryByText('公開')).not.toBeInTheDocument();
+    });
+
+    it('clicking 公開解除 calls unpublishWorld and removes the badge', async () => {
+      vi.spyOn(shareClient, 'publishedWorlds').mockResolvedValue({ w1: 'pub-w1' });
+      const unpublishSpy = vi.spyOn(shareClient, 'unpublishWorld').mockResolvedValue();
+      renderWithAuth(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId={null}
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('公開解除'));
+
+      await waitFor(() => expect(unpublishSpy).toHaveBeenCalledWith('w1'));
+      await waitFor(() => expect(screen.queryByText('公開中')).not.toBeInTheDocument());
+      expect(screen.getByText('公開')).toBeInTheDocument();
+    });
+
+    it('shows an error message when publishWorld fails', async () => {
+      vi.spyOn(shareClient, 'publishedWorlds').mockResolvedValue({});
+      vi.spyOn(shareClient, 'publishWorld').mockRejectedValue(new Error('boom'));
+      renderWithAuth(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId={null}
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn()}
+        />
+      );
+      await waitFor(() => expect(shareClient.publishedWorlds).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('公開'));
+
+      await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
+    });
   });
 });

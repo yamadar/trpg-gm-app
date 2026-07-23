@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, inputStyle } from '../../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../../theme.js';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Field from '../../components/ui/Field.jsx';
 import ConfirmModal from '../../components/library/ConfirmModal.jsx';
 import { getCharacter, putCharacter, listCharacters, deleteCharacter } from '../../api/characterLibraryClient.js';
+import {
+  publishCharacter,
+  unpublishCharacter,
+  publishedCharacters as fetchPublishedCharacters,
+} from '../../api/shareClient.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 export default function CharacterTab({ worldId }) {
+  const { user } = useAuth();
+  const [publishedCharacterIds, setPublishedCharacterIds] = useState({});
   const [kind, setKind] = useState('pc');
   const [characters, setCharacters] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -57,6 +65,55 @@ export default function CharacterTab({ worldId }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName]);
+
+  useEffect(() => {
+    if (!user || !worldId) {
+      setPublishedCharacterIds({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await fetchPublishedCharacters(worldId, kind);
+        if (!cancelled) setPublishedCharacterIds(map);
+      } catch (e) {
+        if (!cancelled) setError('公開状態の取得に失敗した: ' + e.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId, kind, user]);
+
+  async function handlePublishCharacter(name) {
+    setBusy(true);
+    setError('');
+    try {
+      const { publicId } = await publishCharacter(worldId, kind, name);
+      setPublishedCharacterIds((prev) => ({ ...prev, [name]: publicId }));
+    } catch (e) {
+      setError('公開に失敗した: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnpublishCharacter(name) {
+    setBusy(true);
+    setError('');
+    try {
+      await unpublishCharacter(worldId, kind, name);
+      setPublishedCharacterIds((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    } catch (e) {
+      setError('公開解除に失敗した: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreate() {
     setBusy(true);
@@ -152,13 +209,32 @@ export default function CharacterTab({ worldId }) {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{c.name}</div>
-              {kind === 'npc' && (
-                <span
-                  style={{ fontFamily: F_DISPLAY, fontSize: 11, color: c.revealed ? COLORS.brassDark : COLORS.faint }}
-                >
-                  {c.revealed ? '開示済み' : '未開示'}
-                </span>
-              )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                {kind === 'npc' && (
+                  <span
+                    style={{ fontFamily: F_DISPLAY, fontSize: 11, color: c.revealed ? COLORS.brassDark : COLORS.faint }}
+                  >
+                    {c.revealed ? '開示済み' : '未開示'}
+                  </span>
+                )}
+                {user && (
+                  publishedCharacterIds[c.name] ? (
+                    <>
+                      <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>公開中</span>
+                      <Button variant="ghost" onClick={() => handlePublishCharacter(c.name)} disabled={busy}>
+                        再公開
+                      </Button>
+                      <Button variant="ghost" onClick={() => handleUnpublishCharacter(c.name)} disabled={busy}>
+                        公開解除
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" onClick={() => handlePublishCharacter(c.name)} disabled={busy}>
+                      公開
+                    </Button>
+                  )
+                )}
+              </div>
             </div>
           </Card>
         ))}

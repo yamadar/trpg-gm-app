@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import CharacterTab from './CharacterTab.jsx';
 import * as characterLibraryClient from '../../api/characterLibraryClient.js';
+import * as shareClient from '../../api/shareClient.js';
+import { renderWithAuth } from '../../test/renderWithAuth.jsx';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -99,5 +101,68 @@ describe('CharacterTab', () => {
 
     expect(screen.getByDisplayValue('bobの本文')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('aliceの本文(stale)')).not.toBeInTheDocument();
+  });
+
+  describe('publish controls', () => {
+    beforeEach(() => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+        { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
+        { id: 'w1/pc/bob', worldId: 'w1', kind: 'pc', name: 'bob', revealed: null },
+      ]);
+    });
+
+    it('does not render publish controls or fetch published state when logged out', async () => {
+      const publishedSpy = vi.spyOn(shareClient, 'publishedCharacters');
+      render(<CharacterTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+      expect(screen.queryByText('公開')).not.toBeInTheDocument();
+      expect(publishedSpy).not.toHaveBeenCalled();
+    });
+
+    it('shows a 公開中 badge for a published character and a 公開 button for an unpublished one', async () => {
+      vi.spyOn(shareClient, 'publishedCharacters').mockResolvedValue({ alice: 'pub-alice' });
+      renderWithAuth(<CharacterTab worldId="w1" />);
+
+      await waitFor(() => expect(shareClient.publishedCharacters).toHaveBeenCalledWith('w1', 'pc'));
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.getByText('再公開')).toBeInTheDocument();
+      expect(screen.getByText('公開解除')).toBeInTheDocument();
+      expect(screen.getAllByText('公開')).toHaveLength(1);
+    });
+
+    it('clicking 公開 calls publishCharacter with worldId/kind/name and flips to the badge', async () => {
+      vi.spyOn(shareClient, 'publishedCharacters').mockResolvedValue({});
+      const publishSpy = vi.spyOn(shareClient, 'publishCharacter').mockResolvedValue({ publicId: 'pub-alice' });
+      renderWithAuth(<CharacterTab worldId="w1" />);
+
+      await waitFor(() => expect(screen.getAllByText('公開')).toHaveLength(2));
+      fireEvent.click(screen.getAllByText('公開')[0]);
+
+      await waitFor(() => expect(publishSpy).toHaveBeenCalledWith('w1', 'pc', 'alice'));
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.getAllByText('公開')).toHaveLength(1);
+    });
+
+    it('clicking 公開解除 calls unpublishCharacter and removes the badge', async () => {
+      vi.spyOn(shareClient, 'publishedCharacters').mockResolvedValue({ alice: 'pub-alice' });
+      const unpublishSpy = vi.spyOn(shareClient, 'unpublishCharacter').mockResolvedValue();
+      renderWithAuth(<CharacterTab worldId="w1" />);
+
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('公開解除'));
+
+      await waitFor(() => expect(unpublishSpy).toHaveBeenCalledWith('w1', 'pc', 'alice'));
+      await waitFor(() => expect(screen.queryByText('公開中')).not.toBeInTheDocument());
+      expect(screen.getAllByText('公開')).toHaveLength(2);
+    });
+
+    it('refetches the published-state map for the new kind when switching PC/NPC', async () => {
+      const publishedSpy = vi.spyOn(shareClient, 'publishedCharacters').mockResolvedValue({});
+      renderWithAuth(<CharacterTab worldId="w1" />);
+      await waitFor(() => expect(publishedSpy).toHaveBeenCalledWith('w1', 'pc'));
+
+      fireEvent.click(screen.getByText('NPC'));
+      await waitFor(() => expect(publishedSpy).toHaveBeenCalledWith('w1', 'npc'));
+    });
   });
 });

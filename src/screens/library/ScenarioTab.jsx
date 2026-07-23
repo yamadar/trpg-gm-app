@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, inputStyle } from '../../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../../theme.js';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Field from '../../components/ui/Field.jsx';
 import ConfirmModal from '../../components/library/ConfirmModal.jsx';
 import { getScenario, putScenario, listScenarios, deleteScenario } from '../../api/scenarioLibraryClient.js';
+import {
+  publishScenario,
+  unpublishScenario,
+  publishedScenarios as fetchPublishedScenarios,
+} from '../../api/shareClient.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 export default function ScenarioTab({ worldId }) {
+  const { user } = useAuth();
+  const [publishedScenarioIds, setPublishedScenarioIds] = useState({});
   const [scenarios, setScenarios] = useState([]);
   const [creating, setCreating] = useState(false);
   const [newId, setNewId] = useState('');
@@ -59,6 +67,55 @@ export default function ScenarioTab({ worldId }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!user || !worldId) {
+      setPublishedScenarioIds({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await fetchPublishedScenarios(worldId);
+        if (!cancelled) setPublishedScenarioIds(map);
+      } catch (e) {
+        if (!cancelled) setError('公開状態の取得に失敗した: ' + e.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [worldId, user]);
+
+  async function handlePublishScenario(scenarioId) {
+    setBusy(true);
+    setError('');
+    try {
+      const { publicId } = await publishScenario(worldId, scenarioId);
+      setPublishedScenarioIds((prev) => ({ ...prev, [scenarioId]: publicId }));
+    } catch (e) {
+      setError('公開に失敗した: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnpublishScenario(scenarioId) {
+    setBusy(true);
+    setError('');
+    try {
+      await unpublishScenario(worldId, scenarioId);
+      setPublishedScenarioIds((prev) => {
+        const next = { ...prev };
+        delete next[scenarioId];
+        return next;
+      });
+    } catch (e) {
+      setError('公開解除に失敗した: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreate() {
     setBusy(true);
@@ -149,9 +206,35 @@ export default function ScenarioTab({ worldId }) {
             }}
             style={{ cursor: 'pointer', borderColor: selectedId === s.id ? COLORS.brass : COLORS.line }}
           >
-            <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{s.title}</div>
-            <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
-              推奨ルール: {s.recommendedRuleset || '未設定'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{s.title}</div>
+                <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
+                  推奨ルール: {s.recommendedRuleset || '未設定'}
+                </div>
+              </div>
+              {user && (
+                <div
+                  style={{ display: 'flex', gap: 6, alignItems: 'center' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {publishedScenarioIds[s.id] ? (
+                    <>
+                      <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>公開中</span>
+                      <Button variant="ghost" onClick={() => handlePublishScenario(s.id)} disabled={busy}>
+                        再公開
+                      </Button>
+                      <Button variant="ghost" onClick={() => handleUnpublishScenario(s.id)} disabled={busy}>
+                        公開解除
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" onClick={() => handlePublishScenario(s.id)} disabled={busy}>
+                      公開
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
         ))}

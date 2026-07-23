@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, inputStyle } from '../../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../../theme.js';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Field from '../../components/ui/Field.jsx';
@@ -16,8 +16,12 @@ import {
   getCategory,
 } from '../../api/worldLibraryClient.js';
 import { importWorld, reimportWorld } from '../../api/worldImport.js';
+import { publishWorld, unpublishWorld, publishedWorlds as fetchPublishedWorlds } from '../../api/shareClient.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
+  const { user } = useAuth();
+  const [publishedWorldIds, setPublishedWorldIds] = useState({});
   const [creating, setCreating] = useState(false);
   const [newId, setNewId] = useState('');
   const [newTitle, setNewTitle] = useState('');
@@ -76,6 +80,55 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       cancelled = true;
     };
   }, [selectedWorldId]);
+
+  useEffect(() => {
+    if (!user) {
+      setPublishedWorldIds({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await fetchPublishedWorlds();
+        if (!cancelled) setPublishedWorldIds(map);
+      } catch (e) {
+        if (!cancelled) setError('公開状態の取得に失敗した: ' + e.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  async function handlePublishWorld(worldId) {
+    setBusy(true);
+    setError('');
+    try {
+      const { publicId } = await publishWorld(worldId);
+      setPublishedWorldIds((prev) => ({ ...prev, [worldId]: publicId }));
+    } catch (e) {
+      setError('公開に失敗した: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnpublishWorld(worldId) {
+    setBusy(true);
+    setError('');
+    try {
+      await unpublishWorld(worldId);
+      setPublishedWorldIds((prev) => {
+        const next = { ...prev };
+        delete next[worldId];
+        return next;
+      });
+    } catch (e) {
+      setError('公開解除に失敗した: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreate() {
     setBusy(true);
@@ -227,7 +280,31 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
             }}
             style={{ cursor: 'pointer', borderColor: selectedWorldId === w.id ? COLORS.brass : COLORS.line }}
           >
-            <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
+              {user && (
+                <div
+                  style={{ display: 'flex', gap: 6, alignItems: 'center' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {publishedWorldIds[w.id] ? (
+                    <>
+                      <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>公開中</span>
+                      <Button variant="ghost" onClick={() => handlePublishWorld(w.id)} disabled={busy}>
+                        再公開
+                      </Button>
+                      <Button variant="ghost" onClick={() => handleUnpublishWorld(w.id)} disabled={busy}>
+                        公開解除
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" onClick={() => handlePublishWorld(w.id)} disabled={busy}>
+                      公開
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </Card>
         ))}
         {worlds.length === 0 && (

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ScenarioTab from './ScenarioTab.jsx';
 import * as scenarioLibraryClient from '../../api/scenarioLibraryClient.js';
+import * as shareClient from '../../api/shareClient.js';
+import { renderWithAuth } from '../../test/renderWithAuth.jsx';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -98,5 +100,59 @@ describe('ScenarioTab', () => {
 
     expect(screen.getByDisplayValue('sc2の本文')).toBeInTheDocument();
     expect(screen.queryByDisplayValue('sc1の本文(stale)')).not.toBeInTheDocument();
+  });
+
+  describe('publish controls', () => {
+    beforeEach(() => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+        { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: 'coc7e' },
+        { id: 'sc2', worldId: 'w1', title: '呪われた宝石', recommendedRuleset: null },
+      ]);
+    });
+
+    it('does not render publish controls or fetch published state when logged out', async () => {
+      const publishedSpy = vi.spyOn(shareClient, 'publishedScenarios');
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+      expect(screen.queryByText('公開')).not.toBeInTheDocument();
+      expect(publishedSpy).not.toHaveBeenCalled();
+    });
+
+    it('shows a 公開中 badge for a published scenario and a 公開 button for an unpublished one', async () => {
+      vi.spyOn(shareClient, 'publishedScenarios').mockResolvedValue({ sc1: 'pub-sc1' });
+      renderWithAuth(<ScenarioTab worldId="w1" />);
+
+      await waitFor(() => expect(shareClient.publishedScenarios).toHaveBeenCalledWith('w1'));
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.getByText('再公開')).toBeInTheDocument();
+      expect(screen.getByText('公開解除')).toBeInTheDocument();
+      expect(screen.getAllByText('公開')).toHaveLength(1);
+    });
+
+    it('clicking 公開 calls publishScenario with worldId/scenarioId and flips to the badge', async () => {
+      vi.spyOn(shareClient, 'publishedScenarios').mockResolvedValue({});
+      const publishSpy = vi.spyOn(shareClient, 'publishScenario').mockResolvedValue({ publicId: 'pub-sc1' });
+      renderWithAuth(<ScenarioTab worldId="w1" />);
+
+      await waitFor(() => expect(screen.getAllByText('公開')).toHaveLength(2));
+      fireEvent.click(screen.getAllByText('公開')[0]);
+
+      await waitFor(() => expect(publishSpy).toHaveBeenCalledWith('w1', 'sc1'));
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.getAllByText('公開')).toHaveLength(1);
+    });
+
+    it('clicking 公開解除 calls unpublishScenario and removes the badge', async () => {
+      vi.spyOn(shareClient, 'publishedScenarios').mockResolvedValue({ sc1: 'pub-sc1' });
+      const unpublishSpy = vi.spyOn(shareClient, 'unpublishScenario').mockResolvedValue();
+      renderWithAuth(<ScenarioTab worldId="w1" />);
+
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('公開解除'));
+
+      await waitFor(() => expect(unpublishSpy).toHaveBeenCalledWith('w1', 'sc1'));
+      await waitFor(() => expect(screen.queryByText('公開中')).not.toBeInTheDocument());
+      expect(screen.getAllByText('公開')).toHaveLength(2);
+    });
   });
 });
