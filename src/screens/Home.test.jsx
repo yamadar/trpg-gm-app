@@ -43,9 +43,21 @@ describe('Home', () => {
 
   it('calls onOpenLibrary when the library button is clicked', () => {
     const onOpenLibrary = vi.fn();
-    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={onOpenLibrary} />);
+    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={onOpenLibrary} onOpenGallery={vi.fn()} />);
     fireEvent.click(screen.getByText('素材ライブラリ'));
     expect(onOpenLibrary).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the public gallery button and calls onOpenGallery when clicked, even when logged out', () => {
+    const onOpenGallery = vi.fn();
+    renderWithAuth(
+      <Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onOpenGallery={onOpenGallery} />,
+      { user: null }
+    );
+    const button = screen.getByText('公開ギャラリー');
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    expect(onOpenGallery).toHaveBeenCalledTimes(1);
   });
 
   it('novelizes a session and triggers a file download when "小説化" is clicked, without navigating into the session', async () => {

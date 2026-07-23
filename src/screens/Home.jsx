@@ -17,7 +17,7 @@ export function sanitizeFilename(title) {
   return trimmed.length > 0 ? cleaned : 'session';
 }
 
-export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary }) {
+export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery }) {
   const { user } = useAuth();
   const [novelizing, setNovelizing] = useState({});
   const [novelizeError, setNovelizeError] = useState({});
@@ -101,6 +101,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         </Button>
         <Button variant="ghost" onClick={onOpenLibrary}>
           素材ライブラリ
+        </Button>
+        <Button variant="ghost" onClick={onOpenGallery}>
+          公開ギャラリー
         </Button>
       </div>
 

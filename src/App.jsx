@@ -5,6 +5,7 @@ import Home from './screens/Home.jsx';
 import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
 import Library from './screens/Library.jsx';
+import Gallery from './screens/Gallery.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
 import AuthBar from './components/auth/AuthBar.jsx';
@@ -20,7 +21,7 @@ export default function App() {
 
 function AppInner() {
   useGoogleFonts();
-  const [view, setView] = useState('home'); // home | setup | library | play
+  const [view, setView] = useState('home'); // home | setup | library | gallery | play
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [loadingHome, setLoadingHome] = useState(true);
@@ -114,10 +115,12 @@ function AppInner() {
             onNew={() => setView('setup')}
             onContinue={handleContinue}
             onOpenLibrary={() => setView('library')}
+            onOpenGallery={() => setView('gallery')}
           />
         ))}
       {view === 'setup' && <Setup onStart={handleStart} onCancel={() => setView('home')} />}
       {view === 'library' && <Library onClose={() => setView('home')} />}
+      {view === 'gallery' && <Gallery onClose={() => setView('home')} />}
       {view === 'play' && session && (
         <Play session={session} setSession={setSession} onExit={handleExit} />
       )}

@@ -34,6 +34,29 @@ describe('App', () => {
     vi.unstubAllGlobals();
   });
 
+  it('navigates to the public gallery screen and back, without requiring login', async () => {
+    // ギャラリーは未ログインでも閲覧できる想定なので、/api/meは未ログイン(userなし)を返す。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: null }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('公開ギャラリー'));
+    await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText('閉じる'));
+    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+
+    vi.unstubAllGlobals();
+  });
+
   it('shows an auth error banner when the URL has auth_error=1 and strips the query param', async () => {
     window.history.pushState({}, '', '/?auth_error=1');
     render(<App />);
