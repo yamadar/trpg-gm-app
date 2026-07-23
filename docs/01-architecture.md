@@ -40,9 +40,13 @@
 │    のサーバーサイドセッション                │
 │  - 全APIは要認証で`users/{userId}`名前空間   │
 │    (例外: `/auth/*`・`GET /api/auth/providers`│
-│    ・`GET /api/me`は認証不要)                │
+│    ・`GET /api/me`・`GET /api/public/*`は     │
+│    認証不要)                                 │
 │  - AI呼び出し(messages/novelize)はユーザー   │
 │    単位の日次利用制限(超過時429)             │
+│  - 公開スナップショットストアと公開ギャラリー │
+│    API(認証不要の公開読み取り、公開/解除、    │
+│    コピーインポート)                          │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
@@ -63,6 +67,6 @@
 ## デプロイ形態
 
 - フロントエンド: Vite + ReactによるSPA。ブラウザのIndexedDBにセッションを永続化する(詳細は[04-persistence.md](04-persistence.md))。
-- バックエンド: Expressサーバー。Anthropic APIキーをサーバー環境変数として保持し、`/api/messages`はフロントエンドの代わりにAPIを呼び出す単純な中継だが、小説化(novelize)と素材ライブラリ(World/Character/Scenario/Ruleset)のCRUDは独自のビジネスロジックを持つ。サーバー側の永続化抽象化(dataStore/textStore)も担う。加えて、Google/Discord/XのOAuth 2.0(PKCE)によるソーシャルログインとhttpOnlyクッキーベースのサーバーサイドセッションを実装し、`/auth/*`・`GET /api/auth/providers`・`GET /api/me`を除く全`/api/*`ルートを認証必須にしている(`server/auth/`配下)。
+- バックエンド: Expressサーバー。Anthropic APIキーをサーバー環境変数として保持し、`/api/messages`はフロントエンドの代わりにAPIを呼び出す単純な中継だが、小説化(novelize)と素材ライブラリ(World/Character/Scenario/Ruleset)のCRUDは独自のビジネスロジックを持つ。サーバー側の永続化抽象化(dataStore/textStore)も担う。加えて、Google/Discord/XのOAuth 2.0(PKCE)によるソーシャルログインとhttpOnlyクッキーベースのサーバーサイドセッションを実装し、`/auth/*`・`GET /api/auth/providers`・`GET /api/me`・`GET /api/public/*`を除く全`/api/*`ルートを認証必須にしている(`server/auth/`配下)。加えて、公開スナップショットストア(`public/...`名前空間、`server/storage/shareLibrary.js`)と公開ギャラリーAPI(`server/routes/publicContent.js`・`publish.js`・`imports.js`)を持つ。認証不要の公開読み取り(`GET /api/public/*`)、ユーザー自身の素材の公開/解除(`POST`・`DELETE /api/publish/*`、認証必須)、他ユーザーが公開した素材を自分のライブラリへ独立コピーとして取り込むインポート(`POST /api/import/*`、認証必須)の3系統からなる。
 - 環境変数`BASE_URL`(OAuthのredirect_uriおよびCSRF目的のOrigin検証の基準URL)と`DATA_DIR`(dataStore/textStoreの永続化先ディレクトリ)を前提とする。本番運用ではプラットフォームの永続ディスクを`DATA_DIR`にマウントする(ファイルシステムベースの実装のため、再起動やデプロイでディスクが失われるとユーザー・セッション・素材データも失われる)。プロキシ/ロードバランサ配下での実行を想定し`app.set('trust proxy', 1)`を設定している。
 - 開発時は単一の`package.json`から`concurrently`でフロントエンド(Vite dev server)とバックエンド(Express)を同時起動する。

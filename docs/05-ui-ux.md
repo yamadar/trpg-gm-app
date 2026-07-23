@@ -59,6 +59,16 @@ World/Scenario/PCとも「既存を選ぶ」はWorldを選択している場合�
 ### 14.3 素材ライブラリ画面(`src/screens/Library.jsx`)
 World/Character(PC・NPC)/Scenario/Rulesetの4タブ(**Campaignタブは無い**。Campaign自体が未実装、02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。
 
-- Worldタブ: World本文に加え、region/category(地域/カテゴリ)への分割結果を一覧表示し、個別に内容の閲覧・編集ができる(内部実装用語だが、素材管理者向けに公開されている)。
+- Worldタブ: World本文に加え、region/category(地域/カテゴリ)への分割結果を一覧表示し、個別に内容の閲覧・編集ができる(内部実装用語だが、素材管理者向けに公開されている)。World・Character(PC/NPC)・Scenarioの各タブには「公開」/「公開中(再公開)」/「公開解除」ボタンがあり(`src/screens/library/WorldTab.jsx`・`CharacterTab.jsx`・`ScenarioTab.jsx`)、`shareClient.js`経由で`POST`/`DELETE /api/publish/*`を呼ぶ(Phase 2で追加。公開状態は`GET /api/publish/*`で取得しバッジ表示する)。
 - Characterタブ: PC/NPCの切り替えタブを持つ。NPCタブのみ`revealed`状態(開示済み/未開示)の一覧表示を含む(GM専用情報の管理を明示化するため)。
-- Scenarioタブ・Rulesetタブ: それぞれ本文/hint・growthUnit等を編集できる。
+- Scenarioタブ・Rulesetタブ: それぞれ本文/hint・growthUnit等を編集できる(Rulesetタブに公開機能は無い)。
+
+### 14.4 公開ギャラリー画面(`src/screens/Gallery.jsx`)
+
+Phase 2で追加。ホーム画面から遷移し、「小説」「世界観」「キャラクター」「シナリオ」の4タブでユーザーが公開した素材を横断的に閲覧できる。
+
+- 一覧はタブごとに`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼び、公開日時降順のカードを表示(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
+- カードをクリックすると詳細表示(`GET /api/public/:type/:publicId`)に切り替わり、本文(worldsはregion/category本文も含む)を表示する。
+- 詳細表示では(小説タブを除き)「ライブラリに追加」ボタンからインポートできる(`importWorld`/`importCharacter`/`importScenario`、`POST /api/import/*`)。World以外はインポート先Worldを選ぶピッカーダイアログを表示する(`listWorlds`でユーザー自身のWorld一覧を取得)。**未ログイン時はボタンの代わりに「追加にはログインが必要です」という案内を表示**する(インポートAPIは認証必須のため)。
+
+素材の「公開」自体はこの画面ではなく、ホーム画面(14.1節、セッション=小説)と素材ライブラリ画面(14.3節、World/Character/Scenario)の各素材カードに公開/解除ボタンとして実装されている。ホーム画面には公開ギャラリーへの導線ボタンもある(`Home.jsx`)。

@@ -26,6 +26,16 @@
 - **`users/{userId}/profile`**: ユーザープロフィール(`server/auth/users.js`の`userProfileKey`)。`{ id, displayName, avatarUrl, createdAt, updatedAt }`。`GET/PATCH /api/me`で参照・更新する。
 - **`users/{userId}/usage/{YYYY-MM-DD}`**: ユーザー・日(UTC日付)単位のAI呼び出し回数カウンタ(`server/auth/usage.js`の`usageKey`)。`{ messages: n, novelize: n }`形式で、`LIMIT_MESSAGES_PER_DAY`/`LIMIT_NOVELIZE_PER_DAY`(環境変数、既定200/10)を超えると`429`を返す。
 
+### 公開(共有)関連のキー構造(`server/storage/paths.js`, `server/storage/shareLibrary.js`)
+
+Phase 2で追加された「公開ギャラリー」機能は、ユーザー名前空間の外側にある**公開ツリー`public/...`**と、各ユーザー名前空間内の**公開状態マッピング`users/{userId}/publish/...`**の2つのキー空間からなる。公開は素材の**コピー**であり、公開元(`users/{userId}/...`)や他ユーザーのインポート結果とは独立に読み書きされる(参照ではない)。
+
+- **`public/{type}/{publicId}`**(`dataStore`、`publicMetaKey`): 公開メタ情報。`type`は`worlds`/`characters`/`scenarios`/`novels`のいずれか、`publicId`は公開時に採番される`pub_`プレフィックス+ランダム12桁hexのID(`newPublicId`)。共通フィールドは`{ publicId, ownerId, ownerName, publishedAt, updatedAt }`で、`publishedAt`は初回公開時刻を再公開後も維持し`updatedAt`のみ更新する。`type`別の追加フィールド: worlds=`{ title, regions, categories }`(region/category名の配列)、characters=`{ title, kind, name }`、scenarios=`{ title, recommendedRuleset }`、novels=`{ title }`。
+- **`public/worlds/{publicId}/world.md`・`/regions/{region}.md`・`/categories/{category}.md`**、**`public/characters/{publicId}/sheet.md`**、**`public/scenarios/{publicId}/scenario.md`**、**`public/novels/{publicId}/novel.md`**(`textStore`): 公開Markdown本文一式。World再公開時は対象ディレクトリを`textStore.deleteDir`で一度削除してから書き直すため、再公開後に削除されたregion/categoryの残骸は残らない。
+- **`users/{userId}/publish/worlds/{worldId}`**・**`users/{userId}/publish/worlds/{worldId}/characters/{kind}/{name}`**・**`users/{userId}/publish/worlds/{worldId}/scenarios/{scenarioId}`**・**`users/{userId}/publish/sessions/{sessionId}`**(`dataStore`): 「このユーザーのこの素材は公開済みか」を示すマッピングで、値は`{ publicId }`のみ。再公開時は既存の`publicId`を引き継ぐ(同じ公開ページが上書き更新される)ため、マッピングが無いときだけ新規`publicId`を採番する。
+- 公開解除(`unpublishWorld`/`unpublishCharacter`/`unpublishScenario`/`unpublishNovel`)はマッピングと`public/{type}/{publicId}`のメタ・本文一式を削除するのみ。他ユーザーが既にインポートしたコピー(`users/{別のuserId}/...`配下)には一切影響しない。
+- World削除時のカスケード(`unpublishWorldCascade`、`server/routes/worlds.js`の`DELETE /api/worlds/:id`から呼ばれる)は、配下の公開済みCharacter(pc/npc)・Scenarioを先に解除してからWorld自体の公開を解除する。
+
 ### サーバーAPIサーフェス(`server/routes/*.js`, `server/auth/routes.js`)
 
 - **auth**: `GET /auth/:provider/start`(OAuth開始・PKCEのcode_verifier発行・stateをクッキーに保持してプロバイダへリダイレクト)、`GET /auth/:provider/callback`(コールバック。state検証・コード交換・プロフィール取得・ユーザー作成/取得・セッション発行後`/`へリダイレクト)、`POST /auth/logout`(セッション破棄)。いずれも認証不要。
@@ -36,7 +46,10 @@
 - **characters**: `GET /api/worlds/:worldId/characters/:kind`(一覧、kindはpc/npc)、`GET/PUT/DELETE /api/worlds/:worldId/characters/:kind/:name`、`PUT /api/worlds/:worldId/characters/:kind/:name/parsed`(goal/bonds構造化キャッシュの保存)
 - **scenarios**: `GET /api/worlds/:worldId/scenarios`、`GET/PUT/DELETE /api/worlds/:worldId/scenarios/:id`
 - **rulesets**: `GET /api/rulesets`、`GET/PUT/DELETE /api/rulesets/:id`
-- **認証必須・利用制限**: 上記の`sessions`/`worlds`/`worldContent`/`characters`/`scenarios`/`rulesets`および`POST /api/messages`は`createRequireAuth`ミドルウェア(`server/auth/middleware.js`)を通り、有効なセッションクッキーがなければ`401`を返す(`/auth/*`・`GET /api/auth/providers`・`GET /api/me`のみ例外)。加えて`POST /api/messages`と`POST /api/sessions/:id/novelize`はユーザー単位の日次利用制限に達すると`429`を返す(`server/auth/usage.js`)。またミューテーション系メソッド(POST/PUT/PATCH/DELETE)は`Origin`ヘッダが`BASE_URL`と一致しない場合`403`(`createOriginCheck`、CSRF対策)。
+- **public(公開ギャラリー閲覧、`server/routes/publicContent.js`)**: `GET /api/public/:type`(`type`は`worlds`/`characters`/`scenarios`/`novels`のいずれか。未知の`type`は`404`。公開メタの一覧を`publishedAt`降順で返す)、`GET /api/public/:type/:publicId`(個別詳細。worldsのみregion/category本文も含めて返す。`type`または`publicId`が不明なら`404`)。**いずれも認証不要**(`server/index.js`で`authRouter`の直後・`requireAuth`より前にマウントされ、未ログインでもギャラリー閲覧ができる)。
+- **publish(公開/解除、`server/routes/publish.js`)**: `POST /api/publish/worlds/:worldId`・`POST /api/publish/worlds/:worldId/characters/:kind/:name`・`POST /api/publish/worlds/:worldId/scenarios/:scenarioId`・`POST /api/publish/sessions/:sessionId/novel`(公開または再公開し、成功時`{ publicId }`を返す。対象素材が存在しなければ`404`、小説が未生成なら`409`)。対応する`DELETE /api/publish/worlds/:worldId`等(公開解除、成功時`204`)。`GET /api/publish/worlds`・`GET /api/publish/worlds/:worldId/characters/:kind`・`GET /api/publish/worlds/:worldId/scenarios`・`GET /api/publish/sessions`(呼び出しユーザー自身の公開状態マップ`{ 素材名: publicId }`を返す)。**すべて認証必須**(`requireAuth`より後にマウント。`req.userId`所有の素材のみ操作可能)。
+- **import(コピー取り込み、`server/routes/imports.js`)**: `POST /api/import/worlds/:publicId`(公開Worldをregion/categoryごと自分のライブラリへ独立コピーとして保存し`201`で保存結果を返す。存在しなければ`404`)、`POST /api/import/characters/:publicId`・`POST /api/import/scenarios/:publicId`(ボディに`targetWorldId`必須。欠落/不正なIDは`400`、取り込み先Worldが存在しなければ`404`)。**認証必須**。インポートは公開ツリーからの独立コピーであり、以後公開元が解除・削除されても取り込んだコピーには影響しない(Characterはインポート時`revealed: false`にリセットされる)。
+- **認証必須・利用制限**: 上記の`sessions`/`worlds`/`worldContent`/`characters`/`scenarios`/`rulesets`/`publish`/`import`および`POST /api/messages`は`createRequireAuth`ミドルウェア(`server/auth/middleware.js`)を通り、有効なセッションクッキーがなければ`401`を返す(`/auth/*`・`GET /api/auth/providers`・`GET /api/me`・`GET /api/public/*`のみ例外)。加えて`POST /api/messages`と`POST /api/sessions/:id/novelize`はユーザー単位の日次利用制限に達すると`429`を返す(`server/auth/usage.js`)。またミューテーション系メソッド(POST/PUT/PATCH/DELETE)は`Origin`ヘッダが`BASE_URL`と一致しない場合`403`(`createOriginCheck`、CSRF対策)。
 
 ### 入力堅牢化(FX3で追加)
 
