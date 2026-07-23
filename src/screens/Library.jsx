@@ -6,6 +6,7 @@ import CharacterTab from './library/CharacterTab.jsx';
 import ScenarioTab from './library/ScenarioTab.jsx';
 import RulesetTab from './library/RulesetTab.jsx';
 import { listWorlds } from '../api/worldLibraryClient.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 const TABS = [
   { key: 'world', label: 'World' },
@@ -15,6 +16,7 @@ const TABS = [
 ];
 
 export default function Library({ onClose }) {
+  const { user, loading: authLoading } = useAuth();
   const [tab, setTab] = useState('world');
   const [worlds, setWorlds] = useState([]);
   const [selectedWorldId, setSelectedWorldId] = useState(null);
@@ -42,65 +44,73 @@ export default function Library({ onClose }) {
         </Button>
       </div>
 
-      {worldsError && (
-        <div style={{ color: COLORS.stamp, fontSize: 13, marginBottom: 12 }}>{worldsError}</div>
-      )}
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
-        {TABS.map((t) => (
-          <div
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: tab === t.key ? COLORS.ink : 'transparent',
-              color: tab === t.key ? COLORS.paper : COLORS.faint,
-              border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
-            }}
-          >
-            {t.label}
-          </div>
-        ))}
-      </div>
-
-      {(tab === 'character' || tab === 'scenario') && (
-        <div style={{ marginBottom: 16 }}>
-          <select
-            value={selectedWorldId || ''}
-            onChange={(e) => setSelectedWorldId(e.target.value || null)}
-            style={{
-              fontFamily: F_MONO,
-              fontSize: 13,
-              padding: '8px 10px',
-              border: `1px solid ${COLORS.line}`,
-              borderRadius: 4,
-              background: COLORS.card,
-              color: COLORS.inkSoft,
-            }}
-          >
-            <option value="">World: 選択してください</option>
-            {worlds.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.title}
-              </option>
-            ))}
-          </select>
+      {!user && !authLoading ? (
+        <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.inkSoft }}>
+          素材ライブラリの利用にはログインが必要です。右上からログインしてください。
         </div>
-      )}
+      ) : (
+        <>
+          {worldsError && (
+            <div style={{ color: COLORS.stamp, fontSize: 13, marginBottom: 12 }}>{worldsError}</div>
+          )}
 
-      {tab === 'world' && (
-        <WorldTab
-          worlds={worlds}
-          selectedWorldId={selectedWorldId}
-          onSelectWorld={setSelectedWorldId}
-          onWorldsChanged={refreshWorlds}
-        />
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
+            {TABS.map((t) => (
+              <div
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  background: tab === t.key ? COLORS.ink : 'transparent',
+                  color: tab === t.key ? COLORS.paper : COLORS.faint,
+                  border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
+                }}
+              >
+                {t.label}
+              </div>
+            ))}
+          </div>
+
+          {(tab === 'character' || tab === 'scenario') && (
+            <div style={{ marginBottom: 16 }}>
+              <select
+                value={selectedWorldId || ''}
+                onChange={(e) => setSelectedWorldId(e.target.value || null)}
+                style={{
+                  fontFamily: F_MONO,
+                  fontSize: 13,
+                  padding: '8px 10px',
+                  border: `1px solid ${COLORS.line}`,
+                  borderRadius: 4,
+                  background: COLORS.card,
+                  color: COLORS.inkSoft,
+                }}
+              >
+                <option value="">World: 選択してください</option>
+                {worlds.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {tab === 'world' && (
+            <WorldTab
+              worlds={worlds}
+              selectedWorldId={selectedWorldId}
+              onSelectWorld={setSelectedWorldId}
+              onWorldsChanged={refreshWorlds}
+            />
+          )}
+          {tab === 'character' && <CharacterTab worldId={selectedWorldId} />}
+          {tab === 'scenario' && <ScenarioTab worldId={selectedWorldId} />}
+          {tab === 'ruleset' && <RulesetTab />}
+        </>
       )}
-      {tab === 'character' && <CharacterTab worldId={selectedWorldId} />}
-      {tab === 'scenario' && <ScenarioTab worldId={selectedWorldId} />}
-      {tab === 'ruleset' && <RulesetTab />}
     </div>
   );
 }

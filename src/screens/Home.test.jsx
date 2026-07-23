@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Home, { sanitizeFilename } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
+import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -9,12 +10,12 @@ beforeEach(() => {
 
 describe('Home', () => {
   it('shows the storage warning when storage is unavailable', () => {
-    render(<Home sessions={[]} storageOk={false} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={[]} storageOk={false} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
     expect(screen.getByText(/保存機能\(IndexedDB\)が使えていない/)).toBeInTheDocument();
   });
 
   it('does not show the warning when storage is available', () => {
-    render(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
     expect(screen.queryByText(/保存機能\(IndexedDB\)が使えていない/)).not.toBeInTheDocument();
   });
 
@@ -28,7 +29,7 @@ describe('Home', () => {
         log: [{ role: 'gm', text: '森の奥から物音がした。' }],
       },
     ];
-    render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
     expect(screen.getByText('セッションA')).toBeInTheDocument();
     expect(screen.getByText(/シーン:/)).toBeInTheDocument();
     expect(screen.getByText(/森の奥から物音がした。/)).toBeInTheDocument();
@@ -36,13 +37,13 @@ describe('Home', () => {
 
   it('shows a placeholder last line when the session has no log yet', () => {
     const sessions = [{ id: 's1', title: 'セッションB', updatedAt: 1, state: {}, log: [] }];
-    render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
     expect(screen.getByText('(まだ進行なし)')).toBeInTheDocument();
   });
 
   it('calls onOpenLibrary when the library button is clicked', () => {
     const onOpenLibrary = vi.fn();
-    render(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={onOpenLibrary} />);
+    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={onOpenLibrary} />);
     fireEvent.click(screen.getByText('素材ライブラリ'));
     expect(onOpenLibrary).toHaveBeenCalledTimes(1);
   });
@@ -56,7 +57,7 @@ describe('Home', () => {
 
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
     const onContinue = vi.fn();
-    render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
 
     fireEvent.click(screen.getByText('小説化'));
 
@@ -71,7 +72,7 @@ describe('Home', () => {
   it('shows an error message when novelization fails', async () => {
     vi.spyOn(sessionSyncClient, 'novelizeSession').mockRejectedValue(new Error('upstream down'));
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
-    render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
 
     fireEvent.click(screen.getByText('小説化'));
 
@@ -104,7 +105,7 @@ describe('Home', () => {
       { id: 's1', title: 'A', updatedAt: 2, state: {}, log: [] },
       { id: 's2', title: 'B', updatedAt: 1, state: {}, log: [] },
     ];
-    render(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
 
     // s1の小説化を開始(pendingのまま)
     fireEvent.click(screen.getAllByText('小説化')[0]);
@@ -126,5 +127,18 @@ describe('Home', () => {
       await Promise.resolve();
     });
     vi.restoreAllMocks();
+  });
+
+  it('disables new play and novelize when logged out', () => {
+    const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(
+      <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />,
+      { user: null }
+    );
+    expect(screen.getByText('+ 新規プレイ')).toBeDisabled();
+    expect(screen.getByText('小説化')).toBeDisabled();
+    expect(screen.getByText(/ログインが必要/)).toBeInTheDocument();
+    // ライブラリと続きから再開は許可されたまま
+    expect(screen.getByText('素材ライブラリ')).not.toBeDisabled();
   });
 });

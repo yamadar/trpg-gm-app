@@ -10,7 +10,17 @@ describe('App', () => {
   });
 
   it('navigates to the library screen and back', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    // ライブラリはログイン必須なので、/api/meはログイン済みユーザーを返す必要がある
+    // (それ以外のURL、たとえばWorld一覧取得は空配列を返す)。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
     render(<App />);
     await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
 

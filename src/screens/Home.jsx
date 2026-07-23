@@ -3,6 +3,7 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { novelizeSession, getNovel } from '../api/sessionSyncClient.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 function lastLineOf(session) {
   const lastGm = [...session.log].reverse().find((e) => e.role === 'gm');
@@ -17,6 +18,7 @@ export function sanitizeFilename(title) {
 }
 
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary }) {
+  const { user } = useAuth();
   const [novelizing, setNovelizing] = useState({});
   const [novelizeError, setNovelizeError] = useState({});
 
@@ -93,14 +95,27 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 32 }}>
-        <Button variant="brass" onClick={onNew}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: user ? 32 : 8 }}>
+        <Button variant="brass" onClick={onNew} disabled={!user}>
           + 新規プレイ
         </Button>
         <Button variant="ghost" onClick={onOpenLibrary}>
           素材ライブラリ
         </Button>
       </div>
+
+      {!user && (
+        <div
+          style={{
+            fontFamily: F_MONO,
+            fontSize: 12,
+            color: COLORS.faint,
+            marginBottom: 24,
+          }}
+        >
+          プレイと小説化にはログインが必要です(右上からログイン)
+        </div>
+      )}
 
       {sessions.length > 0 && (
         <>
@@ -178,7 +193,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
                     <Button
                       variant="ghost"
                       onClick={(e) => handleNovelize(e, s)}
-                      disabled={!!novelizing[s.id]}
+                      disabled={!!novelizing[s.id] || !user}
                       style={{ fontSize: 11, padding: '4px 8px' }}
                     >
                       {novelizing[s.id] ? '小説化中…' : '小説化'}
