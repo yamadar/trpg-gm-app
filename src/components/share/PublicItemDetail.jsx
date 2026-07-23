@@ -8,8 +8,24 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 
 const KIND_LABELS = { pc: 'PC', npc: 'NPC' };
 
+export const authorButtonStyle = {
+  font: 'inherit',
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  color: 'inherit',
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  textDecoration: 'underline',
+};
+
+export function formatPublicDate(item) {
+  return new Date(item.publishedAt).toLocaleDateString('ja-JP');
+}
+
 export function publicMetaLine(item) {
-  return `${item.ownerName} ・ ${new Date(item.publishedAt).toLocaleDateString('ja-JP')}`;
+  return `${item.ownerName} ・ ${formatPublicDate(item)}`;
 }
 
 export default function PublicItemDetail({ type, item, onBack, onAuthorClick }) {
@@ -78,27 +94,13 @@ export default function PublicItemDetail({ type, item, onBack, onAuthorClick }) 
         <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink, marginBottom: 6 }}>{item.title}</div>
         <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginBottom: 4 }}>
           {onAuthorClick ? (
-            <button
-              type="button"
-              onClick={() => onAuthorClick(item.ownerId)}
-              style={{
-                font: 'inherit',
-                fontFamily: 'inherit',
-                fontSize: 'inherit',
-                color: 'inherit',
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
-            >
+            <button type="button" onClick={() => onAuthorClick(item.ownerId)} style={authorButtonStyle}>
               {item.ownerName}
             </button>
           ) : (
             <span>{item.ownerName}</span>
           )}
-          {` ・ ${new Date(item.publishedAt).toLocaleDateString('ja-JP')}`}
+          {` ・ ${formatPublicDate(item)}`}
         </div>
         {type === 'characters' && (
           <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginBottom: 12 }}>

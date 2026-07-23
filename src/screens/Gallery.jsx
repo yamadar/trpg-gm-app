@@ -3,7 +3,7 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { listPublic, getPublic } from '../api/shareClient.js';
-import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
+import PublicItemDetail, { formatPublicDate, authorButtonStyle } from '../components/share/PublicItemDetail.jsx';
 import { navigateToUser } from '../router/useHashRoute.js';
 
 const TABS = [
@@ -116,21 +116,11 @@ export default function Gallery({ onClose }) {
                         e.stopPropagation();
                         navigateToUser(it.ownerId);
                       }}
-                      style={{
-                        font: 'inherit',
-                        fontFamily: 'inherit',
-                        fontSize: 'inherit',
-                        color: 'inherit',
-                        background: 'none',
-                        border: 'none',
-                        padding: 0,
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                      }}
+                      style={authorButtonStyle}
                     >
                       {it.ownerName}
                     </button>
-                    {` ・ ${new Date(it.publishedAt).toLocaleDateString('ja-JP')}`}
+                    {` ・ ${formatPublicDate(it)}`}
                   </div>
                   {tab === 'scenarios' && it.recommendedRuleset && (
                     <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginTop: 4 }}>
