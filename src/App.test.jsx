@@ -23,4 +23,17 @@ describe('App', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('shows an auth error banner when the URL has auth_error=1 and strips the query param', async () => {
+    window.history.pushState({}, '', '/?auth_error=1');
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByText('ログインに失敗しました。もう一度お試しください。')
+      ).toBeInTheDocument()
+    );
+    expect(window.location.search).toBe('');
+
+    window.history.pushState({}, '', '/');
+  });
 });
