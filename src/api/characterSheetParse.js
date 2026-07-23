@@ -1,14 +1,31 @@
 import { callClaude, extractText, parseJsonLoose } from './client.js';
 
+const SHEET_OUTPUT_FORMAT = {
+  type: 'json_schema',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['goal', 'bonds'],
+    properties: {
+      goal: {
+        type: 'string',
+        description: 'このキャラクターが物語を通じて達成したいこと(記載がなければ空文字列)',
+      },
+      bonds: {
+        type: 'string',
+        description: '他PC/NPC/世界との因縁・関係(記載がなければ空文字列)',
+      },
+    },
+  },
+};
+
 export async function parseCharacterSheet(raw) {
   const data = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
-    system: `以下のキャラクターシートから goal(目標)・bonds(因縁・関係)を抽出せよ。
-
-# 出力形式(厳守)
-説明文やコードブロック記号を一切付けず、次のJSONのみを出力すること:
-{"goal": "このキャラクターが物語を通じて達成したいこと(記載がなければ空文字列)", "bonds": "他PC/NPC/世界との因縁・関係(記載がなければ空文字列)"}`,
+    model: 'claude-sonnet-5',
+    max_tokens: 1000,
+    thinking: { type: 'disabled' },
+    output_config: { format: SHEET_OUTPUT_FORMAT },
+    system: '以下のキャラクターシートから goal(目標)・bonds(因縁・関係)を抽出せよ。',
     messages: [{ role: 'user', content: raw }],
   });
   const text = extractText(data.content);

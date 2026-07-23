@@ -30,11 +30,29 @@ describe('generateScenario', () => {
     const scenario = await generateScenario('推理物', 'PC設定', '世界観要約');
     expect(scenario).toBe('## シナリオ概要\n本文');
   });
+
+  it('includes the goal/bonds hook instruction only when a PC sheet is provided', async () => {
+    const callClaudeMock = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValue({ content: [{ type: 'text', text: 'x' }] });
+    await generateScenario('推理物', 'PC設定', '世界観要約');
+    expect(callClaudeMock.mock.calls[0][0].system).toContain('hook');
+    await generateScenario('推理物', '', '世界観要約');
+    expect(callClaudeMock.mock.calls[1][0].system).not.toContain('hook');
+  });
+
+  it('throws when the response was truncated by max_tokens', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [{ type: 'text', text: '途中まで' }],
+      stop_reason: 'max_tokens',
+    });
+    await expect(generateScenario('推理物', 'PC設定', '世界観要約')).rejects.toThrow(/max_tokens/);
+  });
 });
 
 describe('takeTurn', () => {
   it('returns the parsed result without a roll when no tool_use happens', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
       content: [{ type: 'text', text: '{"narrative": "静かな朝。", "state_update": {}, "choices": []}' }],
     });
 
@@ -42,6 +60,39 @@ describe('takeTurn', () => {
 
     expect(result.narrative).toBe('静かな朝。');
     expect(roll).toBeNull();
+    const request = callClaudeMock.mock.calls[0][0];
+    // 動的状態はsystemではなくuserメッセージ側に入る
+    expect(request.messages[0].content).toContain('# プレイヤーの行動\n周りを見渡す');
+    expect(request.messages[0].content).toContain('シーン: 冒頭');
+    expect(request.system[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(request.output_config.format.type).toBe('json_schema');
+  });
+
+  it('converts structured-output flags array into a plain object', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            narrative: '扉が開いた。',
+            state_update: {
+              current_scene: '書庫',
+              flags: [
+                { key: 'door_opened', value: true },
+                { key: 'clue', value: '血痕' },
+              ],
+              history_summary: '要約',
+              xp_gained: 0,
+            },
+            choices: [],
+          }),
+        },
+      ],
+    });
+
+    const { result } = await takeTurn(makeSession(), '扉を開ける');
+
+    expect(result.state_update.flags).toEqual({ door_opened: true, clue: '血痕' });
   });
 
   it('resolves a roll_check tool_use and sends the result back for the final narrative', async () => {

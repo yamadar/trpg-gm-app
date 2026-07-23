@@ -16,8 +16,11 @@ function logToTranscript(log) {
   return (log || []).map((entry) => `${entry.role === 'player' ? 'PL' : 'GM'}: ${entry.text}`).join('\n');
 }
 
-const NOVELIZE_SYSTEM_PROMPT =
-  '以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを一人称または三人称の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。';
+// pov: 'third'(既定)または 'first'。リクエストボディの pov で切り替え可能。
+function buildNovelizeSystemPrompt(pov) {
+  const voice = pov === 'first' ? 'PC視点の一人称' : '三人称';
+  return `以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを${voice}の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。`;
+}
 
 export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl = fetch }) {
   const router = Router();
@@ -68,9 +71,10 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 8000,
-          system: NOVELIZE_SYSTEM_PROMPT,
+          model: 'claude-sonnet-5',
+          max_tokens: 12000,
+          thinking: { type: 'disabled' },
+          system: buildNovelizeSystemPrompt(req.body?.pov === 'first' ? 'first' : 'third'),
           messages: [{ role: 'user', content: transcript }],
         }),
         signal: AbortSignal.timeout(NOVELIZE_TIMEOUT_MS),

@@ -3,7 +3,7 @@ import { RULESETS } from '../data/rulesets.js';
 export const ROLL_TOOL = {
   name: 'roll_check',
   description:
-    '行動の結果が不確実な場合に判定を行う。判定は必ずこのツールを介して実行し、結果を自分で決めないこと。',
+    '行動の結果が不確実な場合に判定を行う。判定は必ずこのツールを介して実行し、結果を自分で決めないこと。判定は1ターンに最大1回。',
   input_schema: {
     type: 'object',
     properties: {
@@ -13,16 +13,116 @@ export const ROLL_TOOL = {
       },
       success_percent: {
         type: 'integer',
-        description: 'この状況における成功確率(0-100)。PCの能力・状況・難易度を踏まえて自分で設定する。',
+        minimum: 0,
+        maximum: 100,
+        description:
+          'この状況における成功確率(0-100)。目安: ほぼ確実=85 / 有利=70 / 五分=50 / 困難=30 / 無謀=10。PCの能力・道具・状況・難易度を踏まえて調整する。',
       },
     },
     required: ['check_label', 'success_percent'],
   },
 };
 
-export function buildSystemPrompt(session) {
-  const rs = session.ruleset || RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
+// GMターン応答のstructured outputsスキーマ。
+// flagsは自由キーのオブジェクトをスキーマで表現できないため{key, value}の配列で受け取り、
+// takeTurn側でオブジェクトへ変換する。
+export const TURN_OUTPUT_FORMAT = {
+  type: 'json_schema',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['narrative', 'state_update', 'choices'],
+    properties: {
+      narrative: {
+        type: 'string',
+        description: '地の文(150〜250字程度)',
+      },
+      state_update: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['current_scene', 'flags', 'history_summary', 'xp_gained'],
+        properties: {
+          current_scene: { type: 'string', description: '更新後のシーン名' },
+          flags: {
+            type: 'array',
+            description: '新規・更新分のフラグのみ(既存分は保持される)',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['key', 'value'],
+              properties: {
+                key: { type: 'string' },
+                value: {
+                  anyOf: [{ type: 'boolean' }, { type: 'string' }, { type: 'number' }],
+                },
+              },
+            },
+          },
+          history_summary: { type: 'string', description: '更新後の物語要約(300字程度)' },
+          xp_gained: { type: 'integer', description: '今ターンで得た成長点。通常は0' },
+        },
+      },
+      choices: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '次の行動の選択肢。自由記述を促す場面では空配列',
+      },
+    },
+  },
+};
+
+function resolveRuleset(session) {
+  return session.ruleset || RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
+}
+
+// セッション中は変わらない静的な指示。cache_controlを付けてプロンプトキャッシュを効かせる。
+// 毎ターン変わる状態(シーン・フラグ・要約・ログ)はbuildTurnUserContent側に置く。
+export function buildSystemBlocks(session) {
+  const rs = resolveRuleset(session);
   const growthUnit = session.ruleset?.growthUnit || '経験値';
+  const pcGoalBondsSection =
+    session.pc.goal || session.pc.bonds
+      ? `\n# PCの目標・因縁(抽出済み)\ngoal: ${session.pc.goal || '(未設定)'}\nbonds: ${session.pc.bonds || '(未設定)'}\n`
+      : '';
+
+  const text = `あなたはTRPGのGM。以下の設定に従い物語を進行する。プレイヤーが楽しめるよう、緊迫感や盛り上がりの演出を大事にすること。
+
+# 世界観
+${session.world.summary}
+
+# シナリオ
+${session.scenario.raw}
+上記のうち「GM専用情報」節の内容は、物語内で自然に明かされた場合を除き、narrative・choices・state_updateのいずれにも含めないこと。
+
+# PC設定
+${session.pc.raw}
+${pcGoalBondsSection}
+# ルール性向: ${rs.label}
+${rs.hint || '特別な演出指定なし。'}
+
+# 判定ルール
+- 行動の結果が不確実な場面では、先にroll_checkツールを呼び出し、結果を受け取ってからJSONを出力すること。判定が不要ならそのままJSONを出力する。
+- 判定は1ターンに最大1回。複数の行動が含まれる場合は、最も重要な1つだけを判定する。
+- success_percentは目安(ほぼ確実=85 / 有利=70 / 五分=50 / 困難=30 / 無謀=10)を基準に、PCの能力・道具・状況で調整して自分で設定する。結果そのものは自分で決めない(ロール結果は別途渡される)。
+- ロール結果のdegreeは演出に反映する: critical=劇的な大成功、success=成功、fail=失敗、fumble=手痛い代償を伴う大失敗。
+
+# GMの心得
+- PCの行動・発言・感情を勝手に決めないこと。narrativeはプレイヤーの行動の結果を描写し、次の判断材料となる状況の提示で終えること。
+- 緊迫した場面は短文を畳み掛け、平穏な場面は五感描写を増やしゆったり進行する。可能な範囲でPCのgoal/bondsや世界観の特徴を絡めること。
+
+# 出力フィールドの書き方
+- narrative: 地の文(150〜250字程度)。
+- state_update.current_scene: 更新後のシーン名。
+- state_update.flags: 新規・更新分のみを{key, value}で列挙する(既存分は保持される)。未開示の秘匿情報をkeyや値に書かないこと。
+- state_update.history_summary: 更新後の物語要約(300字程度)。
+- state_update.xp_gained: 物語が進展・成功した節目でのみ${growthUnit}を与える。目安: 小さな進展や成功=1〜2、章の節目や大きな達成=5〜10。通常は0。
+- choices: 方向性の異なる短い選択肢を2〜4個(慎重・大胆・搦め手など性質を変える)。自由記述を促したい場面では空配列でよい。未開示の秘匿情報を含めないこと。`;
+
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
+}
+
+// 毎ターン変わる状態+プレイヤー入力。userメッセージとして送る。
+export function buildTurnUserContent(session, playerText) {
   const flags = session.state.flags || {};
   const flagsText =
     Object.entries(flags)
@@ -32,28 +132,8 @@ export function buildSystemPrompt(session) {
     (session.state.recent_log || [])
       .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
       .join('\n') || '(まだなし)';
-  const pcGoalBondsSection =
-    session.pc.goal || session.pc.bonds
-      ? `\n# PCの目標・因縁(抽出済み)\ngoal: ${session.pc.goal || '(未設定)'}\nbonds: ${session.pc.bonds || '(未設定)'}\n`
-      : '';
 
-  return `あなたはTRPGのGM。以下の設定に従い物語を進行する。プレイヤーが楽しめるよう、緊迫感や盛り上がりの演出を大事にすること。
-
-# 世界観
-${session.world.summary}
-
-# シナリオ
-${session.scenario.raw}
-上記のうち「GM専用情報」節は、物語内で自然に明かされた場合を除き、プレイヤーへの出力に絶対含めないこと。
-
-# PC設定
-${session.pc.raw}
-${pcGoalBondsSection}
-# ルール性向: ${rs.label}
-${rs.hint || '特別な演出指定なし。'}
-判定が必要な場面ではroll_checkツールを呼び出すこと。success_percentはPCの能力・状況・難易度から自分で判断して設定し、結果そのものは自分で決めないこと(ロール結果は別途渡される)。
-
-# 現在の状況
+  return `# 現在の状況
 シーン: ${session.state.current_scene}
 既知フラグ: ${flagsText}
 物語要約: ${session.state.history_summary || '(まだなし)'}
@@ -61,11 +141,6 @@ ${rs.hint || '特別な演出指定なし。'}
 # 直近のログ
 ${recentLog}
 
-# 演出方針
-緊迫した場面は短文を畳み掛け、平穏な場面は五感描写を増やしゆったり進行する。可能な範囲でPCのgoal/bondsや世界観の特徴を絡めること。
-
-# 出力形式(厳守)
-説明文やコードブロック記号を一切付けず、次のJSONのみを出力すること:
-{"narrative": "地の文(150〜250字程度)", "state_update": {"current_scene": "更新後のシーン名", "flags": {"追加/更新分のみ": true}, "history_summary": "更新後の物語要約(300字程度)", "xp_gained": 0}, "choices": ["選択肢1", "選択肢2", "選択肢3"]}
-choices は自由記述を促したい場面では空配列 [] でよい。flags は新規/更新分のみでよい(既存分は保持される)。xp_gained は物語が進展・成功した節目でのみ${growthUnit}として適切と思われる量を設定し(呼び名・量の目安はルール性向のヒントに従う)、通常は0でよい。`;
+# プレイヤーの行動
+${playerText}`;
 }

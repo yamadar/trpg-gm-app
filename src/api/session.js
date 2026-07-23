@@ -1,11 +1,14 @@
 import { callClaude, extractText, extractToolUse, parseJsonLoose } from './client.js';
-import { ROLL_TOOL, buildSystemPrompt } from './prompts.js';
+import { ROLL_TOOL, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
 import { evaluateRoll } from '../engine/dice.js';
+
+const MODEL = 'claude-sonnet-5';
 
 export async function summarizeWorld(raw) {
   const data = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    model: MODEL,
+    max_tokens: 2000,
+    thinking: { type: 'disabled' },
     system:
       '以下の世界観資料を、TRPGのGMが毎ターン参照できる程度の要約(600〜900字)に圧縮せよ。地名・組織・時代背景などキーとなる設定は保持すること。説明文やコードブロック記号は付けず、要約文のみを出力すること。',
     messages: [{ role: 'user', content: raw }],
@@ -14,9 +17,13 @@ export async function summarizeWorld(raw) {
 }
 
 export async function generateScenario(genre, pcRaw, worldSummary) {
+  const hookLine = pcRaw
+    ? '\nPCのgoal/bondsに関連する引き(hook)を導入部に必ず含めること。'
+    : '';
   const data = await callClaude({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    model: MODEL,
+    max_tokens: 3000,
+    thinking: { type: 'disabled' },
     system: `TRPGシナリオを作成せよ。
 
 # ジャンル要望
@@ -35,21 +42,35 @@ ${pcRaw || '(未設定)'}
 (黒幕・真相・隠しフラグなど、プレイヤーには開示しない情報)
 ## 章構成
 (章ごとの見出しと概要、分岐条件を簡潔に。最終章には climax とわかる一文を添える)
-
-PCのgoal/bondsに関連する引き(hook)を導入部に必ず含めること。`,
+${hookLine}`,
     messages: [{ role: 'user', content: 'シナリオを生成せよ。' }],
   });
+  if (data.stop_reason === 'max_tokens') {
+    throw new Error('シナリオ生成が途中で打ち切られました(max_tokens)。再試行してください。');
+  }
   return extractText(data.content).trim();
 }
 
+// structured outputsのスキーマ上flagsは{key, value}の配列で返るため、既存の
+// state管理(オブジェクトマージ)に合わせて変換する。
+function normalizeFlags(result) {
+  const flags = result?.state_update?.flags;
+  if (Array.isArray(flags)) {
+    result.state_update.flags = Object.fromEntries(flags.map((f) => [f.key, f.value]));
+  }
+  return result;
+}
+
 export async function takeTurn(session, playerText) {
-  const system = buildSystemPrompt(session);
-  let messages = [{ role: 'user', content: playerText }];
+  const system = buildSystemBlocks(session);
+  let messages = [{ role: 'user', content: buildTurnUserContent(session, playerText) }];
   const base = {
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    model: MODEL,
+    max_tokens: 2000,
+    thinking: { type: 'disabled' },
     system,
     tools: [ROLL_TOOL],
+    output_config: { format: TURN_OUTPUT_FORMAT },
   };
 
   let data = await callClaude({ ...base, messages });
@@ -82,6 +103,6 @@ export async function takeTurn(session, playerText) {
   }
 
   const text = extractText(data.content);
-  const result = parseJsonLoose(text);
+  const result = normalizeFlags(parseJsonLoose(text));
   return { result, roll };
 }

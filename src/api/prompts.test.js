@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ROLL_TOOL, buildSystemPrompt } from './prompts.js';
+import { ROLL_TOOL, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
 
 function makeSession(overrides = {}) {
   return {
@@ -17,74 +17,128 @@ function makeSession(overrides = {}) {
   };
 }
 
+function staticText(session) {
+  return buildSystemBlocks(session)[0].text;
+}
+
 describe('ROLL_TOOL', () => {
   it('declares check_label and success_percent as required inputs', () => {
     expect(ROLL_TOOL.name).toBe('roll_check');
     expect(ROLL_TOOL.input_schema.required).toEqual(['check_label', 'success_percent']);
   });
+
+  it('bounds success_percent to 0-100 and limits rolls to one per turn', () => {
+    expect(ROLL_TOOL.input_schema.properties.success_percent.minimum).toBe(0);
+    expect(ROLL_TOOL.input_schema.properties.success_percent.maximum).toBe(100);
+    expect(ROLL_TOOL.description).toContain('1ターンに最大1回');
+  });
 });
 
-describe('buildSystemPrompt', () => {
-  it('includes the world summary, scenario, pc sheet, and current scene', () => {
-    const prompt = buildSystemPrompt(makeSession());
-    expect(prompt).toContain('霧深い港町');
-    expect(prompt).toContain('失踪事件');
-    expect(prompt).toContain('PC名: アリス');
-    expect(prompt).toContain('波止場');
+describe('TURN_OUTPUT_FORMAT', () => {
+  it('is a json_schema format requiring narrative, state_update, and choices', () => {
+    expect(TURN_OUTPUT_FORMAT.type).toBe('json_schema');
+    expect(TURN_OUTPUT_FORMAT.schema.required).toEqual(['narrative', 'state_update', 'choices']);
+  });
+
+  it('represents flags as an array of {key, value} pairs', () => {
+    const flags = TURN_OUTPUT_FORMAT.schema.properties.state_update.properties.flags;
+    expect(flags.type).toBe('array');
+    expect(flags.items.required).toEqual(['key', 'value']);
+  });
+});
+
+describe('buildSystemBlocks', () => {
+  it('returns a single cacheable text block', () => {
+    const blocks = buildSystemBlocks(makeSession());
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('text');
+    expect(blocks[0].cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('includes the world summary, scenario, and pc sheet', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('霧深い港町');
+    expect(text).toContain('失踪事件');
+    expect(text).toContain('PC名: アリス');
+  });
+
+  it('does not include per-turn state (scene, flags, log)', () => {
+    const text = staticText(makeSession());
+    expect(text).not.toContain('波止場');
+    expect(text).not.toContain('met_npc_a');
+    expect(text).not.toContain('これまでのあらすじ');
   });
 
   it('includes the matching ruleset hint', () => {
-    const prompt = buildSystemPrompt(makeSession({ rulesetId: 'coc7e' }));
-    expect(prompt).toContain('SAN値チェック');
+    expect(staticText(makeSession({ rulesetId: 'coc7e' }))).toContain('SAN値チェック');
   });
 
   it('falls back to the simple ruleset when rulesetId is unknown', () => {
-    const prompt = buildSystemPrompt(makeSession({ rulesetId: 'unknown' }));
-    expect(prompt).toContain('特別な演出指定なし。');
-  });
-
-  it('formats flags and falls back to placeholders when empty', () => {
-    const prompt = buildSystemPrompt(makeSession({ state: { current_scene: 'x', flags: {}, history_summary: '', recent_log: [] } }));
-    expect(prompt).toContain('既知フラグ: (なし)');
-    expect(prompt).toContain('物語要約: (まだなし)');
-    expect(prompt).toContain('直近のログ\n(まだなし)');
+    expect(staticText(makeSession({ rulesetId: 'unknown' }))).toContain('特別な演出指定なし。');
   });
 
   it('uses session.ruleset when present, without falling back to the static RULESETS lookup', () => {
-    const prompt = buildSystemPrompt(
+    const text = staticText(
       makeSession({
         rulesetId: 'unknown-static-id',
         ruleset: { id: 'homebrew', label: '自作ルール', desc: '独自ルール', hint: '独自の演出ヒント' },
       })
     );
-    expect(prompt).toContain('ルール性向: 自作ルール');
-    expect(prompt).toContain('独自の演出ヒント');
+    expect(text).toContain('ルール性向: 自作ルール');
+    expect(text).toContain('独自の演出ヒント');
   });
 
   it('adds a goal/bonds section when present on session.pc', () => {
-    const prompt = buildSystemPrompt(
+    const text = staticText(
       makeSession({ pc: { raw: 'PC名: アリス', goal: '真相を暴く', bonds: '姉との再会' } })
     );
-    expect(prompt).toContain('# PCの目標・因縁(抽出済み)');
-    expect(prompt).toContain('goal: 真相を暴く');
-    expect(prompt).toContain('bonds: 姉との再会');
+    expect(text).toContain('# PCの目標・因縁(抽出済み)');
+    expect(text).toContain('goal: 真相を暴く');
+    expect(text).toContain('bonds: 姉との再会');
   });
 
   it('omits the goal/bonds section when absent on session.pc', () => {
-    const prompt = buildSystemPrompt(makeSession({ pc: { raw: 'PC名: アリス' } }));
-    expect(prompt).not.toContain('PCの目標・因縁');
+    expect(staticText(makeSession({ pc: { raw: 'PC名: アリス' } }))).not.toContain('PCの目標・因縁');
   });
 
   it('instructs the GM to consider xp_gained using the growthUnit label', () => {
-    const prompt = buildSystemPrompt(
+    const text = staticText(
       makeSession({ ruleset: { id: 'gurps', label: 'GURPS風', desc: '', hint: '', growthUnit: 'CP' } })
     );
-    expect(prompt).toContain('xp_gained');
-    expect(prompt).toContain('CP');
+    expect(text).toContain('xp_gained');
+    expect(text).toContain('CP');
   });
 
   it('falls back to "経験値" as the growthUnit label when session.ruleset is absent', () => {
-    const prompt = buildSystemPrompt(makeSession());
-    expect(prompt).toContain('経験値');
+    expect(staticText(makeSession())).toContain('経験値');
+  });
+
+  it('instructs the GM on roll flow, player agency, and secret-info guarding', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('判定は1ターンに最大1回');
+    expect(text).toContain('PCの行動・発言・感情を勝手に決めない');
+    expect(text).toContain('narrative・choices・state_updateのいずれにも含めない');
+    expect(text).toContain('fumble');
+  });
+});
+
+describe('buildTurnUserContent', () => {
+  it('includes the current scene, flags, summary, recent log, and player action', () => {
+    const content = buildTurnUserContent(makeSession(), '周囲を警戒する');
+    expect(content).toContain('シーン: 波止場');
+    expect(content).toContain('met_npc_a=true');
+    expect(content).toContain('物語要約: これまでのあらすじ');
+    expect(content).toContain('PL: 波止場を調べる');
+    expect(content).toContain('# プレイヤーの行動\n周囲を警戒する');
+  });
+
+  it('falls back to placeholders when state is empty', () => {
+    const content = buildTurnUserContent(
+      makeSession({ state: { current_scene: 'x', flags: {}, history_summary: '', recent_log: [] } }),
+      '行動'
+    );
+    expect(content).toContain('既知フラグ: (なし)');
+    expect(content).toContain('物語要約: (まだなし)');
+    expect(content).toContain('# 直近のログ\n(まだなし)');
   });
 });
