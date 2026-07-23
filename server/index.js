@@ -66,9 +66,11 @@ export function createApp({
   // 2) authRouter は /auth/*, /api/me, /api/auth/providers を認証なしで公開する
   //    (ここで先にマッチさせることで、直後の requireAuth の対象から除外される)
   // 3) requireAuth 以降の /api/* はすべてログイン必須
+  const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: secureCookies, path: '/' };
+
   app.use(createOriginCheck({ baseUrl }));
   app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
-  app.use('/api', createRequireAuth({ dataStore }));
+  app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
   app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl, usage }));

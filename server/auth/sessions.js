@@ -30,6 +30,9 @@ export async function getAuthSession(dataStore, token, now = Date.now()) {
   if (session.expiresAt - now < RENEW_THRESHOLD_MS) {
     session.expiresAt = now + SESSION_TTL_MS;
     await dataStore.set(key, session);
+    // Marked only on the in-memory object returned to the caller, after the
+    // persisted write above, so `renewed` is never itself written to storage.
+    session.renewed = true;
   }
   return session;
 }

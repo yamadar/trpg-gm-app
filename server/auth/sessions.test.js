@@ -54,6 +54,10 @@ describe('auth sessions', () => {
     const later = t0 + SESSION_TTL_MS * 0.6;
     const session = await getAuthSession(dataStore, token, later);
     expect(session.expiresAt).toBe(later + SESSION_TTL_MS);
+    expect(session.renewed).toBe(true);
+    const persisted = await dataStore.get(authSessionKey(sha256hex(token)));
+    expect(persisted.renewed).toBeUndefined();
+    expect('renewed' in persisted).toBe(false);
   });
 
   it('does not rewrite the session when plenty of TTL remains', async () => {
@@ -62,6 +66,7 @@ describe('auth sessions', () => {
     const soon = t0 + 1000;
     const session = await getAuthSession(dataStore, token, soon);
     expect(session.expiresAt).toBe(t0 + SESSION_TTL_MS);
+    expect(session.renewed).toBeFalsy();
   });
 
   it('deleteAuthSession removes the session', async () => {

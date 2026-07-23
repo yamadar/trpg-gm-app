@@ -1,4 +1,6 @@
-import { getAuthSession, SESSION_COOKIE } from './sessions.js';
+import { getAuthSession, SESSION_COOKIE, SESSION_TTL_MS } from './sessions.js';
+
+const DEFAULT_COOKIE_OPTIONS = { httpOnly: true, sameSite: 'lax', secure: false, path: '/' };
 
 export function parseCookies(header) {
   const out = {};
@@ -12,7 +14,7 @@ export function parseCookies(header) {
   return out;
 }
 
-export function createRequireAuth({ dataStore }) {
+export function createRequireAuth({ dataStore, cookieOptions = DEFAULT_COOKIE_OPTIONS }) {
   return async (req, res, next) => {
     try {
       const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
@@ -20,6 +22,11 @@ export function createRequireAuth({ dataStore }) {
       if (!session) {
         res.status(401).json({ error: 'login required' });
         return;
+      }
+      if (session.renewed) {
+        // Server-side expiry was just slid forward; re-issue the cookie so
+        // its Max-Age slides along with it instead of expiring at login+30d.
+        res.cookie(SESSION_COOKIE, token, { ...cookieOptions, maxAge: SESSION_TTL_MS });
       }
       req.userId = session.userId;
       next();

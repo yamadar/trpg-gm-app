@@ -80,6 +80,8 @@ export function createAuthRouter({
   }));
 
   router.patch('/api/me', asyncHandler(async (req, res) => {
+    // This route is mounted before requireAuth (see index.js), so it is not
+    // protected by that middleware and must enforce its own 401 here.
     const user = await currentUser(req);
     if (!user) {
       res.status(401).json({ error: 'login required' });

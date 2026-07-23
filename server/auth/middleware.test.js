@@ -6,7 +6,7 @@ import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { createFsDataStore } from '../storage/dataStore.js';
-import { createAuthSession, SESSION_COOKIE } from './sessions.js';
+import { createAuthSession, SESSION_COOKIE, SESSION_TTL_MS } from './sessions.js';
 import { parseCookies, createRequireAuth, createOriginCheck } from './middleware.js';
 
 let dir;
@@ -54,6 +54,27 @@ describe('createRequireAuth', () => {
     const res = await request(buildApp()).get('/whoami').set('Cookie', `${SESSION_COOKIE}=${token}`);
     expect(res.status).toBe(200);
     expect(res.body.userId).toBe('usr_1');
+  });
+
+  it('re-issues the session cookie with a fresh Max-Age when the session slides', async () => {
+    // createdAt in the past so that just over half the TTL has already elapsed,
+    // triggering getAuthSession's sliding-renewal branch.
+    const past = Date.now() - (SESSION_TTL_MS / 2 + 1000);
+    const token = await createAuthSession(dataStore, 'usr_1', past);
+    const res = await request(buildApp()).get('/whoami').set('Cookie', `${SESSION_COOKIE}=${token}`);
+    expect(res.status).toBe(200);
+    const setCookie = res.headers['set-cookie'] || [];
+    const sessionCookie = setCookie.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+    expect(sessionCookie).toBeDefined();
+    expect(sessionCookie).toMatch(/Max-Age=/i);
+  });
+
+  it('does not re-set the cookie for a fresh (non-renewed) session', async () => {
+    const token = await createAuthSession(dataStore, 'usr_1');
+    const res = await request(buildApp()).get('/whoami').set('Cookie', `${SESSION_COOKIE}=${token}`);
+    expect(res.status).toBe(200);
+    const setCookie = res.headers['set-cookie'] || [];
+    expect(setCookie.find((c) => c.startsWith(`${SESSION_COOKIE}=`))).toBeUndefined();
   });
 });
 
