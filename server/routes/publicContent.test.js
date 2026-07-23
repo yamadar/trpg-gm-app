@@ -26,6 +26,7 @@ import {
   sessionKey,
   sessionNovelDocPath,
 } from '../storage/paths.js';
+import { findOrCreateUser, updateUserProfile } from '../auth/users.js';
 
 let dir;
 let dataStore;
@@ -430,5 +431,51 @@ describe('publicContent routes — authentication-free gallery read', () => {
       expect(res.status).toBe(200);
       expect(res.body).toBeDefined();
     });
+  });
+});
+
+describe('public user profile', () => {
+  it('returns only the public profile fields', async () => {
+    const user = await findOrCreateUser(dataStore, { provider: 'google', providerUserId: '111', displayName: '太郎', avatarUrl: null });
+    await updateUserProfile(dataStore, user.id, { bio: 'よろしく' });
+    const res = await request(app).get(`/api/users/${user.id}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ id: user.id, displayName: '太郎', avatarUrl: null, bio: 'よろしく' });
+  });
+
+  it('404 for an unknown user', async () => {
+    expect((await request(app).get('/api/users/usr_nothere')).status).toBe(404);
+    expect((await request(app).get('/api/users/usr_nothere/public')).status).toBe(404);
+  });
+
+  it('rejects a malformed userId', async () => {
+    expect((await request(app).get('/api/users/..evil')).status).toBe(400);
+  });
+
+  it('lists only the given user\'s public items grouped by type', async () => {
+    const userA = await findOrCreateUser(dataStore, { provider: 'google', providerUserId: 'aaa', displayName: 'Alice', avatarUrl: null });
+    const userB = await findOrCreateUser(dataStore, { provider: 'google', providerUserId: 'bbb', displayName: 'Bob', avatarUrl: null });
+
+    // Aがworldを1件公開
+    await dataStore.set(worldMetaKey(userA.id, 'w1'), { id: 'w1', title: 'Aの世界', updatedAt: Date.now() });
+    await textStore.write(worldDocPath(userA.id, 'w1'), '# Aの世界');
+    const pubA = await publishWorld(dataStore, textStore, userA.id, 'w1', userA);
+    expect(pubA.ok).toBe(true);
+
+    // Bもworldを1件公開(別ユーザーなので結果に混ざってはいけない)
+    await dataStore.set(worldMetaKey(userB.id, 'w1'), { id: 'w1', title: 'Bの世界', updatedAt: Date.now() });
+    await textStore.write(worldDocPath(userB.id, 'w1'), '# Bの世界');
+    const pubB = await publishWorld(dataStore, textStore, userB.id, 'w1', userB);
+    expect(pubB.ok).toBe(true);
+
+    const res = await request(app).get(`/api/users/${userA.id}/public`);
+    expect(res.status).toBe(200);
+    expect(res.body.worlds).toBeInstanceOf(Array);
+    expect(res.body.worlds.length).toBe(1);
+    expect(res.body.worlds[0].publicId).toBe(pubA.meta.publicId);
+    expect(res.body.worlds[0].ownerId).toBe(userA.id);
+    expect(res.body.characters).toEqual([]);
+    expect(res.body.scenarios).toEqual([]);
+    expect(res.body.novels).toEqual([]);
   });
 });

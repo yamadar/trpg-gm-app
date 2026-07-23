@@ -140,4 +140,10 @@ describe('createApp', () => {
     await request(app).delete('/api/worlds/w1').set('Cookie', cookie);
     expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(404);
   });
+
+  it('serves public user profile without auth', async () => {
+    const { user } = await createTestUserSession(app.locals.dataStore);
+    expect((await request(app).get(`/api/users/${user.id}`)).status).toBe(200);
+    expect((await request(app).get(`/api/users/${user.id}/public`)).status).toBe(200);
+  });
 });
