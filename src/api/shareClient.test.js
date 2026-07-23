@@ -7,6 +7,7 @@ import {
   publishNovel, unpublishNovel,
   publishedWorlds, publishedCharacters, publishedScenarios, publishedNovels,
   importWorld, importCharacter, importScenario,
+  getUserProfile, getUserPublicItems,
 } from './shareClient.js';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -203,6 +204,22 @@ describe('shareClient', () => {
       const f = stubJsonFetch({});
       await importWorld('pub 1');
       expect(f.mock.calls[0][0]).toBe(`/api/import/worlds/${encodeURIComponent('pub 1')}`);
+    });
+  });
+
+  describe('getUserProfile / getUserPublicItems', () => {
+    it('getUserProfile GETs /api/users/{id}', async () => {
+      const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'usr_1' }) });
+      vi.stubGlobal('fetch', f);
+      expect(await getUserProfile('usr_1')).toEqual({ id: 'usr_1' });
+      expect(f.mock.calls[0][0]).toBe('/api/users/usr_1');
+    });
+
+    it('getUserPublicItems GETs /api/users/{id}/public', async () => {
+      const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ worlds: [] }) });
+      vi.stubGlobal('fetch', f);
+      await getUserPublicItems('usr_1');
+      expect(f.mock.calls[0][0]).toBe('/api/users/usr_1/public');
     });
   });
 });

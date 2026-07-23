@@ -98,3 +98,11 @@ export async function importScenario(publicId, targetWorldId) {
     body: JSON.stringify({ targetWorldId }),
   });
 }
+
+export async function getUserProfile(userId) {
+  return apiFetch(`/api/users/${encodeURIComponent(userId)}`);
+}
+
+export async function getUserPublicItems(userId) {
+  return apiFetch(`/api/users/${encodeURIComponent(userId)}/public`);
+}
