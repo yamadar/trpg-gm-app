@@ -19,7 +19,7 @@ function logToTranscript(log) {
 const NOVELIZE_SYSTEM_PROMPT =
   '以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを一人称または三人称の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。';
 
-export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl = fetch }) {
+export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl = fetch, usage }) {
   const router = Router();
   router.param('id', idParamGuard);
 
@@ -57,6 +57,13 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
     if (!session) {
       res.status(404).json({ error: 'session not found' });
       return;
+    }
+    if (usage) {
+      const check = await usage.consume(req.userId, 'novelize');
+      if (!check.ok) {
+        res.status(429).json({ error: 'daily limit reached', resetAt: check.resetAt });
+        return;
+      }
     }
     const transcript = logToTranscript(session.log);
     try {
