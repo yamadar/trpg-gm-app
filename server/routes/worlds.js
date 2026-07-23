@@ -8,11 +8,11 @@ export function createWorldsRouter({ dataStore, textStore }) {
   router.param('id', idParamGuard);
 
   router.get('/worlds', asyncHandler(async (req, res) => {
-    res.json(await listWorlds(dataStore));
+    res.json(await listWorlds(dataStore, req.userId));
   }));
 
   router.get('/worlds/:id', asyncHandler(async (req, res) => {
-    const world = await getWorld(dataStore, textStore, req.params.id);
+    const world = await getWorld(dataStore, textStore, req.userId, req.params.id);
     if (!world) {
       res.status(404).json({ error: 'world not found' });
       return;
@@ -25,7 +25,7 @@ export function createWorldsRouter({ dataStore, textStore }) {
       res.status(400).json({ error: 'title and raw are required' });
       return;
     }
-    const world = await saveWorld(dataStore, textStore, {
+    const world = await saveWorld(dataStore, textStore, req.userId, {
       id: req.params.id,
       title: req.body.title,
       raw: req.body.raw,
@@ -34,7 +34,7 @@ export function createWorldsRouter({ dataStore, textStore }) {
   }));
 
   router.delete('/worlds/:id', asyncHandler(async (req, res) => {
-    await deleteWorld(dataStore, textStore, req.params.id);
+    await deleteWorld(dataStore, textStore, req.userId, req.params.id);
     res.status(204).end();
   }));
 

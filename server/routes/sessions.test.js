@@ -24,6 +24,10 @@ function buildApp(opts = {}) {
   const { fetchImpl } = opts;
   app = express();
   app.use(express.json());
+  app.use((req, res, next) => {
+    req.userId = 'usr_test';
+    next();
+  });
   app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl }));
 }
 
@@ -148,5 +152,16 @@ describe('sessions routes', () => {
   it('returns 400 when the session body is not an object', async () => {
     const res = await request(app).put('/api/sessions/s1').set('Content-Type', 'application/json').send('"a string"');
     expect(res.status).toBe(400);
+  });
+
+  it('does not see sessions of another user', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' }); // usr_test として保存
+    // 別ユーザーでappを作り直す
+    app = express();
+    app.use(express.json());
+    app.use((req, res, next) => { req.userId = 'usr_other'; next(); });
+    app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey: 'test-key' }));
+    expect((await request(app).get('/api/sessions/s1')).status).toBe(404);
+    expect((await request(app).get('/api/sessions')).body).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { sessionKey, sessionNovelDocPath, sessionNovelMetaKey } from '../storage/paths.js';
+import { sessionKey, sessionNovelDocPath, sessionNovelMetaKey, sessionListPrefix } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
@@ -24,13 +24,13 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
   router.param('id', idParamGuard);
 
   router.get('/sessions', asyncHandler(async (req, res) => {
-    const keys = await dataStore.list('sessions');
+    const keys = await dataStore.list(sessionListPrefix(req.userId));
     const sessions = await Promise.all(keys.map((k) => dataStore.get(k)));
     res.json(sessions.filter(Boolean));
   }));
 
   router.get('/sessions/:id', asyncHandler(async (req, res) => {
-    const session = await dataStore.get(sessionKey(req.params.id));
+    const session = await dataStore.get(sessionKey(req.userId, req.params.id));
     if (!session) {
       res.status(404).json({ error: 'session not found' });
       return;
@@ -44,7 +44,7 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
       return;
     }
     const session = { ...req.body, id: req.params.id };
-    await dataStore.set(sessionKey(req.params.id), session);
+    await dataStore.set(sessionKey(req.userId, req.params.id), session);
     res.json(session);
   }));
 
@@ -53,7 +53,7 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
       res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
       return;
     }
-    const session = await dataStore.get(sessionKey(req.params.id));
+    const session = await dataStore.get(sessionKey(req.userId, req.params.id));
     if (!session) {
       res.status(404).json({ error: 'session not found' });
       return;
@@ -90,8 +90,8 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
         res.status(502).json({ error: 'novelization produced empty output; not saved' });
         return;
       }
-      await textStore.write(sessionNovelDocPath(req.params.id), text);
-      await dataStore.set(sessionNovelMetaKey(req.params.id), {
+      await textStore.write(sessionNovelDocPath(req.userId, req.params.id), text);
+      await dataStore.set(sessionNovelMetaKey(req.userId, req.params.id), {
         turnCount: session.state?.turn_count ?? null,
         updatedAt: Date.now(),
       });
@@ -102,13 +102,13 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
   }));
 
   router.get('/sessions/:id/novel', asyncHandler(async (req, res) => {
-    const text = await textStore.read(sessionNovelDocPath(req.params.id));
+    const text = await textStore.read(sessionNovelDocPath(req.userId, req.params.id));
     if (text === null) {
       res.status(404).json({ error: 'novel not found' });
       return;
     }
-    const meta = await dataStore.get(sessionNovelMetaKey(req.params.id));
-    const session = await dataStore.get(sessionKey(req.params.id));
+    const meta = await dataStore.get(sessionNovelMetaKey(req.userId, req.params.id));
+    const session = await dataStore.get(sessionKey(req.userId, req.params.id));
     const currentTurn = session?.state?.turn_count ?? null;
     const stale = meta && meta.turnCount != null && currentTurn != null ? meta.turnCount !== currentTurn : false;
     res.json({ text, stale });

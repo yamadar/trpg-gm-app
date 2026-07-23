@@ -10,11 +10,11 @@ export function createCharactersRouter({ dataStore, textStore }) {
   router.param('name', idParamGuard);
 
   router.get('/worlds/:worldId/characters/:kind', asyncHandler(async (req, res) => {
-    res.json(await listCharacters(dataStore, req.params.worldId, req.params.kind));
+    res.json(await listCharacters(dataStore, req.userId, req.params.worldId, req.params.kind));
   }));
 
   router.get('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
-    const character = await getCharacter(dataStore, textStore, req.params.worldId, req.params.kind, req.params.name);
+    const character = await getCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
     if (!character) {
       res.status(404).json({ error: 'character not found' });
       return;
@@ -27,7 +27,7 @@ export function createCharactersRouter({ dataStore, textStore }) {
       res.status(400).json({ error: 'raw is required' });
       return;
     }
-    const character = await saveCharacter(dataStore, textStore, {
+    const character = await saveCharacter(dataStore, textStore, req.userId, {
       worldId: req.params.worldId,
       kind: req.params.kind,
       name: req.params.name,
@@ -38,12 +38,12 @@ export function createCharactersRouter({ dataStore, textStore }) {
   }));
 
   router.delete('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
-    await deleteCharacter(dataStore, textStore, req.params.worldId, req.params.kind, req.params.name);
+    await deleteCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
     res.status(204).end();
   }));
 
   router.put('/worlds/:worldId/characters/:kind/:name/parsed', asyncHandler(async (req, res) => {
-    const character = await saveCharacterParsed(dataStore, req.params.worldId, req.params.kind, req.params.name, {
+    const character = await saveCharacterParsed(dataStore, req.userId, req.params.worldId, req.params.kind, req.params.name, {
       parsed: req.body.parsed,
       parsedHash: req.body.parsedHash,
     });
