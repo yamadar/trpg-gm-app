@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Home, { sanitizeFilename } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
+import * as shareClient from '../api/shareClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 beforeEach(() => {
@@ -152,5 +153,86 @@ describe('Home', () => {
     expect(screen.getByText(/ログインが必要/)).toBeInTheDocument();
     // ライブラリと続きから再開は許可されたまま
     expect(screen.getByText('素材ライブラリ')).not.toBeDisabled();
+  });
+
+  describe('小説の公開/公開解除', () => {
+    it('shows a 公開中 badge for a published session and a 小説を公開 button for an unpublished one', async () => {
+      vi.spyOn(shareClient, 'publishedNovels').mockResolvedValue({ s1: 'pub-s1' });
+      const sessions = [
+        { id: 's1', title: 'セッションA', updatedAt: 2, state: {}, log: [] },
+        { id: 's2', title: 'セッションB', updatedAt: 1, state: {}, log: [] },
+      ];
+      renderWithAuth(
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.getByText('公開解除')).toBeInTheDocument();
+      expect(screen.getByText('小説を公開')).toBeInTheDocument();
+    });
+
+    it('clicking 小説を公開 calls publishNovel with the session id and flips to the badge, without navigating into the session', async () => {
+      vi.spyOn(shareClient, 'publishedNovels').mockResolvedValue({});
+      const publishSpy = vi.spyOn(shareClient, 'publishNovel').mockResolvedValue({ publicId: 'pub-s1' });
+      const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
+      const onContinue = vi.fn();
+      renderWithAuth(
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />
+      );
+
+      await waitFor(() => expect(shareClient.publishedNovels).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('小説を公開'));
+
+      await waitFor(() => expect(publishSpy).toHaveBeenCalledWith('s1'));
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      expect(screen.queryByText('小説を公開')).not.toBeInTheDocument();
+      expect(onContinue).not.toHaveBeenCalled();
+    });
+
+    it('shows a guidance message when publishing fails with 409 (novel not generated yet)', async () => {
+      vi.spyOn(shareClient, 'publishedNovels').mockResolvedValue({});
+      vi.spyOn(shareClient, 'publishNovel').mockRejectedValue(
+        Object.assign(new Error('novelize first'), { status: 409 })
+      );
+      const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
+      renderWithAuth(
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+
+      await waitFor(() => expect(shareClient.publishedNovels).toHaveBeenCalled());
+      fireEvent.click(screen.getByText('小説を公開'));
+
+      await waitFor(() => expect(screen.getByText('先に小説化してください')).toBeInTheDocument());
+    });
+
+    it('clicking 公開解除 calls unpublishNovel and removes the badge', async () => {
+      vi.spyOn(shareClient, 'publishedNovels').mockResolvedValue({ s1: 'pub-s1' });
+      const unpublishSpy = vi.spyOn(shareClient, 'unpublishNovel').mockResolvedValue();
+      const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
+      renderWithAuth(
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+
+      await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('公開解除'));
+
+      await waitFor(() => expect(unpublishSpy).toHaveBeenCalledWith('s1'));
+      await waitFor(() => expect(screen.queryByText('公開中')).not.toBeInTheDocument());
+      expect(screen.getByText('小説を公開')).toBeInTheDocument();
+    });
+
+    it('hides the publish controls when logged out', () => {
+      const publishedSpy = vi.spyOn(shareClient, 'publishedNovels');
+      const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
+      renderWithAuth(
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />,
+        { user: null }
+      );
+
+      expect(screen.queryByText('小説を公開')).not.toBeInTheDocument();
+      expect(screen.queryByText('公開中')).not.toBeInTheDocument();
+      expect(screen.queryByText('公開解除')).not.toBeInTheDocument();
+      expect(publishedSpy).not.toHaveBeenCalled();
+    });
   });
 });

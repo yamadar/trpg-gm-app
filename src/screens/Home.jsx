@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import { novelizeSession, getNovel } from '../api/sessionSyncClient.js';
+import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 function lastLineOf(session) {
@@ -21,6 +22,70 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   const { user } = useAuth();
   const [novelizing, setNovelizing] = useState({});
   const [novelizeError, setNovelizeError] = useState({});
+  const [publishedNovelIds, setPublishedNovelIds] = useState({});
+  const [publishBusy, setPublishBusy] = useState({});
+
+  useEffect(() => {
+    if (!user) {
+      setPublishedNovelIds({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await publishedNovels();
+        if (!cancelled) setPublishedNovelIds(map);
+      } catch {
+        // 公開状態の取得に失敗してもホーム画面自体は使えるようにする(黙って無視する)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  async function handlePublish(e, session) {
+    e.stopPropagation();
+    setPublishBusy((prev) => ({ ...prev, [session.id]: true }));
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      const { publicId } = await publishNovel(session.id);
+      setPublishedNovelIds((prev) => ({ ...prev, [session.id]: publicId }));
+    } catch (err) {
+      setNovelizeError((prev) => ({
+        ...prev,
+        [session.id]: err.status === 409 ? '先に小説化してください' : err.message,
+      }));
+    } finally {
+      setPublishBusy((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+    }
+  }
+
+  async function handleUnpublish(e, session) {
+    e.stopPropagation();
+    setPublishBusy((prev) => ({ ...prev, [session.id]: true }));
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      await unpublishNovel(session.id);
+      setPublishedNovelIds((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+    } catch (err) {
+      setNovelizeError((prev) => ({ ...prev, [session.id]: err.message }));
+    } finally {
+      setPublishBusy((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+    }
+  }
 
   async function handleNovelize(e, session) {
     e.stopPropagation();
@@ -193,14 +258,43 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
                     >
                       続ける →
                     </div>
-                    <Button
-                      variant="ghost"
-                      onClick={(e) => handleNovelize(e, s)}
-                      disabled={!!novelizing[s.id] || !user}
-                      style={{ fontSize: 11, padding: '4px 8px' }}
-                    >
-                      {novelizing[s.id] ? '小説化中…' : '小説化'}
-                    </Button>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <Button
+                        variant="ghost"
+                        onClick={(e) => handleNovelize(e, s)}
+                        disabled={!!novelizing[s.id] || !user}
+                        style={{ fontSize: 11, padding: '4px 8px' }}
+                      >
+                        {novelizing[s.id] ? '小説化中…' : '小説化'}
+                      </Button>
+                      {user &&
+                        (publishedNovelIds[s.id] ? (
+                          <>
+                            <span
+                              style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}
+                            >
+                              公開中
+                            </span>
+                            <Button
+                              variant="ghost"
+                              onClick={(e) => handleUnpublish(e, s)}
+                              disabled={!!publishBusy[s.id]}
+                              style={{ fontSize: 11, padding: '4px 8px' }}
+                            >
+                              公開解除
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            onClick={(e) => handlePublish(e, s)}
+                            disabled={!!publishBusy[s.id]}
+                            style={{ fontSize: 11, padding: '4px 8px' }}
+                          >
+                            小説を公開
+                          </Button>
+                        ))}
+                    </div>
                   </div>
                 </div>
               </Card>
