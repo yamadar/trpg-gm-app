@@ -1,0 +1,100 @@
+import { apiFetch } from './apiFetch.js';
+
+// DELETE endpoints return 204 with no body; apiFetch always calls res.json(),
+// which throws on an empty body. Existing delete-style clients (see
+// worldLibraryClient.js's deleteWorld/deleteRegion/deleteCategory) work
+// around this with a raw fetch that never calls res.json(). Follow that
+// same precedent here for unpublish*.
+async function rawDelete(url) {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
+  }
+}
+
+export async function listPublic(type) {
+  return apiFetch(`/api/public/${encodeURIComponent(type)}`);
+}
+
+export async function getPublic(type, publicId) {
+  return apiFetch(`/api/public/${encodeURIComponent(type)}/${encodeURIComponent(publicId)}`);
+}
+
+export async function publishWorld(worldId) {
+  return apiFetch(`/api/publish/worlds/${encodeURIComponent(worldId)}`, { method: 'POST' });
+}
+
+export async function unpublishWorld(worldId) {
+  return rawDelete(`/api/publish/worlds/${encodeURIComponent(worldId)}`);
+}
+
+export async function publishCharacter(worldId, kind, name) {
+  return apiFetch(
+    `/api/publish/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`,
+    { method: 'POST' }
+  );
+}
+
+export async function unpublishCharacter(worldId, kind, name) {
+  return rawDelete(
+    `/api/publish/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`
+  );
+}
+
+export async function publishScenario(worldId, scenarioId) {
+  return apiFetch(
+    `/api/publish/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(scenarioId)}`,
+    { method: 'POST' }
+  );
+}
+
+export async function unpublishScenario(worldId, scenarioId) {
+  return rawDelete(
+    `/api/publish/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(scenarioId)}`
+  );
+}
+
+export async function publishNovel(sessionId) {
+  return apiFetch(`/api/publish/sessions/${encodeURIComponent(sessionId)}/novel`, { method: 'POST' });
+}
+
+export async function unpublishNovel(sessionId) {
+  return rawDelete(`/api/publish/sessions/${encodeURIComponent(sessionId)}/novel`);
+}
+
+export async function publishedWorlds() {
+  return apiFetch('/api/publish/worlds');
+}
+
+export async function publishedCharacters(worldId, kind) {
+  return apiFetch(`/api/publish/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}`);
+}
+
+export async function publishedScenarios(worldId) {
+  return apiFetch(`/api/publish/worlds/${encodeURIComponent(worldId)}/scenarios`);
+}
+
+export async function publishedNovels() {
+  return apiFetch('/api/publish/sessions');
+}
+
+export async function importWorld(publicId) {
+  return apiFetch(`/api/import/worlds/${encodeURIComponent(publicId)}`, { method: 'POST' });
+}
+
+export async function importCharacter(publicId, targetWorldId) {
+  return apiFetch(`/api/import/characters/${encodeURIComponent(publicId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetWorldId }),
+  });
+}
+
+export async function importScenario(publicId, targetWorldId) {
+  return apiFetch(`/api/import/scenarios/${encodeURIComponent(publicId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetWorldId }),
+  });
+}
