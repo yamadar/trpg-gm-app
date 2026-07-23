@@ -72,3 +72,12 @@ Phase 2で追加。ホーム画面から遷移し、「小説」「世界観」�
 - 詳細表示では(小説タブを除き)「ライブラリに追加」ボタンからインポートできる(`importWorld`/`importCharacter`/`importScenario`、`POST /api/import/*`)。World以外はインポート先Worldを選ぶピッカーダイアログを表示する(`listWorlds`でユーザー自身のWorld一覧を取得)。**未ログイン時はボタンの代わりに「追加にはログインが必要です」という案内を表示**する(インポートAPIは認証必須のため)。
 
 素材の「公開」自体はこの画面ではなく、ホーム画面(14.1節、セッション=小説)と素材ライブラリ画面(14.3節、World/Character/Scenario)の各素材カードに公開/解除ボタンとして実装されている。ホーム画面には公開ギャラリーへの導線ボタンもある(`Home.jsx`)。
+
+### 14.5 ユーザーページ画面(`src/screens/UserPage.jsx`、Phase 3で追加)
+
+URLのハッシュ`#/u/{userId}`で表示される、特定ユーザーの公開プロフィール+公開素材一覧画面。`src/router/useHashRoute.js`の`useHashRoute()`がハッシュを監視し、`App.jsx`は`routeUserId`が非nullの間、通常の画面遷移(home/setup/library/gallery/play)を素通りしてこのページのみを表示する(通常画面のstateは保持されたまま裏に残る)。未ログインでも認証不要APIのみで完結するため閲覧でき、URLをそのまま共有・ブックマークできる。
+
+- 遷移経路: 公開ギャラリー画面(14.4節)のカードに表示される公開者名をクリックすると`navigateToUser(ownerId)`(`useHashRoute.js`)が呼ばれ`#/u/{ownerId}`に遷移する。
+- 表示内容: `GET /api/users/:userId`(`displayName`・`avatarUrl`・`bio`)と`GET /api/users/:userId/public`(そのユーザーの公開`worlds`/`characters`/`scenarios`/`novels`)を並行取得し、上部にアバター(未設定時はイニシャル1文字のプレースホルダ)・表示名・`bio`(未設定なら非表示)、下に「小説」「世界観」「キャラクター」「シナリオ」の4タブで公開素材一覧を表示する(タブ構成はGallery画面と共通)。一覧のカードをクリックすると`GET /api/public/:type/:publicId`で詳細を取得し、Gallery画面と共通の`PublicItemDetail`コンポーネント(`src/components/share/PublicItemDetail.jsx`)で本文を表示する。
+- ユーザーが存在しない場合(`404`)は「ユーザーが見つかりません」、その他の取得失敗時はエラーメッセージを表示し、いずれも「← 戻る」ボタン(`clearHash()`でハッシュを除去し通常画面に戻る)を出す。
+- `bio`はAuthBar(`src/components/auth/AuthBar.jsx`)のプロフィール編集フォームから自分で設定でき、`PATCH /api/me`経由で保存した内容が自分のユーザーページにも反映される。
