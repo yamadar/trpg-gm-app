@@ -6,6 +6,8 @@ import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
 import Library from './screens/Library.jsx';
 import Gallery from './screens/Gallery.jsx';
+import UserPage from './screens/UserPage.jsx';
+import { useHashRoute } from './router/useHashRoute.js';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
 import AuthBar from './components/auth/AuthBar.jsx';
@@ -29,6 +31,7 @@ function AppInner() {
   const [authError, setAuthError] = useState(false);
   const [uploadingSessions, setUploadingSessions] = useState(false);
   const takeover = useSessionTakeover();
+  const { userId: routeUserId } = useHashRoute();
 
   useEffect(() => {
     (async () => {
@@ -66,6 +69,21 @@ function AppInner() {
     setSessions(await listSessions());
     setSession(null);
     setView('home');
+  }
+
+  if (routeUserId) {
+    return (
+      <div
+        style={{
+          background: COLORS.paper,
+          minHeight: '100vh',
+          color: COLORS.ink,
+        }}
+      >
+        <AuthBar />
+        <UserPage userId={routeUserId} />
+      </div>
+    );
   }
 
   return (

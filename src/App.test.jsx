@@ -1,6 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import App from './App.jsx';
+import * as shareClient from './api/shareClient.js';
+
+afterEach(() => {
+  window.location.hash = '';
+});
 
 describe('App', () => {
   it('shows the home screen after the initial storage check completes', async () => {
@@ -68,5 +73,35 @@ describe('App', () => {
     expect(window.location.search).toBe('');
 
     window.history.pushState({}, '', '/');
+  });
+
+  it('renders UserPage when the hash matches #/u/{userId}, keeping AuthBar visible', async () => {
+    window.location.hash = '#/u/usr_x';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ user: null }) }))
+    );
+    const profileSpy = vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
+      id: 'usr_x',
+      displayName: 'Xavier',
+      avatarUrl: null,
+      bio: '',
+    });
+    const itemsSpy = vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
+      novels: [],
+      worlds: [],
+      characters: [],
+      scenarios: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText('Xavier')).toBeInTheDocument());
+    expect(profileSpy).toHaveBeenCalledWith('usr_x');
+    expect(itemsSpy).toHaveBeenCalledWith('usr_x');
+    expect(screen.getByText('ログイン')).toBeInTheDocument();
+    expect(screen.queryByText("GM's Desk")).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
   });
 });
