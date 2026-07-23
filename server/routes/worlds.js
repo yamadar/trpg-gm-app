@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { saveWorld, getWorld, listWorlds, deleteWorld } from '../storage/worldLibrary.js';
+import { unpublishWorldCascade } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
@@ -34,6 +35,7 @@ export function createWorldsRouter({ dataStore, textStore }) {
   }));
 
   router.delete('/worlds/:id', asyncHandler(async (req, res) => {
+    await unpublishWorldCascade(dataStore, textStore, req.userId, req.params.id);
     await deleteWorld(dataStore, textStore, req.userId, req.params.id);
     res.status(204).end();
   }));

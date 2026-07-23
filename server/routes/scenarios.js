@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { saveScenario, getScenario, listScenarios, deleteScenario } from '../storage/scenarioLibrary.js';
+import { unpublishScenario } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
@@ -37,6 +38,7 @@ export function createScenariosRouter({ dataStore, textStore }) {
   }));
 
   router.delete('/worlds/:worldId/scenarios/:id', asyncHandler(async (req, res) => {
+    await unpublishScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.id);
     await deleteScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.id);
     res.status(204).end();
   }));

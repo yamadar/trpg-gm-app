@@ -9,6 +9,9 @@ import { createCharactersRouter } from './routes/characters.js';
 import { createScenariosRouter } from './routes/scenarios.js';
 import { createWorldContentRouter } from './routes/worldContent.js';
 import { createRulesetsRouter } from './routes/rulesets.js';
+import { createPublicContentRouter } from './routes/publicContent.js';
+import { createPublishRouter } from './routes/publish.js';
+import { createImportsRouter } from './routes/imports.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 import { createProviders } from './auth/providers.js';
@@ -65,11 +68,14 @@ export function createApp({
   // 1) originCheck はセッション有無に関わらず全ミューテーションを守る
   // 2) authRouter は /auth/*, /api/me, /api/auth/providers を認証なしで公開する
   //    (ここで先にマッチさせることで、直後の requireAuth の対象から除外される)
-  // 3) requireAuth 以降の /api/* はすべてログイン必須
+  // 3) publicContentRouter (公開ギャラリー閲覧) も authRouter の直後・requireAuth の前に
+  //    マウントし、未認証での閲覧を許可する
+  // 4) requireAuth 以降の /api/* はすべてログイン必須
   const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: secureCookies, path: '/' };
 
   app.use(createOriginCheck({ baseUrl }));
   app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
+  app.use('/api', createPublicContentRouter({ dataStore, textStore })); // 公開ギャラリーは認証不要
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
@@ -79,6 +85,8 @@ export function createApp({
   app.use('/api', createScenariosRouter({ dataStore, textStore }));
   app.use('/api', createWorldContentRouter({ textStore }));
   app.use('/api', createRulesetsRouter({ dataStore }));
+  app.use('/api', createPublishRouter({ dataStore, textStore }));
+  app.use('/api', createImportsRouter({ dataStore, textStore }));
 
   app.use((err, req, res, next) => {
     console.error(err);

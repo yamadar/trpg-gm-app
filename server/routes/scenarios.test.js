@@ -8,14 +8,17 @@ import request from 'supertest';
 import { createScenariosRouter } from './scenarios.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
+import { publishScenario, getPublicItem } from '../storage/shareLibrary.js';
 
 let dir;
 let app;
+let dataStore;
+let textStore;
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'scenarios-route-test-'));
-  const dataStore = createFsDataStore(dir);
-  const textStore = createFsTextStore(dir);
+  dataStore = createFsDataStore(dir);
+  textStore = createFsTextStore(dir);
   app = express();
   app.use(express.json());
   app.use((req, res, next) => {
@@ -63,5 +66,16 @@ describe('scenarios routes', () => {
       .send({ title: 'A', raw: 'a', recommendedRuleset: 'coc7e' });
     const res = await request(app).get('/api/worlds/w1/scenarios/sc1');
     expect(res.body.recommendedRuleset).toBe('coc7e');
+  });
+
+  it('unpublishes a public scenario when it is deleted (cascade)', async () => {
+    await request(app).put('/api/worlds/w1/scenarios/sc1').send({ title: '失踪事件', raw: '## 概要' });
+    const owner = { id: 'usr_test', displayName: 'テストユーザー' };
+    const { meta } = await publishScenario(dataStore, textStore, 'usr_test', 'w1', 'sc1', owner);
+    expect(await getPublicItem(dataStore, textStore, 'scenarios', meta.publicId)).not.toBeNull();
+
+    await request(app).delete('/api/worlds/w1/scenarios/sc1');
+
+    expect(await getPublicItem(dataStore, textStore, 'scenarios', meta.publicId)).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { saveCharacter, getCharacter, listCharacters, deleteCharacter, saveCharacterParsed } from '../storage/characterLibrary.js';
+import { unpublishCharacter } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard, kindParamGuard } from './validateId.js';
 
@@ -38,6 +39,7 @@ export function createCharactersRouter({ dataStore, textStore }) {
   }));
 
   router.delete('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
+    await unpublishCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
     await deleteCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
     res.status(204).end();
   }));

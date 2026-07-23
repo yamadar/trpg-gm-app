@@ -8,14 +8,17 @@ import request from 'supertest';
 import { createCharactersRouter } from './characters.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
+import { publishCharacter, getPublicItem } from '../storage/shareLibrary.js';
 
 let dir;
 let app;
+let dataStore;
+let textStore;
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'characters-route-test-'));
-  const dataStore = createFsDataStore(dir);
-  const textStore = createFsTextStore(dir);
+  dataStore = createFsDataStore(dir);
+  textStore = createFsTextStore(dir);
   app = express();
   app.use(express.json());
   app.use((req, res, next) => {
@@ -80,5 +83,16 @@ describe('characters routes', () => {
 
     const get = await request(app).get('/api/worlds/w1/characters/pc/alice');
     expect(get.body.raw).toBe('原文');
+  });
+
+  it('unpublishes a public character when it is deleted (cascade)', async () => {
+    await request(app).put('/api/worlds/w1/characters/pc/alice').send({ raw: 'PC名: アリス' });
+    const owner = { id: 'usr_test', displayName: 'テストユーザー' };
+    const { meta } = await publishCharacter(dataStore, textStore, 'usr_test', 'w1', 'pc', 'alice', owner);
+    expect(await getPublicItem(dataStore, textStore, 'characters', meta.publicId)).not.toBeNull();
+
+    await request(app).delete('/api/worlds/w1/characters/pc/alice');
+
+    expect(await getPublicItem(dataStore, textStore, 'characters', meta.publicId)).toBeNull();
   });
 });

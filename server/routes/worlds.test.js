@@ -8,14 +8,17 @@ import request from 'supertest';
 import { createWorldsRouter } from './worlds.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
+import { publishWorld, getPublicWorld } from '../storage/shareLibrary.js';
 
 let dir;
 let app;
+let dataStore;
+let textStore;
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'worlds-route-test-'));
-  const dataStore = createFsDataStore(dir);
-  const textStore = createFsTextStore(dir);
+  dataStore = createFsDataStore(dir);
+  textStore = createFsTextStore(dir);
   app = express();
   app.use(express.json());
   app.use((req, res, next) => {
@@ -66,5 +69,16 @@ describe('worlds routes', () => {
   it('rejects a traversal id with 400', async () => {
     const res = await request(app).get('/api/worlds/..%2F..%2Fescape');
     expect(res.status).toBe(400);
+  });
+
+  it('unpublishes a public world when it is deleted (cascade)', async () => {
+    await request(app).put('/api/worlds/w1').send({ title: 'A', raw: 'a' });
+    const owner = { id: 'usr_test', displayName: 'テストユーザー' };
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_test', 'w1', owner);
+    expect(await getPublicWorld(dataStore, textStore, meta.publicId)).not.toBeNull();
+
+    await request(app).delete('/api/worlds/w1');
+
+    expect(await getPublicWorld(dataStore, textStore, meta.publicId)).toBeNull();
   });
 });

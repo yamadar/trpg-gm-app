@@ -102,4 +102,42 @@ describe('createApp', () => {
       .send({ title: 'x' });
     expect(res.status).toBe(403);
   });
+
+  it('serves the public gallery without auth', async () => {
+    expect((await request(app).get('/api/public/worlds')).status).toBe(200);
+  });
+
+  it('requires auth for publish and import', async () => {
+    expect((await request(app).post('/api/publish/worlds/w1')).status).toBe(401);
+    expect((await request(app).post('/api/import/worlds/pub_x')).status).toBe(401);
+  });
+
+  it('end to end: A publishes, anonymous reads, B imports a copy', async () => {
+    const a = await createTestUserSession(app.locals.dataStore);
+    const b = await createTestUserSession(app.locals.dataStore);
+    await request(app).put('/api/worlds/w1').set('Cookie', a.cookie).send({ title: 'Aの世界', raw: '# 本文' });
+    const pub = await request(app).post('/api/publish/worlds/w1').set('Cookie', a.cookie);
+    const { publicId } = pub.body;
+    // 未認証で読める
+    expect((await request(app).get(`/api/public/worlds/${publicId}`)).body.title).toBe('Aの世界');
+    // Bがインポート → Bのライブラリに入る
+    const imported = await request(app).post(`/api/import/worlds/${publicId}`).set('Cookie', b.cookie);
+    expect(imported.status).toBe(201);
+    const bWorld = await request(app).get(`/api/worlds/${imported.body.id}`).set('Cookie', b.cookie);
+    expect(bWorld.body.raw).toBe('# 本文');
+    // Aのデータは不変・Bのインポート後にAが解除してもBのコピーは残る
+    await request(app).delete('/api/publish/worlds/w1').set('Cookie', a.cookie);
+    expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(404);
+    expect((await request(app).get(`/api/worlds/${imported.body.id}`).set('Cookie', b.cookie)).status).toBe(200);
+  });
+
+  it('deleting a private item unpublishes it (cascade)', async () => {
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+    await request(app).put('/api/worlds/w1').set('Cookie', cookie).send({ title: '世界', raw: '# 本文' });
+    const pub = await request(app).post('/api/publish/worlds/w1').set('Cookie', cookie);
+    const { publicId } = pub.body;
+    expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(200);
+    await request(app).delete('/api/worlds/w1').set('Cookie', cookie);
+    expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(404);
+  });
 });
