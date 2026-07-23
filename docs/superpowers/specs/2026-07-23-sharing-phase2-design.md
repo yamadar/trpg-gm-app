@@ -134,7 +134,7 @@ server/routes/imports.js        … インポートルーター (新規)
 server/index.js                 … publicContent を requireAuth の前、publish/imports を後ろに配線
 ```
 
-- 既存の `deleteWorld`/`deleteCharacter`/`deleteScenario` に公開解除カスケードを追加(shareLibraryの関数を呼ぶ)
+- 削除時の公開解除カスケードは**ルート層**(worlds/characters/scenariosルーターのDELETEハンドラ)で行う — shareLibraryはworldLibrary等を参照するため、ライブラリ層に逆向き参照を足すと循環importになる。挙動は設計セクション2のとおり
 - 公開一覧の並び順はサーバー側で `publishedAt` 降順ソートして返す
 
 ## 6. エラーハンドリング
