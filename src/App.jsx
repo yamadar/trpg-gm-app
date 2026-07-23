@@ -6,7 +6,9 @@ import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
 import Library from './screens/Library.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
+import { useSessionTakeover } from './auth/useSessionTakeover.js';
 import AuthBar from './components/auth/AuthBar.jsx';
+import ConfirmModal from './components/library/ConfirmModal.jsx';
 
 export default function App() {
   return (
@@ -24,6 +26,7 @@ function AppInner() {
   const [loadingHome, setLoadingHome] = useState(true);
   const [storageOk, setStorageOk] = useState(true);
   const [authError, setAuthError] = useState(false);
+  const takeover = useSessionTakeover();
 
   useEffect(() => {
     (async () => {
@@ -72,6 +75,12 @@ function AppInner() {
       }}
     >
       <AuthBar />
+      <ConfirmModal
+        open={takeover.pendingCount > 0}
+        message={`このブラウザに保存されたセッション${takeover.pendingCount}件をアカウントに保存しますか?`}
+        onConfirm={takeover.confirm}
+        onCancel={takeover.dismiss}
+      />
       {authError && (
         <div
           style={{
