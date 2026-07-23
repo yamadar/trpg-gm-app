@@ -56,6 +56,12 @@ export default function UserPage({ userId }) {
     })();
   }, [userId]);
 
+  useEffect(() => {
+    setViewMode('list');
+    setDetail(null);
+    setDetailError('');
+  }, [tab]);
+
   async function openDetail(publicId) {
     setViewMode('detail');
     setDetail(null);

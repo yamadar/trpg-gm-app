@@ -206,4 +206,36 @@ describe('UserPage', () => {
     await waitFor(() => expect(screen.queryByText('物語本文')).not.toBeInTheDocument());
     expect(screen.getByText('Epic Adventure')).toBeInTheDocument();
   });
+
+  it('resets an open detail view back to the list when switching tabs', async () => {
+    vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
+      id: 'usr_1',
+      displayName: 'Jill',
+      avatarUrl: null,
+      bio: '',
+    });
+    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
+      ...EMPTY_ITEMS,
+      novels: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Nora', publishedAt: PUBLISHED_AT }],
+    });
+    const getPublicSpy = vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'n1',
+      title: 'Epic Adventure',
+      ownerName: 'Nora',
+      publishedAt: PUBLISHED_AT,
+      raw: '物語本文',
+    });
+
+    renderWithAuth(<UserPage userId="usr_1" />);
+    fireEvent.click(await screen.findByText('Epic Adventure'));
+
+    await waitFor(() => expect(getPublicSpy).toHaveBeenCalledWith('novels', 'n1'));
+    expect(await screen.findByText('物語本文')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('世界観'));
+
+    await waitFor(() => expect(screen.queryByText('物語本文')).not.toBeInTheDocument());
+    expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument();
+    expect(screen.queryByText('Epic Adventure')).not.toBeInTheDocument();
+  });
 });
