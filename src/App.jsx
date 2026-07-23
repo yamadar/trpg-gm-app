@@ -83,8 +83,11 @@ function AppInner() {
         confirmDisabled={uploadingSessions}
         onConfirm={async () => {
           setUploadingSessions(true);
-          await takeover.confirm();
-          setUploadingSessions(false);
+          try {
+            await takeover.confirm();
+          } finally {
+            setUploadingSessions(false);
+          }
         }}
         onCancel={takeover.dismiss}
       />
