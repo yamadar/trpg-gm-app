@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import {
-  publicMetaKey, publicWorldDocsPrefix, publicWorldDocPath, publicRegionDocPath, publicCategoryDocPath,
+  publicListPrefix, publicMetaKey, publicWorldDocsPrefix, publicWorldDocPath, publicRegionDocPath, publicCategoryDocPath,
   publicCharacterDocsPrefix, publicCharacterDocPath, publicScenarioDocsPrefix, publicScenarioDocPath,
   publicNovelDocsPrefix, publicNovelDocPath,
-  publishWorldMapKey, publishCharacterMapKey, publishCharacterListPrefix,
-  publishScenarioMapKey, publishScenarioListPrefix, publishNovelMapKey,
+  publishWorldMapKey, publishWorldListPrefix, publishCharacterMapKey, publishCharacterListPrefix,
+  publishScenarioMapKey, publishScenarioListPrefix, publishNovelMapKey, publishNovelListPrefix,
   sessionKey, sessionNovelDocPath,
 } from './paths.js';
 import { getWorld } from './worldLibrary.js';
@@ -132,4 +132,61 @@ export async function unpublishWorldCascade(dataStore, textStore, userId, worldI
     await unpublishScenario(dataStore, textStore, userId, worldId, key.split('/').pop());
   }
   await unpublishWorld(dataStore, textStore, userId, worldId);
+}
+
+export async function listPublic(dataStore, type) {
+  const keys = await dataStore.list(publicListPrefix(type));
+  const metas = (await Promise.all(keys.map((k) => dataStore.get(k)))).filter(Boolean);
+  return metas.sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
+export async function getPublicWorld(dataStore, textStore, publicId) {
+  const meta = await dataStore.get(publicMetaKey('worlds', publicId));
+  if (!meta) return null;
+  const raw = (await textStore.read(publicWorldDocPath(publicId))) ?? '';
+  const regions = await Promise.all(
+    (meta.regions ?? []).map(async (name) => ({ name, raw: (await textStore.read(publicRegionDocPath(publicId, name))) ?? '' }))
+  );
+  const categories = await Promise.all(
+    (meta.categories ?? []).map(async (name) => ({ name, raw: (await textStore.read(publicCategoryDocPath(publicId, name))) ?? '' }))
+  );
+  return { ...meta, raw, regions, categories };
+}
+
+const ITEM_DOC_PATH = {
+  characters: publicCharacterDocPath,
+  scenarios: publicScenarioDocPath,
+  novels: publicNovelDocPath,
+};
+
+export async function getPublicItem(dataStore, textStore, type, publicId) {
+  const meta = await dataStore.get(publicMetaKey(type, publicId));
+  if (!meta) return null;
+  const raw = (await textStore.read(ITEM_DOC_PATH[type](publicId))) ?? '';
+  return { ...meta, raw };
+}
+
+async function mapFromPrefix(dataStore, prefix) {
+  const out = {};
+  for (const key of await dataStore.list(prefix)) {
+    const map = await dataStore.get(key);
+    if (map?.publicId) out[key.split('/').pop()] = map.publicId;
+  }
+  return out;
+}
+
+export async function getPublishedWorlds(dataStore, userId) {
+  return mapFromPrefix(dataStore, publishWorldListPrefix(userId));
+}
+
+export async function getPublishedCharacters(dataStore, userId, worldId, kind) {
+  return mapFromPrefix(dataStore, publishCharacterListPrefix(userId, worldId, kind));
+}
+
+export async function getPublishedScenarios(dataStore, userId, worldId) {
+  return mapFromPrefix(dataStore, publishScenarioListPrefix(userId, worldId));
+}
+
+export async function getPublishedNovels(dataStore, userId) {
+  return mapFromPrefix(dataStore, publishNovelListPrefix(userId));
 }

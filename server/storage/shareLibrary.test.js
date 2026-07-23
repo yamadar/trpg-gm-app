@@ -34,6 +34,13 @@ import {
   unpublishScenario,
   unpublishNovel,
   unpublishWorldCascade,
+  listPublic,
+  getPublicWorld,
+  getPublicItem,
+  getPublishedWorlds,
+  getPublishedCharacters,
+  getPublishedScenarios,
+  getPublishedNovels,
 } from './shareLibrary.js';
 
 const OWNER = { id: 'usr_1', displayName: '太郎' };
@@ -309,5 +316,143 @@ describe('unpublishWorldCascade', () => {
   it('is a no-op when nothing under the world was published', async () => {
     await seedWorld('usr_1');
     await expect(unpublishWorldCascade(dataStore, textStore, 'usr_1', 'w1')).resolves.not.toThrow();
+  });
+});
+
+describe('listPublic', () => {
+  it('returns metas sorted by publishedAt desc', async () => {
+    await seedWorld('usr_1', 'w1');
+    const first = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+
+    // real wall-clock gap so publishedAt differs without stubbing Date.now
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    await seedWorld('usr_2', 'w2');
+    const second = await publishWorld(dataStore, textStore, 'usr_2', 'w2', { id: 'usr_2', displayName: '花子' });
+
+    const metas = await listPublic(dataStore, 'worlds');
+    expect(metas.map((m) => m.publicId)).toEqual([second.meta.publicId, first.meta.publicId]);
+    expect(metas[0].publishedAt).toBeGreaterThanOrEqual(metas[1].publishedAt);
+  });
+
+  it('returns an empty array when nothing is published', async () => {
+    expect(await listPublic(dataStore, 'worlds')).toEqual([]);
+  });
+});
+
+describe('getPublicWorld', () => {
+  it('returns meta with region and category bodies', async () => {
+    await seedWorld('usr_1');
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+
+    const result = await getPublicWorld(dataStore, textStore, meta.publicId);
+
+    expect(result).toMatchObject({
+      publicId: meta.publicId,
+      title: 'テスト世界',
+      raw: '# 本文',
+      regions: [{ name: 'north', raw: '北の地方' }],
+      categories: [{ name: 'magic', raw: '魔法体系' }],
+    });
+  });
+
+  it('returns null for an unknown publicId', async () => {
+    expect(await getPublicWorld(dataStore, textStore, 'pub_nope')).toBeNull();
+  });
+});
+
+describe('getPublicItem', () => {
+  it('reads the per-type doc for characters, scenarios and novels', async () => {
+    await seedWorld('usr_1');
+
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      raw: '# アリスのシート',
+    });
+    const charPub = await publishCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice', OWNER);
+    expect(await getPublicItem(dataStore, textStore, 'characters', charPub.meta.publicId)).toMatchObject({
+      publicId: charPub.meta.publicId,
+      kind: 'pc',
+      name: 'alice',
+      raw: '# アリスのシート',
+    });
+
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: '失踪事件',
+      raw: '## シナリオ概要',
+    });
+    const scenarioPub = await publishScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1', OWNER);
+    expect(await getPublicItem(dataStore, textStore, 'scenarios', scenarioPub.meta.publicId)).toMatchObject({
+      publicId: scenarioPub.meta.publicId,
+      title: '失踪事件',
+      raw: '## シナリオ概要',
+    });
+
+    await dataStore.set(sessionKey('usr_1', 'sess1'), { id: 'sess1', title: 'とある冒険' });
+    await textStore.write(sessionNovelDocPath('usr_1', 'sess1'), '小説本文');
+    const novelPub = await publishNovel(dataStore, textStore, 'usr_1', 'sess1', OWNER);
+    expect(await getPublicItem(dataStore, textStore, 'novels', novelPub.meta.publicId)).toMatchObject({
+      publicId: novelPub.meta.publicId,
+      title: 'とある冒険',
+      raw: '小説本文',
+    });
+  });
+
+  it('returns null for an unknown publicId', async () => {
+    expect(await getPublicItem(dataStore, textStore, 'characters', 'pub_nope')).toBeNull();
+  });
+});
+
+describe('getPublished* maps', () => {
+  it('getPublishedWorlds maps local worldId to publicId, only for published worlds', async () => {
+    await seedWorld('usr_1', 'w1');
+    await seedWorld('usr_1', 'w2');
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+
+    expect(await getPublishedWorlds(dataStore, 'usr_1')).toEqual({ w1: meta.publicId });
+  });
+
+  it('getPublishedCharacters maps name to publicId, scoped by kind', async () => {
+    await seedWorld('usr_1');
+    await saveCharacter(dataStore, textStore, 'usr_1', { worldId: 'w1', kind: 'pc', name: 'alice', raw: 'a' });
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'npc',
+      name: 'bob',
+      raw: 'b',
+      revealed: true,
+    });
+    const pcPub = await publishCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice', OWNER);
+    const npcPub = await publishCharacter(dataStore, textStore, 'usr_1', 'w1', 'npc', 'bob', OWNER);
+
+    expect(await getPublishedCharacters(dataStore, 'usr_1', 'w1', 'pc')).toEqual({ alice: pcPub.meta.publicId });
+    expect(await getPublishedCharacters(dataStore, 'usr_1', 'w1', 'npc')).toEqual({ bob: npcPub.meta.publicId });
+  });
+
+  it('getPublishedScenarios maps scenarioId to publicId', async () => {
+    await seedWorld('usr_1');
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc1', title: 't', raw: 'r' });
+    const { meta } = await publishScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1', OWNER);
+
+    expect(await getPublishedScenarios(dataStore, 'usr_1', 'w1')).toEqual({ sc1: meta.publicId });
+  });
+
+  it('getPublishedNovels maps sessionId to publicId', async () => {
+    await dataStore.set(sessionKey('usr_1', 'sess1'), { id: 'sess1', title: 'とある冒険' });
+    await textStore.write(sessionNovelDocPath('usr_1', 'sess1'), '小説本文');
+    const { meta } = await publishNovel(dataStore, textStore, 'usr_1', 'sess1', OWNER);
+
+    expect(await getPublishedNovels(dataStore, 'usr_1')).toEqual({ sess1: meta.publicId });
+  });
+
+  it('returns empty objects when nothing is published', async () => {
+    expect(await getPublishedWorlds(dataStore, 'usr_1')).toEqual({});
+    expect(await getPublishedCharacters(dataStore, 'usr_1', 'w1', 'pc')).toEqual({});
+    expect(await getPublishedScenarios(dataStore, 'usr_1', 'w1')).toEqual({});
+    expect(await getPublishedNovels(dataStore, 'usr_1')).toEqual({});
   });
 });
