@@ -35,6 +35,14 @@
 │  - World/Character/Scenario/RulesetのCRUD    │
 │    ロジックを持つ(素材ライブラリAPI)         │
 │  - dataStore/textStoreによるサーバー側永続化  │
+│  - 自前OAuth 2.0(Google/Discord/X, PKCE)に   │
+│    よるソーシャルログインとhttpOnlyクッキー   │
+│    のサーバーサイドセッション                │
+│  - 全APIは要認証で`users/{userId}`名前空間   │
+│    (例外: `/auth/*`・`GET /api/auth/providers`│
+│    ・`GET /api/me`は認証不要)                │
+│  - AI呼び出し(messages/novelize)はユーザー   │
+│    単位の日次利用制限(超過時429)             │
 └───────────────┬───────────────────────────┘
                 │
                 ▼
@@ -55,5 +63,6 @@
 ## デプロイ形態
 
 - フロントエンド: Vite + ReactによるSPA。ブラウザのIndexedDBにセッションを永続化する(詳細は[04-persistence.md](04-persistence.md))。
-- バックエンド: Expressサーバー。Anthropic APIキーをサーバー環境変数として保持し、`/api/messages`はフロントエンドの代わりにAPIを呼び出す単純な中継だが、小説化(novelize)と素材ライブラリ(World/Character/Scenario/Ruleset)のCRUDは独自のビジネスロジックを持つ。サーバー側の永続化抽象化(dataStore/textStore)も担う。
+- バックエンド: Expressサーバー。Anthropic APIキーをサーバー環境変数として保持し、`/api/messages`はフロントエンドの代わりにAPIを呼び出す単純な中継だが、小説化(novelize)と素材ライブラリ(World/Character/Scenario/Ruleset)のCRUDは独自のビジネスロジックを持つ。サーバー側の永続化抽象化(dataStore/textStore)も担う。加えて、Google/Discord/XのOAuth 2.0(PKCE)によるソーシャルログインとhttpOnlyクッキーベースのサーバーサイドセッションを実装し、`/auth/*`・`GET /api/auth/providers`・`GET /api/me`を除く全`/api/*`ルートを認証必須にしている(`server/auth/`配下)。
+- 環境変数`BASE_URL`(OAuthのredirect_uriおよびCSRF目的のOrigin検証の基準URL)と`DATA_DIR`(dataStore/textStoreの永続化先ディレクトリ)を前提とする。本番運用ではプラットフォームの永続ディスクを`DATA_DIR`にマウントする(ファイルシステムベースの実装のため、再起動やデプロイでディスクが失われるとユーザー・セッション・素材データも失われる)。プロキシ/ロードバランサ配下での実行を想定し`app.set('trust proxy', 1)`を設定している。
 - 開発時は単一の`package.json`から`concurrently`でフロントエンド(Vite dev server)とバックエンド(Express)を同時起動する。
