@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,10 +21,14 @@ function buildApp(opts = {}) {
   // destructured default (`{ apiKey = 'test-key' }`) triggers on any
   // `undefined` value, explicit or not.
   const apiKey = 'apiKey' in opts ? opts.apiKey : 'test-key';
-  const { fetchImpl } = opts;
+  const { fetchImpl, usage } = opts;
   app = express();
   app.use(express.json());
-  app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl }));
+  app.use((req, res, next) => {
+    req.userId = 'usr_test';
+    next();
+  });
+  app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl, usage }));
 }
 
 beforeEach(async () => {
@@ -145,8 +149,41 @@ describe('sessions routes', () => {
     expect(res.status).toBe(502);
   });
 
+  it('returns 429 from novelize when the daily limit is exhausted', async () => {
+    buildApp({ usage: { consume: async () => ({ ok: false, resetAt: 456 }) } });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
+    const res = await request(app).post('/api/sessions/s1/novelize');
+    expect(res.status).toBe(429);
+    expect(res.body.resetAt).toBe(456);
+  });
+
+  it('consumes usage with the novelize kind and proceeds when allowed', async () => {
+    const consume = vi.fn().mockResolvedValue({ ok: true });
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }),
+    });
+    buildApp({ usage: { consume }, fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
+    const res = await request(app).post('/api/sessions/s1/novelize');
+    expect(consume).toHaveBeenCalledWith('usr_test', 'novelize');
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(res.status).toBe(200);
+  });
+
   it('returns 400 when the session body is not an object', async () => {
     const res = await request(app).put('/api/sessions/s1').set('Content-Type', 'application/json').send('"a string"');
     expect(res.status).toBe(400);
+  });
+
+  it('does not see sessions of another user', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' }); // usr_test として保存
+    // 別ユーザーでappを作り直す
+    app = express();
+    app.use(express.json());
+    app.use((req, res, next) => { req.userId = 'usr_other'; next(); });
+    app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey: 'test-key' }));
+    expect((await request(app).get('/api/sessions/s1')).status).toBe(404);
+    expect((await request(app).get('/api/sessions')).body).toEqual([]);
   });
 });

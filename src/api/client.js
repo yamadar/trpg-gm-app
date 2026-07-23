@@ -1,14 +1,11 @@
+import { apiFetch } from './apiFetch.js';
+
 export async function callClaude(body) {
-  const res = await fetch('/api/messages', {
+  return apiFetch('/api/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
-  return res.json();
 }
 
 export function extractText(content) {

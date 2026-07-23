@@ -20,18 +20,18 @@ afterEach(async () => {
 
 describe('Ruleset library functions', () => {
   it('returns null for a missing ruleset', async () => {
-    expect(await getRuleset(dataStore, 'missing')).toBeNull();
+    expect(await getRuleset(dataStore, 'usr_1', 'missing')).toBeNull();
   });
 
   it('saves and retrieves a ruleset', async () => {
-    await saveRuleset(dataStore, {
+    await saveRuleset(dataStore, 'usr_1', {
       id: 'homebrew',
       label: '自作ルール',
       desc: '独自ルール',
       hint: '演出ヒント',
       growthUnit: 'CP',
     });
-    const ruleset = await getRuleset(dataStore, 'homebrew');
+    const ruleset = await getRuleset(dataStore, 'usr_1', 'homebrew');
     expect(ruleset).toMatchObject({
       id: 'homebrew',
       label: '自作ルール',
@@ -43,15 +43,21 @@ describe('Ruleset library functions', () => {
   });
 
   it('lists saved rulesets', async () => {
-    await saveRuleset(dataStore, { id: 'a', label: 'A', desc: 'a', hint: '' });
-    await saveRuleset(dataStore, { id: 'b', label: 'B', desc: 'b', hint: '' });
-    const rulesets = await listRulesets(dataStore);
+    await saveRuleset(dataStore, 'usr_1', { id: 'a', label: 'A', desc: 'a', hint: '' });
+    await saveRuleset(dataStore, 'usr_1', { id: 'b', label: 'B', desc: 'b', hint: '' });
+    const rulesets = await listRulesets(dataStore, 'usr_1');
     expect(rulesets.map((r) => r.id).sort()).toEqual(['a', 'b']);
   });
 
   it('deletes a ruleset', async () => {
-    await saveRuleset(dataStore, { id: 'a', label: 'A', desc: 'a', hint: '' });
-    await deleteRuleset(dataStore, 'a');
-    expect(await getRuleset(dataStore, 'a')).toBeNull();
+    await saveRuleset(dataStore, 'usr_1', { id: 'a', label: 'A', desc: 'a', hint: '' });
+    await deleteRuleset(dataStore, 'usr_1', 'a');
+    expect(await getRuleset(dataStore, 'usr_1', 'a')).toBeNull();
+  });
+
+  it('does not leak rulesets across users', async () => {
+    await saveRuleset(dataStore, 'usr_1', { id: 'r1', label: 'A' });
+    expect(await getRuleset(dataStore, 'usr_2', 'r1')).toBeNull();
+    expect(await listRulesets(dataStore, 'usr_2')).toEqual([]);
   });
 });

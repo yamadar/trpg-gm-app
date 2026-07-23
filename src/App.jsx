@@ -5,14 +5,29 @@ import Home from './screens/Home.jsx';
 import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
 import Library from './screens/Library.jsx';
+import { AuthProvider } from './auth/AuthContext.jsx';
+import { useSessionTakeover } from './auth/useSessionTakeover.js';
+import AuthBar from './components/auth/AuthBar.jsx';
+import ConfirmModal from './components/library/ConfirmModal.jsx';
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
+  );
+}
+
+function AppInner() {
   useGoogleFonts();
   const [view, setView] = useState('home'); // home | setup | library | play
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [loadingHome, setLoadingHome] = useState(true);
   const [storageOk, setStorageOk] = useState(true);
+  const [authError, setAuthError] = useState(false);
+  const [uploadingSessions, setUploadingSessions] = useState(false);
+  const takeover = useSessionTakeover();
 
   useEffect(() => {
     (async () => {
@@ -20,6 +35,16 @@ export default function App() {
       setSessions(await listSessions());
       setLoadingHome(false);
     })();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('auth_error') === '1') {
+      setAuthError(true);
+      params.delete('auth_error');
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    }
   }, []);
 
   async function handleContinue(id) {
@@ -50,6 +75,35 @@ export default function App() {
         color: COLORS.ink,
       }}
     >
+      <AuthBar />
+      <ConfirmModal
+        open={takeover.pendingCount > 0}
+        message={`このブラウザに保存されたセッション${takeover.pendingCount}件をアカウントに保存しますか?`}
+        confirmLabel="保存する"
+        confirmDisabled={uploadingSessions}
+        onConfirm={async () => {
+          setUploadingSessions(true);
+          try {
+            await takeover.confirm();
+          } finally {
+            setUploadingSessions(false);
+          }
+        }}
+        onCancel={takeover.dismiss}
+      />
+      {authError && (
+        <div
+          style={{
+            fontFamily: F_MONO,
+            fontSize: 12,
+            color: COLORS.stamp,
+            textAlign: 'center',
+            padding: '8px 12px',
+          }}
+        >
+          ログインに失敗しました。もう一度お試しください。
+        </div>
+      )}
       {view === 'home' &&
         (loadingHome ? (
           <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>

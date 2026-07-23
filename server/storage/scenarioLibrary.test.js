@@ -23,44 +23,44 @@ afterEach(async () => {
 
 describe('Scenario library functions', () => {
   it('returns null for a missing scenario', async () => {
-    expect(await getScenario(dataStore, textStore, 'w1', 'missing')).toBeNull();
+    expect(await getScenario(dataStore, textStore, 'usr_1', 'w1', 'missing')).toBeNull();
   });
 
   it('saves and retrieves a scenario with its raw text', async () => {
-    await saveScenario(dataStore, textStore, { worldId: 'w1', id: 'sc1', title: '失踪事件', raw: '## シナリオ概要' });
-    const scenario = await getScenario(dataStore, textStore, 'w1', 'sc1');
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc1', title: '失踪事件', raw: '## シナリオ概要' });
+    const scenario = await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1');
     expect(scenario).toMatchObject({ id: 'sc1', worldId: 'w1', title: '失踪事件', raw: '## シナリオ概要' });
   });
 
   it('lists scenarios scoped to a world', async () => {
-    await saveScenario(dataStore, textStore, { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
-    await saveScenario(dataStore, textStore, { worldId: 'w1', id: 'sc2', title: 'B', raw: 'b' });
-    await saveScenario(dataStore, textStore, { worldId: 'w2', id: 'sc3', title: 'C', raw: 'c' });
-    const scenarios = await listScenarios(dataStore, 'w1');
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc2', title: 'B', raw: 'b' });
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w2', id: 'sc3', title: 'C', raw: 'c' });
+    const scenarios = await listScenarios(dataStore, 'usr_1', 'w1');
     expect(scenarios.map((s) => s.id).sort()).toEqual(['sc1', 'sc2']);
   });
 
   it('deletes a scenario and its raw text', async () => {
-    await saveScenario(dataStore, textStore, { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
-    await deleteScenario(dataStore, textStore, 'w1', 'sc1');
-    expect(await getScenario(dataStore, textStore, 'w1', 'sc1')).toBeNull();
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
+    await deleteScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1');
+    expect(await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1')).toBeNull();
   });
 
   it('saves a scenario with a recommended ruleset', async () => {
-    await saveScenario(dataStore, textStore, {
+    await saveScenario(dataStore, textStore, 'usr_1', {
       worldId: 'w1',
       id: 'sc1',
       title: 'A',
       raw: 'a',
       recommendedRuleset: 'coc7e',
     });
-    const scenario = await getScenario(dataStore, textStore, 'w1', 'sc1');
+    const scenario = await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1');
     expect(scenario.recommendedRuleset).toBe('coc7e');
   });
 
   it('defaults recommendedRuleset to null when not specified', async () => {
-    await saveScenario(dataStore, textStore, { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
-    const scenario = await getScenario(dataStore, textStore, 'w1', 'sc1');
+    await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
+    const scenario = await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1');
     expect(scenario.recommendedRuleset).toBeNull();
   });
 });

@@ -10,7 +10,17 @@ describe('App', () => {
   });
 
   it('navigates to the library screen and back', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    // ライブラリはログイン必須なので、/api/meはログイン済みユーザーを返す必要がある
+    // (それ以外のURL、たとえばWorld一覧取得は空配列を返す)。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
     render(<App />);
     await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
 
@@ -22,5 +32,18 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
 
     vi.unstubAllGlobals();
+  });
+
+  it('shows an auth error banner when the URL has auth_error=1 and strips the query param', async () => {
+    window.history.pushState({}, '', '/?auth_error=1');
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByText('ログインに失敗しました。もう一度お試しください。')
+      ).toBeInTheDocument()
+    );
+    expect(window.location.search).toBe('');
+
+    window.history.pushState({}, '', '/');
   });
 });

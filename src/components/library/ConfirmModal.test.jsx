@@ -33,4 +33,23 @@ describe('ConfirmModal', () => {
     fireEvent.click(btn);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it('defaults the confirm label to 削除する when confirmLabel is not passed', () => {
+    render(<ConfirmModal open={true} message="削除しますか?" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText('削除する')).toBeInTheDocument();
+  });
+
+  it('renders a custom confirmLabel when provided', () => {
+    render(
+      <ConfirmModal
+        open={true}
+        message="保存しますか?"
+        confirmLabel="保存する"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(screen.getByText('保存する')).toBeInTheDocument();
+    expect(screen.queryByText('削除する')).not.toBeInTheDocument();
+  });
 });

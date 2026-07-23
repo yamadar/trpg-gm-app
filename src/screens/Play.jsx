@@ -4,11 +4,13 @@ import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
 import { putSessionToServer } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
 
 export default function Play({ session, setSession, onExit }) {
+  const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -22,6 +24,10 @@ export default function Play({ session, setSession, onExit }) {
 
   const runTurn = useCallback(
     async (playerText, displayText) => {
+      if (!user) {
+        setError('プレイの進行にはログインが必要です。右上からログインしてください。');
+        return false;
+      }
       setBusy(true);
       setError('');
       try {
@@ -64,7 +70,7 @@ export default function Play({ session, setSession, onExit }) {
         } else {
           setSaveWarning('');
         }
-        putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
+        if (user) putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
         return true;
       } catch (e) {
         console.error(e);
@@ -74,16 +80,17 @@ export default function Play({ session, setSession, onExit }) {
         setBusy(false);
       }
     },
-    [session, setSession]
+    [session, setSession, user]
   );
 
   useEffect(() => {
+    if (authLoading) return;
     if (session.log.length === 0 && !hasStartedRef.current) {
       hasStartedRef.current = true;
       runTurn('(セッション開始。導入シーンを描写せよ)', null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authLoading]);
 
   async function submitFree() {
     if (!input.trim() || busy) return;

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
 import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
+import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 function makeSession(overrides = {}) {
   return {
@@ -55,20 +56,20 @@ beforeEach(() => {
 
 describe('Play', () => {
   it('requests an opening scene when the log is empty and renders the narrative', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(screen.getByText('進む')).toBeInTheDocument();
   });
 
   it('does not request an opening scene when the log already has entries', async () => {
     const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });
-    render(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
+    renderWithAuth(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
     expect(screen.getByText('既存のログ')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('fires the opening turn exactly once under React.StrictMode double-invocation', async () => {
-    render(
+    renderWithAuth(
       <React.StrictMode>
         <Harness initialSession={makeSession()} onExit={vi.fn()} />
       </React.StrictMode>
@@ -79,20 +80,20 @@ describe('Play', () => {
 
   it('accumulates xp_gained into session.state.xp and displays it with the growthUnit label', async () => {
     const session = makeSession({ ruleset: { id: 'gurps', label: 'GURPS風', desc: '', hint: '', growthUnit: 'CP' } });
-    render(<Harness initialSession={session} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(screen.getByText('CP: 5')).toBeInTheDocument();
   });
 
   it('defaults the growth label to "経験値" when session.ruleset is absent', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(screen.getByText('経験値: 5')).toBeInTheDocument();
   });
 
   it('syncs the updated session to the server after a turn, without blocking on failure', async () => {
     const putSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockRejectedValue(new Error('offline'));
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     await waitFor(() => expect(putSpy).toHaveBeenCalled());
     // 同期失敗してもUIはエラー表示しない(ゲーム進行は止めない)
@@ -111,7 +112,7 @@ describe('Play', () => {
         ],
       }),
     });
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('進行')).toBeInTheDocument());
     // "05"のような文字列連結ではなく数値の5であること
     expect(screen.getByText('経験値: 5')).toBeInTheDocument();
@@ -129,7 +130,7 @@ describe('Play', () => {
         ],
       }),
     });
-    render(<Harness initialSession={makeSession({ state: { current_scene: '元のシーン', flags: {}, history_summary: '', recent_log: [], turn_count: 0, xp: 0 } })} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession({ state: { current_scene: '元のシーン', flags: {}, history_summary: '', recent_log: [], turn_count: 0, xp: 0 } })} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('進行')).toBeInTheDocument());
     expect(screen.getByText('シーン: 元のシーン')).toBeInTheDocument();
   });
@@ -138,12 +139,12 @@ describe('Play', () => {
     // spyOnは既定で元実装を呼ぶが、mockResolvedValueOnceで開始ターンの1回だけfalseを返させ、
     // 以降は元実装に戻るため後続テストへ副作用が漏れない(このテストファイルにafterEachのリセットは無い)。
     vi.spyOn(storage, 'saveSession').mockResolvedValueOnce(false);
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
   });
 
   it('logs the player utterance and fetches a new GM turn when free input is submitted', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
     await waitFor(() =>
@@ -160,7 +161,7 @@ describe('Play', () => {
   });
 
   it('advances a turn when a choice button is clicked', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(global.fetch).toHaveBeenCalledTimes(1);
     await waitFor(() =>
@@ -171,7 +172,7 @@ describe('Play', () => {
   });
 
   it('submits on Enter when IME composition is not active', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
     await waitFor(() =>
@@ -185,7 +186,7 @@ describe('Play', () => {
   });
 
   it('does not submit on Enter while IME composition is active', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     // 開始ターンのsaveSession完了までbusy=trueのため、入力が有効化される(busy解除)まで待つ
     await waitFor(() =>
@@ -200,7 +201,7 @@ describe('Play', () => {
   });
 
   it('shows an error and restores the submitted input when the model returns unparseable output', async () => {
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     // 次のターンだけJSONを含まないテキストを返す(parseJsonLooseが投げる)
     global.fetch.mockResolvedValueOnce({
@@ -221,8 +222,21 @@ describe('Play', () => {
 
   it('persists the session via saveSession after a turn (regression pin)', async () => {
     const saveSpy = vi.spyOn(storage, 'saveSession'); // 既定は本実装を呼ぶ(fake-indexeddb)
-    render(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+  });
+
+  it('refuses to run a turn when logged out', async () => {
+    // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
+    const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />, { user: null });
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '森へ進む' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() =>
+      expect(screen.getByText('プレイの進行にはログインが必要です。右上からログインしてください。')).toBeInTheDocument()
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

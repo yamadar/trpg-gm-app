@@ -8,11 +8,11 @@ export function createRulesetsRouter({ dataStore }) {
   router.param('id', idParamGuard);
 
   router.get('/rulesets', asyncHandler(async (req, res) => {
-    res.json(await listRulesets(dataStore));
+    res.json(await listRulesets(dataStore, req.userId));
   }));
 
   router.get('/rulesets/:id', asyncHandler(async (req, res) => {
-    const ruleset = await getRuleset(dataStore, req.params.id);
+    const ruleset = await getRuleset(dataStore, req.userId, req.params.id);
     if (!ruleset) {
       res.status(404).json({ error: 'ruleset not found' });
       return;
@@ -25,7 +25,7 @@ export function createRulesetsRouter({ dataStore }) {
       res.status(400).json({ error: 'label is required' });
       return;
     }
-    const ruleset = await saveRuleset(dataStore, {
+    const ruleset = await saveRuleset(dataStore, req.userId, {
       id: req.params.id,
       label: req.body.label,
       desc: req.body.desc,
@@ -36,7 +36,7 @@ export function createRulesetsRouter({ dataStore }) {
   }));
 
   router.delete('/rulesets/:id', asyncHandler(async (req, res) => {
-    await deleteRuleset(dataStore, req.params.id);
+    await deleteRuleset(dataStore, req.userId, req.params.id);
     res.status(204).end();
   }));
 
