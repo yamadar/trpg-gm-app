@@ -18,6 +18,26 @@ import {
   campaignMetaKey,
   rulesetListPrefix,
   rulesetMetaKey,
+  publicListPrefix,
+  publicMetaKey,
+  publicWorldDocsPrefix,
+  publicWorldDocPath,
+  publicRegionDocPath,
+  publicCategoryDocPath,
+  publicCharacterDocsPrefix,
+  publicCharacterDocPath,
+  publicScenarioDocsPrefix,
+  publicScenarioDocPath,
+  publicNovelDocsPrefix,
+  publicNovelDocPath,
+  publishWorldMapKey,
+  publishWorldListPrefix,
+  publishCharacterMapKey,
+  publishCharacterListPrefix,
+  publishScenarioMapKey,
+  publishScenarioListPrefix,
+  publishNovelMapKey,
+  publishNovelListPrefix,
 } from './paths.js';
 
 describe('storage paths', () => {
@@ -83,5 +103,30 @@ describe('storage paths', () => {
 
   it('builds a ruleset key', () => {
     expect(rulesetMetaKey('usr_1', 'coc7e')).toBe('users/usr_1/rulesets/coc7e');
+  });
+});
+
+describe('public/publish paths', () => {
+  it('builds public tree keys', () => {
+    expect(publicListPrefix('worlds')).toBe('public/worlds');
+    expect(publicMetaKey('novels', 'pub_abc')).toBe('public/novels/pub_abc');
+    expect(publicWorldDocsPrefix('pub_abc')).toBe('public/worlds/pub_abc');
+    expect(publicWorldDocPath('pub_abc')).toBe('public/worlds/pub_abc/world.md');
+    expect(publicRegionDocPath('pub_abc', 'north')).toBe('public/worlds/pub_abc/regions/north.md');
+    expect(publicCategoryDocPath('pub_abc', 'magic')).toBe('public/worlds/pub_abc/categories/magic.md');
+    expect(publicCharacterDocPath('pub_abc')).toBe('public/characters/pub_abc/sheet.md');
+    expect(publicScenarioDocPath('pub_abc')).toBe('public/scenarios/pub_abc/scenario.md');
+    expect(publicNovelDocPath('pub_abc')).toBe('public/novels/pub_abc/novel.md');
+  });
+
+  it('builds publish mapping keys under the user namespace', () => {
+    expect(publishWorldMapKey('usr_1', 'w1')).toBe('users/usr_1/publish/worlds/w1');
+    expect(publishWorldListPrefix('usr_1')).toBe('users/usr_1/publish/worlds');
+    expect(publishCharacterMapKey('usr_1', 'w1', 'pc', 'alice')).toBe('users/usr_1/publish/worlds/w1/characters/pc/alice');
+    expect(publishCharacterListPrefix('usr_1', 'w1', 'npc')).toBe('users/usr_1/publish/worlds/w1/characters/npc');
+    expect(publishScenarioMapKey('usr_1', 'w1', 's1')).toBe('users/usr_1/publish/worlds/w1/scenarios/s1');
+    expect(publishScenarioListPrefix('usr_1', 'w1')).toBe('users/usr_1/publish/worlds/w1/scenarios');
+    expect(publishNovelMapKey('usr_1', 'sess1')).toBe('users/usr_1/publish/sessions/sess1');
+    expect(publishNovelListPrefix('usr_1')).toBe('users/usr_1/publish/sessions');
   });
 });
