@@ -138,4 +138,22 @@ describe('auth routes', () => {
     expect((await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ displayName: 'あ'.repeat(51) })).status).toBe(400);
     expect((await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ avatarUrl: 'https://x' })).status).toBe(400);
   });
+
+  it('PATCH /api/me updates bio with trim and allows empty', async () => {
+    const app = buildApp(googleFetchMock());
+    const { sessionCookie } = await login(app);
+    const res = await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ bio: '  自己紹介です  ' });
+    expect(res.status).toBe(200);
+    expect(res.body.user.bio).toBe('自己紹介です');
+    const cleared = await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ bio: '' });
+    expect(cleared.body.user.bio).toBe('');
+  });
+
+  it('PATCH /api/me validates bio', async () => {
+    const app = buildApp(googleFetchMock());
+    const { sessionCookie } = await login(app);
+    expect((await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ bio: 123 })).status).toBe(400);
+    expect((await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ bio: 'あ'.repeat(501) })).status).toBe(400);
+    expect((await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ bio: 'あ'.repeat(500) })).status).toBe(200);
+  });
 });

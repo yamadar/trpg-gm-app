@@ -103,6 +103,14 @@ export function createAuthRouter({
       }
       patch.avatarUrl = null;
     }
+    if ('bio' in req.body) {
+      const bio = typeof req.body.bio === 'string' ? req.body.bio.trim() : null;
+      if (bio === null || bio.length > 500) {
+        res.status(400).json({ error: 'bio must be a string of at most 500 characters' });
+        return;
+      }
+      patch.bio = bio;
+    }
     res.json({ user: await updateUserProfile(dataStore, user.id, patch) });
   }));
 

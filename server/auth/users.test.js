@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from '../storage/dataStore.js';
-import { findOrCreateUser, getUser, updateUserProfile, identityKey } from './users.js';
+import { findOrCreateUser, getUser, updateUserProfile, identityKey, userProfileKey } from './users.js';
 
 let dir;
 let dataStore;
@@ -57,5 +57,25 @@ describe('users', () => {
     expect(updated.avatarUrl).toBeNull();
     expect(updated.displayName).toBe('太郎');
     expect(updated.updatedAt).toBeGreaterThanOrEqual(user.updatedAt);
+  });
+
+  it('creates users with an empty bio by default', async () => {
+    const user = await findOrCreateUser(dataStore, profile);
+    expect(user.bio).toBe('');
+  });
+
+  it('getUser backfills bio for records saved before the field existed', async () => {
+    const user = await findOrCreateUser(dataStore, profile);
+    // bioフィールドを持たない旧レコードを直接書き戻す
+    const raw = await dataStore.get(userProfileKey(user.id));
+    delete raw.bio;
+    await dataStore.set(userProfileKey(user.id), raw);
+    expect((await getUser(dataStore, user.id)).bio).toBe('');
+  });
+
+  it('updateUserProfile can set and clear bio', async () => {
+    const user = await findOrCreateUser(dataStore, profile);
+    expect((await updateUserProfile(dataStore, user.id, { bio: 'よろしく' })).bio).toBe('よろしく');
+    expect((await updateUserProfile(dataStore, user.id, { bio: '' })).bio).toBe('');
   });
 });

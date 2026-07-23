@@ -25,6 +25,7 @@ export async function findOrCreateUser(dataStore, { provider, providerUserId, di
     id: `usr_${crypto.randomBytes(8).toString('hex')}`,
     displayName: displayName || 'ユーザー',
     avatarUrl: avatarUrl || null,
+    bio: '',
     createdAt: now,
     updatedAt: now,
   };
@@ -34,7 +35,9 @@ export async function findOrCreateUser(dataStore, { provider, providerUserId, di
 }
 
 export async function getUser(dataStore, userId) {
-  return dataStore.get(userProfileKey(userId));
+  const user = await dataStore.get(userProfileKey(userId));
+  if (!user) return null;
+  return { ...user, bio: user.bio ?? '' };
 }
 
 export async function updateUserProfile(dataStore, userId, patch) {
