@@ -313,4 +313,33 @@ describe('Home', () => {
       expect(ctx.campaignId).toBeTruthy();
     });
   });
+
+  describe('キャンペーングルーピング', () => {
+    it('同一campaignIdのセッションをキャンペーン見出しの下にまとめる', async () => {
+      vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([
+        { id: 'cp1', title: '影の連鎖', chapters: [{}, {}] },
+      ]);
+      const sessions = [
+        { id: 's1', title: '第一章', updatedAt: 1, worldId: 'w1', campaignId: 'cp1', state: {}, log: [{ role: 'gm', text: 'a' }] },
+        { id: 's2', title: '第二章', updatedAt: 2, worldId: 'w1', campaignId: 'cp1', state: {}, log: [{ role: 'gm', text: 'b' }] },
+        { id: 's3', title: '単発', updatedAt: 3, state: {}, log: [{ role: 'gm', text: 'c' }] },
+      ];
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+      expect(await screen.findByText(/影の連鎖/)).toBeInTheDocument();
+      await waitFor(() => expect(campaignClient.listCampaigns).toHaveBeenCalledWith('w1'));
+      expect(screen.getByText('第一章')).toBeInTheDocument();
+      expect(screen.getByText('第二章')).toBeInTheDocument();
+      expect(screen.getByText('単発')).toBeInTheDocument();
+    });
+
+    it('解決できないcampaignId(dangling)は非グループ表示にフォールバックする', async () => {
+      vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]); // cp_goneは見つからない
+      const sessions = [
+        { id: 's1', title: '孤児セッション', updatedAt: 1, worldId: 'w1', campaignId: 'cp_gone', state: {}, log: [{ role: 'gm', text: 'a' }] },
+      ];
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+      expect(await screen.findByText('続きから再開')).toBeInTheDocument();
+      expect(screen.getByText('孤児セッション')).toBeInTheDocument();
+    });
+  });
 });

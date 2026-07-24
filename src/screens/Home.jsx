@@ -5,7 +5,7 @@ import Button from '../components/ui/Button.jsx';
 import { novelizeSession, getNovel, getIllustratedNovel, putSessionToServer } from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { advanceCampaignPc } from '../api/session.js';
-import { getCampaign, putCampaign } from '../api/campaignClient.js';
+import { getCampaign, putCampaign, listCampaigns } from '../api/campaignClient.js';
 import { saveSession } from '../storage/index.js';
 import { makeId } from '../utils/makeId.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -29,6 +29,35 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   const [publishedNovelIds, setPublishedNovelIds] = useState({});
   const [publishBusy, setPublishBusy] = useState({});
   const [advancing, setAdvancing] = useState({});
+  const [campaignMap, setCampaignMap] = useState({}); // campaignId -> { title, chapterCount }
+
+  useEffect(() => {
+    const worldIds = [...new Set(sessions.filter((s) => s.campaignId && s.worldId).map((s) => s.worldId))];
+    if (!user || worldIds.length === 0) {
+      setCampaignMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const map = {};
+      await Promise.all(
+        worldIds.map(async (wid) => {
+          try {
+            const list = await listCampaigns(wid);
+            for (const c of list) {
+              map[c.id] = { title: c.title, chapterCount: (c.chapters || []).length };
+            }
+          } catch {
+            // 1つのWorldの取得に失敗しても他は表示する(該当campaignは非グループへフォールバック)
+          }
+        })
+      );
+      if (!cancelled) setCampaignMap(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessions, user]);
 
   useEffect(() => {
     if (!user) {
@@ -197,6 +226,149 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     }
   }
 
+  function renderSessionCard(s) {
+    return (
+      <Card key={s.id} style={{ cursor: 'pointer' }} onClick={() => onContinue(s.id)}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 8,
+                marginBottom: 4,
+              }}
+            >
+              <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>{s.title}</div>
+              {s.state?.current_scene && (
+                <div
+                  style={{
+                    fontFamily: F_MONO,
+                    fontSize: 11,
+                    color: COLORS.brassDark,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  シーン: {s.state.current_scene}
+                  {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
+                </div>
+              )}
+            </div>
+            <div
+              style={{
+                fontFamily: F_BODY,
+                fontSize: 13,
+                color: COLORS.inkSoft,
+                opacity: 0.8,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {lastLineOf(s)}
+            </div>
+            {novelizeError[s.id] && (
+              <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.stamp, marginTop: 4 }}>
+                {novelizeError[s.id]}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            <div
+              style={{
+                fontFamily: F_MONO,
+                fontSize: 12,
+                color: COLORS.brass,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              続ける →
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <Button
+                variant="ghost"
+                onClick={(e) => handleNovelize(e, s)}
+                disabled={!!novelizing[s.id] || !user}
+                style={{ fontSize: 11, padding: '4px 8px' }}
+              >
+                {novelizing[s.id] ? '小説化中…' : '小説化'}
+              </Button>
+              {s.log?.some((en) => en.role === 'gm' && en.image?.imageId) && (
+                <Button
+                  variant="ghost"
+                  onClick={(e) => handleNovelizeIllustrated(e, s)}
+                  disabled={!!novelizing[s.id] || !user}
+                  style={{ fontSize: 11, padding: '4px 8px' }}
+                >
+                  挿絵付き
+                </Button>
+              )}
+              {s.worldId && (
+                <Button
+                  variant="ghost"
+                  onClick={(e) => handleNextChapter(e, s)}
+                  disabled={!!advancing[s.id] || !user}
+                  style={{ fontSize: 11, padding: '4px 8px' }}
+                >
+                  {advancing[s.id] ? '準備中…' : '次の章へ'}
+                </Button>
+              )}
+              {user &&
+                (publishedNovelIds[s.id] ? (
+                  <>
+                    <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>公開中</span>
+                    <Button
+                      variant="ghost"
+                      onClick={(e) => handleUnpublish(e, s)}
+                      disabled={!!publishBusy[s.id]}
+                      style={{ fontSize: 11, padding: '4px 8px' }}
+                    >
+                      公開解除
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    onClick={(e) => handlePublish(e, s)}
+                    disabled={!!publishBusy[s.id]}
+                    style={{ fontSize: 11, padding: '4px 8px' }}
+                  >
+                    小説を公開
+                  </Button>
+                ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  const grouped = [];
+  const standalone = [];
+  const groupsById = {};
+  for (const s of sessions) {
+    const meta = s.campaignId ? campaignMap[s.campaignId] : null;
+    if (meta) {
+      if (!groupsById[s.campaignId]) {
+        groupsById[s.campaignId] = {
+          campaignId: s.campaignId,
+          title: meta.title,
+          chapterCount: meta.chapterCount,
+          items: [],
+          latest: 0,
+        };
+        grouped.push(groupsById[s.campaignId]);
+      }
+      const g = groupsById[s.campaignId];
+      g.items.push(s);
+      g.latest = Math.max(g.latest, s.updatedAt || 0);
+    } else {
+      standalone.push(s);
+    }
+  }
+  grouped.sort((a, b) => b.latest - a.latest);
+  grouped.forEach((g) => g.items.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
+
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px' }}>
       <h1
@@ -262,7 +434,27 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         </div>
       )}
 
-      {sessions.length > 0 && (
+      {grouped.map((g) => (
+        <div key={g.campaignId} style={{ marginBottom: 28 }}>
+          <div
+            style={{
+              fontFamily: F_DISPLAY,
+              fontSize: 14,
+              color: COLORS.brassDark,
+              marginBottom: 10,
+              letterSpacing: 0.5,
+            }}
+          >
+            {g.title}
+            <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}> 全{g.chapterCount}章</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {g.items.map(renderSessionCard)}
+          </div>
+        </div>
+      ))}
+
+      {standalone.length > 0 && (
         <>
           <div
             style={{
@@ -276,126 +468,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
             続きから再開
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {sessions.map((s) => (
-              <Card key={s.id} style={{ cursor: 'pointer' }} onClick={() => onContinue(s.id)}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'baseline',
-                        gap: 8,
-                        marginBottom: 4,
-                      }}
-                    >
-                      <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>
-                        {s.title}
-                      </div>
-                      {s.state?.current_scene && (
-                        <div
-                          style={{
-                            fontFamily: F_MONO,
-                            fontSize: 11,
-                            color: COLORS.brassDark,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          シーン: {s.state.current_scene}
-                          {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
-                        </div>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontFamily: F_BODY,
-                        fontSize: 13,
-                        color: COLORS.inkSoft,
-                        opacity: 0.8,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {lastLineOf(s)}
-                    </div>
-                    {novelizeError[s.id] && (
-                      <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.stamp, marginTop: 4 }}>
-                        {novelizeError[s.id]}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-                    <div
-                      style={{
-                        fontFamily: F_MONO,
-                        fontSize: 12,
-                        color: COLORS.brass,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      続ける →
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <Button
-                        variant="ghost"
-                        onClick={(e) => handleNovelize(e, s)}
-                        disabled={!!novelizing[s.id] || !user}
-                        style={{ fontSize: 11, padding: '4px 8px' }}
-                      >
-                        {novelizing[s.id] ? '小説化中…' : '小説化'}
-                      </Button>
-                      {s.log?.some((en) => en.role === 'gm' && en.image?.imageId) && (
-                        <Button
-                          variant="ghost"
-                          onClick={(e) => handleNovelizeIllustrated(e, s)}
-                          disabled={!!novelizing[s.id] || !user}
-                          style={{ fontSize: 11, padding: '4px 8px' }}
-                        >
-                          挿絵付き
-                        </Button>
-                      )}
-                      {s.worldId && (
-                        <Button
-                          variant="ghost"
-                          onClick={(e) => handleNextChapter(e, s)}
-                          disabled={!!advancing[s.id] || !user}
-                          style={{ fontSize: 11, padding: '4px 8px' }}
-                        >
-                          {advancing[s.id] ? '準備中…' : '次の章へ'}
-                        </Button>
-                      )}
-                      {user &&
-                        (publishedNovelIds[s.id] ? (
-                          <>
-                            <span
-                              style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}
-                            >
-                              公開中
-                            </span>
-                            <Button
-                              variant="ghost"
-                              onClick={(e) => handleUnpublish(e, s)}
-                              disabled={!!publishBusy[s.id]}
-                              style={{ fontSize: 11, padding: '4px 8px' }}
-                            >
-                              公開解除
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            onClick={(e) => handlePublish(e, s)}
-                            disabled={!!publishBusy[s.id]}
-                            style={{ fontSize: 11, padding: '4px 8px' }}
-                          >
-                            小説を公開
-                          </Button>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))}
+            {standalone.map(renderSessionCard)}
           </div>
         </>
       )}
