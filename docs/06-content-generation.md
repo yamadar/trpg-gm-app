@@ -34,6 +34,16 @@ PCが想定外の地域へ移動した場合、`world.md`目次に対するキ�
 
 **UI上の扱い**: 「region」「category」「relevant_docs」等の内部用語はユーザーに見せない。14.2の新規プレイ作成フロー内「World新規作成」ステップで「世界観の資料を貼ってください(長文可)」の一入力で完結させ、分割処理は自動発火・非表示にする。
 
+## 10.5 場面挿絵の生成(実装済み 2026-07-24、サブプロジェクト1)
+
+Google Gemini(既定 `gemini-2.5-flash-image`、`server/imageProvider.js`)でPlay画面のGMログエントリ毎に挿絵を生成する。
+
+- **プロンプト構築**(`server/imagePrompt.js`): 地の文(先頭400字)+ `session.moods` の画風キーワード(8種)+ 登場人物の見た目から組み立てる。
+- **登場人物の一貫性**: `server/sceneAnalysis.js` がAnthropic(構造化出力)で地の文から登場人物を特定し、未登録者の見た目を生成する。結果はセッション専用の**見た目レジストリ** `session.appearances`(名前→見た目)に蓄積され、以降の挿絵プロンプトに差し込まれてキャラの見た目が一貫する。PCシートに見た目の記述があればそれを優先。**シナリオ本文は書き換えない**(公開・インポートされる共有素材のため)。解析はプレイヤー可視の地の文のみを入力とし、失敗しても挿絵生成は止めない(見た目条件なしで続行)。
+- **保存・配信**: 画像バイトは `server/storage/imageStore.js`(バイナリストア)がファイル保存し、`GET /api/sessions/:id/images/:imageId` で `image/png` 配信。セッションJSONには `log[i].image.imageId` 参照のみを持たせ、クライアントが永続化する(セッションはクライアントが真実源)。
+- **設定・制限**: env `GEMINI_API_KEY`(未設定なら `GET /api/config` が `imageGen:false` を返しUIごと無効化)、`GEMINI_IMAGE_MODEL`、日次上限 `LIMIT_IMAGES_PER_DAY`(既定30、`usage` 機構の `images` 種別。挿絵1回=解析1+画像1の計2 upstream呼び出しを1ユニットとして計上)。
+- **未実装(後続サブプロジェクト)**: 挿絵付き小説化(2)、キャラポートレート生成+参照画像による強い一貫性(3)。見た目レジストリ項目に `imageId` を足すだけで参照画像方式へ拡張できる設計。
+
 ## 11. シナリオ自動生成モード
 
 「用意されたシナリオがない」場合、ジャンル要望(冒険/推理/ホラー等)からAIにシナリオを生成させる。実装は`src/api/session.js`の`generateScenario`。

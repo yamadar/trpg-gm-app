@@ -9,6 +9,7 @@
 - ダイスロール演出(実装済み 2026-07-24): 新着ターンの判定スタンプ(`src/components/ui/Stamp.jsx`)は「d100の数字回転(約0.8秒)→出目停止→押印」の3段階アニメーションで表示される。degree別に配色が変わる(会心=真鍮、成功=朱、失敗=薄い朱、大失敗=暗い赤+揺れ)。セッション再開時の過去ログは即時表示。`prefers-reduced-motion`環境や`matchMedia`非対応環境ではアニメーションせず即時表示(`theme.js`の`motionAllowed()`)。
 - タイプライター表示(実装済み 2026-07-24): 新着GMターンの地の文は一文字ずつ表示され(`src/hooks/useTypewriter.js`)、表示中に本文クリックで全文スキップできる。速度は`state.tension_level`連動(high=15ms/字、medium=25、low=35)。タイプ完了まで選択肢ボタン・入力欄は無効化される。reduced-motion時は即時表示。
 - 雰囲気連動配色(実装済み 2026-07-24): セッション作成時にWorld(優先)/Scenarioの`moods`が`session.moods`へ継承され、Play画面の背景色が雰囲気に応じて変わる(`theme.js`の`moodTheme()`、8種+既定)。文字色は可読性のため変更しない。moodsの無いセッションは従来配色。
+- シーン挿絵(実装済み 2026-07-24): GMログエントリ毎に、地の文の上に生成挿絵を表示する(`src/screens/Play.jsx` + `src/api/sceneImageClient.js`)。未生成エントリの「この場面を描く」ボタンで手動生成、ヘッダの「挿絵を自動生成」トグルでシーン変化時に自動生成する。Geminiキー未設定(`GET /api/config` の `imageGen:false`)時は挿絵UIを一切出さない。生成失敗・日次上限は当該エントリにインラインエラー表示。登場人物の見た目はセッション専用レジストリ(`session.appearances`)で横断的に一貫させる(06-content-generation.md参照)。
 
 
 ## 13. 演出方針(テンション制御)
