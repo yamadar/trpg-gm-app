@@ -4,6 +4,7 @@ import Button from '../components/ui/Button.jsx';
 import WorldTab from './library/WorldTab.jsx';
 import CharacterTab from './library/CharacterTab.jsx';
 import ScenarioTab from './library/ScenarioTab.jsx';
+import CampaignTab from './library/CampaignTab.jsx';
 import RulesetTab from './library/RulesetTab.jsx';
 import { listWorlds } from '../api/worldLibraryClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -12,6 +13,7 @@ const TABS = [
   { key: 'world', label: 'World' },
   { key: 'character', label: 'Character' },
   { key: 'scenario', label: 'Scenario' },
+  { key: 'campaign', label: 'Campaign' },
   { key: 'ruleset', label: 'Ruleset' },
 ];
 
@@ -73,7 +75,7 @@ export default function Library({ onClose }) {
             ))}
           </div>
 
-          {(tab === 'character' || tab === 'scenario') && (
+          {(tab === 'character' || tab === 'scenario' || tab === 'campaign') && (
             <div style={{ marginBottom: 16 }}>
               <select
                 value={selectedWorldId || ''}
@@ -108,6 +110,7 @@ export default function Library({ onClose }) {
           )}
           {tab === 'character' && <CharacterTab worldId={selectedWorldId} />}
           {tab === 'scenario' && <ScenarioTab worldId={selectedWorldId} />}
+          {tab === 'campaign' && <CampaignTab worldId={selectedWorldId} />}
           {tab === 'ruleset' && <RulesetTab />}
         </>
       )}
