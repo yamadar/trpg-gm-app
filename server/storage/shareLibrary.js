@@ -12,6 +12,7 @@ import { getCharacter } from './characterLibrary.js';
 import { getScenario } from './scenarioLibrary.js';
 import { listRegions, getRegion, listCategories, getCategory } from './worldContentLibrary.js';
 import { MOODS } from './moods.js';
+import { stripImageMarkers } from '../novelMarkers.js';
 
 function newPublicId() {
   return `pub_${crypto.randomBytes(6).toString('hex')}`;
@@ -109,7 +110,8 @@ export async function publishNovel(dataStore, textStore, userId, sessionId, owne
   if (text === null) return { ok: false, reason: 'novel_not_generated' };
   const mapKey = publishNovelMapKey(userId, sessionId);
   const publicId = await resolvePublicId(dataStore, mapKey);
-  await textStore.write(publicNovelDocPath(publicId), text);
+  // 挿絵マーカー(〈挿絵N〉)は公開ギャラリーへ漏らさない
+  await textStore.write(publicNovelDocPath(publicId), stripImageMarkers(text));
   const meta = await buildMeta(dataStore, 'novels', publicId, owner, { title: session.title ?? 'セッション' });
   return finishPublish(dataStore, 'novels', mapKey, meta);
 }

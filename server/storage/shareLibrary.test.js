@@ -248,6 +248,15 @@ describe('publishScenario', () => {
 });
 
 describe('publishNovel', () => {
+  it('公開小説には挿絵マーカーが含まれない', async () => {
+    await dataStore.set(sessionKey('usr_1', 'sess9'), { id: 'sess9', title: '挿絵つき冒険' });
+    await textStore.write(sessionNovelDocPath('usr_1', 'sess9'), '前\n〈挿絵1〉\n後');
+    const { ok, meta } = await publishNovel(dataStore, textStore, 'usr_1', 'sess9', OWNER);
+    expect(ok).toBe(true);
+    const publicText = await textStore.read(publicNovelDocPath(meta.publicId));
+    expect(publicText).toBe('前\n後');
+  });
+
   it('requires the session and the novel to exist', async () => {
     expect(await publishNovel(dataStore, textStore, 'usr_1', 'sess1', OWNER)).toEqual({
       ok: false,
