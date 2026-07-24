@@ -31,3 +31,11 @@ describe('RULESETS', () => {
     expect(byId.gurps.growthUnit).toBe('CP');
   });
 });
+
+describe('formula', () => {
+  it('every builtin ruleset has a formula matching its id', () => {
+    for (const r of RULESETS) {
+      expect(r.formula).toBe(r.id);
+    }
+  });
+});
