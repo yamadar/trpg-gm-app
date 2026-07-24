@@ -5,7 +5,7 @@ import {
   publicNovelDocsPrefix, publicNovelDocPath,
   publishWorldMapKey, publishWorldListPrefix, publishCharacterMapKey, publishCharacterListPrefix,
   publishScenarioMapKey, publishScenarioListPrefix, publishNovelMapKey, publishNovelListPrefix,
-  sessionKey, sessionNovelDocPath,
+  sessionKey, sessionNovelDocPath, worldMetaKey,
 } from './paths.js';
 import { getWorld } from './worldLibrary.js';
 import { getCharacter } from './characterLibrary.js';
@@ -58,7 +58,12 @@ export async function publishWorld(dataStore, textStore, userId, worldId, owner)
   for (const category of categories) {
     await textStore.write(publicCategoryDocPath(publicId, category), (await getCategory(textStore, userId, worldId, category)) ?? '');
   }
-  const meta = await buildMeta(dataStore, 'worlds', publicId, owner, { title: world.title, regions, categories });
+  const meta = await buildMeta(dataStore, 'worlds', publicId, owner, {
+    title: world.title,
+    regions,
+    categories,
+    moods: world.moods ?? [],
+  });
   return finishPublish(dataStore, 'worlds', mapKey, meta);
 }
 
@@ -68,7 +73,14 @@ export async function publishCharacter(dataStore, textStore, userId, worldId, ki
   const mapKey = publishCharacterMapKey(userId, worldId, kind, name);
   const publicId = await resolvePublicId(dataStore, mapKey);
   await textStore.write(publicCharacterDocPath(publicId), character.raw);
-  const meta = await buildMeta(dataStore, 'characters', publicId, owner, { title: name, kind, name });
+  const worldMeta = await dataStore.get(worldMetaKey(userId, worldId));
+  const meta = await buildMeta(dataStore, 'characters', publicId, owner, {
+    title: name,
+    kind,
+    name,
+    worldId,
+    worldTitle: worldMeta?.title ?? null,
+  });
   return finishPublish(dataStore, 'characters', mapKey, meta);
 }
 
@@ -78,9 +90,13 @@ export async function publishScenario(dataStore, textStore, userId, worldId, sce
   const mapKey = publishScenarioMapKey(userId, worldId, scenarioId);
   const publicId = await resolvePublicId(dataStore, mapKey);
   await textStore.write(publicScenarioDocPath(publicId), scenario.raw);
+  const worldMeta = await dataStore.get(worldMetaKey(userId, worldId));
   const meta = await buildMeta(dataStore, 'scenarios', publicId, owner, {
     title: scenario.title,
     recommendedRuleset: scenario.recommendedRuleset ?? null,
+    moods: scenario.moods ?? [],
+    worldId,
+    worldTitle: worldMeta?.title ?? null,
   });
   return finishPublish(dataStore, 'scenarios', mapKey, meta);
 }

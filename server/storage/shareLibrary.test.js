@@ -98,6 +98,18 @@ describe('publishWorld', () => {
     });
   });
 
+  it('carries moods into the public meta', async () => {
+    await saveWorld(dataStore, textStore, 'usr_1', { id: 'w1', title: 'テスト世界', raw: '# 本文', moods: ['ホラー', '冒険'] });
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+    expect(meta.moods).toEqual(['ホラー', '冒険']);
+  });
+
+  it('defaults moods to [] when the world has none', async () => {
+    await seedWorld('usr_1');
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+    expect(meta.moods).toEqual([]);
+  });
+
   it('republish keeps publicId and publishedAt, bumps updatedAt, and drops removed regions', async () => {
     await seedWorld('usr_1');
     const nowSpy = vi.spyOn(Date, 'now');
@@ -153,6 +165,31 @@ describe('publishCharacter', () => {
       reason: 'not_found',
     });
   });
+
+  it('carries worldId and worldTitle (from the owner\'s world meta)', async () => {
+    await seedWorld('usr_1');
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      raw: '# アリスのシート',
+    });
+    const { meta } = await publishCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice', OWNER);
+    expect(meta.worldId).toBe('w1');
+    expect(meta.worldTitle).toBe('テスト世界');
+  });
+
+  it('worldTitle falls back to null when the world meta is missing', async () => {
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'ghost-world',
+      kind: 'pc',
+      name: 'alice',
+      raw: '# アリスのシート',
+    });
+    const { meta } = await publishCharacter(dataStore, textStore, 'usr_1', 'ghost-world', 'pc', 'alice', OWNER);
+    expect(meta.worldId).toBe('ghost-world');
+    expect(meta.worldTitle).toBeNull();
+  });
 });
 
 describe('publishScenario', () => {
@@ -178,6 +215,34 @@ describe('publishScenario', () => {
       ok: false,
       reason: 'not_found',
     });
+  });
+
+  it('carries moods, worldId and worldTitle (from the owner\'s world meta)', async () => {
+    await seedWorld('usr_1');
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: '失踪事件',
+      raw: '## シナリオ概要',
+      moods: ['ミステリー', 'シリアス'],
+    });
+    const { meta } = await publishScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1', OWNER);
+    expect(meta.moods).toEqual(['ミステリー', 'シリアス']);
+    expect(meta.worldId).toBe('w1');
+    expect(meta.worldTitle).toBe('テスト世界');
+  });
+
+  it('worldTitle falls back to null when the world meta is missing', async () => {
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'ghost-world',
+      id: 'sc1',
+      title: '失踪事件',
+      raw: '## シナリオ概要',
+    });
+    const { meta } = await publishScenario(dataStore, textStore, 'usr_1', 'ghost-world', 'sc1', OWNER);
+    expect(meta.moods).toEqual([]);
+    expect(meta.worldId).toBe('ghost-world');
+    expect(meta.worldTitle).toBeNull();
   });
 });
 
