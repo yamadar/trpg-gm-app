@@ -39,7 +39,9 @@ function resolveBaseUrl(candidate) {
 }
 
 function parseLimit(value, def) {
-  const n = Number(value);
+  const s = String(value ?? '').trim();
+  if (s === '') return def;
+  const n = Number(s);
   return Number.isFinite(n) && n >= 0 ? n : def;
 }
 

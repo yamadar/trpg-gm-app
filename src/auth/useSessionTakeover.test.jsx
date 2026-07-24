@@ -135,4 +135,48 @@ describe('useSessionTakeover', () => {
 
     expect(hookResult.pendingCount).toBe(1);
   });
+
+  it('completes the in-flight check when refresh() re-renders with a new user object of the same id', async () => {
+    let resolveLocal;
+    listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLocal = resolve;
+        })
+    );
+    listServerSessions.mockResolvedValue([]);
+
+    let hookResult;
+    function Consumer() {
+      hookResult = useSessionTakeover();
+      return null;
+    }
+    function authValue(user) {
+      return { user, loading: false, refresh: async () => {}, logout: async () => {} };
+    }
+
+    const { rerender } = render(
+      <AuthContext.Provider value={authValue({ id: 'u1' })}>
+        <Consumer />
+      </AuthContext.Provider>
+    );
+
+    // refresh() がプロフィール更新後などに同じ id を持つ「新しい」user オブジェクトを
+    // 返してきた状況を模す(オブジェクト参照は変わるが id は同じ)。
+    rerender(
+      <AuthContext.Provider value={authValue({ id: 'u1' })}>
+        <Consumer />
+      </AuthContext.Provider>
+    );
+
+    // 進行中だったチェックが後から解決すれば、結果が反映されるはず
+    // (エフェクトが誤って再実行され、in-flight チェックがキャンセル扱いになっていなければ)。
+    await act(async () => {
+      resolveLocal([{ id: 'a', updatedAt: 200 }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(hookResult.pendingCount).toBe(1));
+  });
 });

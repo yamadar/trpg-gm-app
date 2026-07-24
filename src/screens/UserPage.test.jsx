@@ -280,4 +280,51 @@ describe('UserPage', () => {
     expect(screen.queryByText('Alice')).not.toBeInTheDocument();
     expect(screen.getByText('Bob')).toBeInTheDocument();
   });
+
+  it('ignores a stale detail response after returning to the list and opening a different item', async () => {
+    vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
+      id: 'usr_1',
+      displayName: 'Kate',
+      avatarUrl: null,
+      bio: '',
+    });
+    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
+      ...EMPTY_ITEMS,
+      novels: [
+        { publicId: 'a1', title: 'Item A', ownerName: 'Kate', publishedAt: PUBLISHED_AT },
+        { publicId: 'b1', title: 'Item B', ownerName: 'Kate', publishedAt: PUBLISHED_AT },
+      ],
+    });
+    let resolveA;
+    vi.spyOn(shareClient, 'getPublic').mockImplementation(async (type, publicId) => {
+      if (publicId === 'a1') {
+        return new Promise((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      return { publicId: 'b1', title: 'Item B', ownerName: 'Kate', publishedAt: PUBLISHED_AT, raw: 'B本文' };
+    });
+
+    renderWithAuth(<UserPage userId="usr_1" />);
+    await screen.findByText('Item A');
+
+    // Aを開く(未解決のまま)。
+    fireEvent.click(screen.getByText('Item A'));
+    await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'a1'));
+
+    // 一覧に戻り、Bを開く(こちらは即解決)。
+    fireEvent.click(screen.getByText('← 一覧に戻る'));
+    fireEvent.click(screen.getByText('Item B'));
+    await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'b1'));
+    await screen.findByText('B本文');
+
+    // Aの遅れたレスポンスが後から解決しても、Bの表示を上書きしない。
+    await act(async () => {
+      resolveA({ publicId: 'a1', title: 'Item A', ownerName: 'Kate', publishedAt: PUBLISHED_AT, raw: 'A本文' });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('A本文')).not.toBeInTheDocument();
+    expect(screen.getByText('B本文')).toBeInTheDocument();
+  });
 });

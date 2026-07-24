@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -19,6 +19,7 @@ export default function UserPage({ userId }) {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  const detailReqRef = useRef(0);
 
   useEffect(() => {
     setLoading(true);
@@ -61,16 +62,20 @@ export default function UserPage({ userId }) {
   }, [tab]);
 
   async function openDetail(publicId) {
+    const my = ++detailReqRef.current;
     setViewMode('detail');
     setDetail(null);
     setDetailLoading(true);
     setDetailError('');
     try {
-      setDetail(await getPublic(tab, publicId));
+      const item = await getPublic(tab, publicId);
+      if (my !== detailReqRef.current) return; // 別の詳細取得が始まっていたら破棄
+      setDetail(item);
     } catch (e) {
+      if (my !== detailReqRef.current) return;
       setDetailError('取得に失敗した: ' + e.message);
     } finally {
-      setDetailLoading(false);
+      if (my === detailReqRef.current) setDetailLoading(false);
     }
   }
 

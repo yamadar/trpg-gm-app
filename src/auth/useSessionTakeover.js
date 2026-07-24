@@ -8,6 +8,12 @@ export function useSessionTakeover() {
   const [candidates, setCandidates] = useState([]);
   const checkedForRef = useRef(null); // 同一ユーザーで1回だけ
 
+  // user オブジェクトそのものではなく id にのみ依存する。refresh() は同じ id を
+  // 持つ新しい user オブジェクトを返すことがあり(例: AuthBar からのプロフィール保存後)、
+  // [user] に依存しているとその再レンダーのたびにエフェクトが再実行されてしまう。
+  // その結果、進行中のチェックが cleanup で cancelled 扱いになる一方、新しい実行は
+  // checkedForRef.current === user.id の早期リターンで何もせず、
+  // setCandidates が呼ばれずに引き継ぎ提案が消えてしまう。
   useEffect(() => {
     if (!user || checkedForRef.current === user.id) return;
     checkedForRef.current = user.id;
@@ -30,7 +36,7 @@ export function useSessionTakeover() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user?.id]);
 
   const confirm = useCallback(async () => {
     for (const session of candidates) {
