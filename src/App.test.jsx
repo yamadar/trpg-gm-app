@@ -90,18 +90,13 @@ describe('App', () => {
       avatarUrl: null,
       bio: '',
     });
-    const itemsSpy = vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
-      novels: [],
-      worlds: [],
-      characters: [],
-      scenarios: [],
-    });
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
 
     render(<App />);
 
     await waitFor(() => expect(screen.getByText('Xavier')).toBeInTheDocument());
     expect(profileSpy).toHaveBeenCalledWith('usr_x');
-    expect(itemsSpy).toHaveBeenCalledWith('usr_x');
+    expect(listSpy).toHaveBeenCalledWith('novels', expect.objectContaining({ ownerId: 'usr_x' }));
     expect(screen.getByText('ログイン')).toBeInTheDocument();
     expect(screen.queryByText("GM's Desk")).not.toBeInTheDocument();
 

@@ -20,34 +20,60 @@ function rerenderWithAuth(rerender, ui) {
 const PUBLISHED_AT = 1700000000000;
 const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
 
-const EMPTY_ITEMS = { novels: [], worlds: [], characters: [], scenarios: [] };
+const EMPTY_PAGE = { items: [], total: 0, hasMore: false };
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
 describe('UserPage', () => {
-  it('fetches profile and public items in parallel and renders the header + default novels tab', async () => {
+  it('fetches the profile and the owner-filtered novels list, rendering the header + default tab', async () => {
     const profileSpy = vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
       id: 'usr_1',
       displayName: 'Alice',
       avatarUrl: null,
       bio: 'よろしくお願いします',
     });
-    const itemsSpy = vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
-      ...EMPTY_ITEMS,
-      novels: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+      total: 1,
+      hasMore: false,
     });
 
     renderWithAuth(<UserPage userId="usr_1" />);
 
     await waitFor(() => expect(profileSpy).toHaveBeenCalledWith('usr_1'));
-    expect(itemsSpy).toHaveBeenCalledWith('usr_1');
+    await waitFor(() =>
+      expect(listSpy).toHaveBeenCalledWith('novels', {
+        q: '',
+        moods: [],
+        ruleset: '',
+        ownerId: 'usr_1',
+        limit: 20,
+        offset: 0,
+      })
+    );
 
     expect(await screen.findByText('Alice')).toBeInTheDocument();
     expect(screen.getByText('よろしくお願いします')).toBeInTheDocument();
     expect(screen.getByText('Epic Adventure')).toBeInTheDocument();
     expect(screen.getByText(new RegExp(EXPECTED_DATE.replace(/\//g, '\\/')))).toBeInTheDocument();
+  });
+
+  it('fetches the list with ownerId set to the page userId', async () => {
+    vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
+      id: 'usr_42',
+      displayName: 'Zed',
+      avatarUrl: null,
+      bio: '',
+    });
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
+
+    renderWithAuth(<UserPage userId="usr_42" />);
+
+    await waitFor(() =>
+      expect(listSpy).toHaveBeenCalledWith('novels', expect.objectContaining({ ownerId: 'usr_42' }))
+    );
   });
 
   it('hides the bio paragraph when bio is empty', async () => {
@@ -57,7 +83,7 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     const { container } = renderWithAuth(<UserPage userId="usr_1" />);
     await screen.findByText('Bob');
@@ -71,7 +97,7 @@ describe('UserPage', () => {
       avatarUrl: 'https://example.com/carol.png',
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     const { container } = renderWithAuth(<UserPage userId="usr_1" />);
     await screen.findByText('Carol');
@@ -87,7 +113,7 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     const { container } = renderWithAuth(<UserPage userId="usr_1" />);
     await screen.findByText('Dana');
@@ -95,18 +121,29 @@ describe('UserPage', () => {
     expect(screen.getByText('D')).toBeInTheDocument();
   });
 
-  it('switches tabs and shows only that type\'s cards', async () => {
+  it("switches tabs and shows only that type's cards", async () => {
     vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
       id: 'usr_1',
       displayName: 'Eve',
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
-      novels: [{ publicId: 'n1', title: 'Novel X', ownerName: 'Eve', publishedAt: PUBLISHED_AT }],
-      worlds: [{ publicId: 'w1', title: 'World Y', ownerName: 'Eve', publishedAt: PUBLISHED_AT }],
-      characters: [],
-      scenarios: [],
+    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
+      if (type === 'novels') {
+        return {
+          items: [{ publicId: 'n1', title: 'Novel X', ownerName: 'Eve', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
+      }
+      if (type === 'worlds') {
+        return {
+          items: [{ publicId: 'w1', title: 'World Y', ownerName: 'Eve', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
+      }
+      return EMPTY_PAGE;
     });
 
     renderWithAuth(<UserPage userId="usr_1" />);
@@ -125,7 +162,7 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     renderWithAuth(<UserPage userId="usr_1" />);
     await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
@@ -139,7 +176,7 @@ describe('UserPage', () => {
           resolveProfile = resolve;
         })
     );
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     renderWithAuth(<UserPage userId="usr_1" />);
     expect(screen.getByText('読み込み中…')).toBeInTheDocument();
@@ -152,7 +189,7 @@ describe('UserPage', () => {
     const err = new Error('user not found');
     err.status = 404;
     vi.spyOn(shareClient, 'getUserProfile').mockRejectedValue(err);
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     const clearHashSpy = vi.spyOn(hashRoute, 'clearHash').mockImplementation(() => {});
 
     renderWithAuth(<UserPage userId="usr_missing" />);
@@ -164,7 +201,7 @@ describe('UserPage', () => {
 
   it('shows a fetch-error message on a non-404 failure', async () => {
     vi.spyOn(shareClient, 'getUserProfile').mockRejectedValue(new Error('boom'));
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     renderWithAuth(<UserPage userId="usr_1" />);
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
@@ -177,7 +214,7 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     const clearHashSpy = vi.spyOn(hashRoute, 'clearHash').mockImplementation(() => {});
 
     renderWithAuth(<UserPage userId="usr_1" />);
@@ -193,9 +230,10 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
-      ...EMPTY_ITEMS,
-      novels: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Nora', publishedAt: PUBLISHED_AT }],
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Nora', publishedAt: PUBLISHED_AT }],
+      total: 1,
+      hasMore: false,
     });
     const getPublicSpy = vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'n1',
@@ -226,9 +264,15 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
-      ...EMPTY_ITEMS,
-      novels: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Nora', publishedAt: PUBLISHED_AT }],
+    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
+      if (type === 'novels') {
+        return {
+          items: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Nora', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
+      }
+      return EMPTY_PAGE;
     });
     const getPublicSpy = vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'n1',
@@ -262,7 +306,7 @@ describe('UserPage', () => {
           })
       )
       .mockResolvedValueOnce({ id: 'usr_B', displayName: 'Bob', avatarUrl: null, bio: '' });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
     const { rerender } = renderWithAuth(<UserPage userId="usr_A" />);
     await waitFor(() => expect(profileSpy).toHaveBeenCalledWith('usr_A'));
@@ -288,12 +332,13 @@ describe('UserPage', () => {
       avatarUrl: null,
       bio: '',
     });
-    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue({
-      ...EMPTY_ITEMS,
-      novels: [
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [
         { publicId: 'a1', title: 'Item A', ownerName: 'Kate', publishedAt: PUBLISHED_AT },
         { publicId: 'b1', title: 'Item B', ownerName: 'Kate', publishedAt: PUBLISHED_AT },
       ],
+      total: 2,
+      hasMore: false,
     });
     let resolveA;
     vi.spyOn(shareClient, 'getPublic').mockImplementation(async (type, publicId) => {
@@ -312,7 +357,7 @@ describe('UserPage', () => {
     fireEvent.click(screen.getByText('Item A'));
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'a1'));
 
-    // 一覧に戻り、Bを開く(こちらは即解決)。
+    // 一覧に戻り、Bを開く(こちらは即解決)。タブは変わらないので PublicItemList は再マウントされず、一覧はそのまま。
     fireEvent.click(screen.getByText('← 一覧に戻る'));
     fireEvent.click(screen.getByText('Item B'));
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'b1'));

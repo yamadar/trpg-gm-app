@@ -1,18 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
-import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
-import { getUserProfile, getUserPublicItems, getPublic } from '../api/shareClient.js';
-import PublicItemDetail, { publicMetaLine } from '../components/share/PublicItemDetail.jsx';
+import { getUserProfile, getPublic } from '../api/shareClient.js';
+import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
+import PublicItemList from '../components/share/PublicItemList.jsx';
 import { clearHash } from '../router/useHashRoute.js';
-import { PUBLIC_TABS as TABS, KIND_LABELS } from '../constants/publicContent.js';
+import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
 
 export default function UserPage({ userId }) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [profile, setProfile] = useState(null);
-  const [items, setItems] = useState(null);
 
   const [tab, setTab] = useState('novels');
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
@@ -26,7 +25,6 @@ export default function UserPage({ userId }) {
     setNotFound(false);
     setLoadError('');
     setProfile(null);
-    setItems(null);
     setTab('novels');
     setViewMode('list');
     setDetail(null);
@@ -35,10 +33,9 @@ export default function UserPage({ userId }) {
     let cancelled = false;
     (async () => {
       try {
-        const [p, i] = await Promise.all([getUserProfile(userId), getUserPublicItems(userId)]);
+        const p = await getUserProfile(userId);
         if (cancelled) return;
         setProfile(p);
-        setItems(i);
       } catch (e) {
         if (cancelled) return;
         if (e.status === 404) {
@@ -118,8 +115,6 @@ export default function UserPage({ userId }) {
     );
   }
 
-  const currentItems = (items && items[tab]) || [];
-
   return (
     <div style={wrapStyle}>
       <div
@@ -198,51 +193,32 @@ export default function UserPage({ userId }) {
         ))}
       </div>
 
-      {viewMode === 'list' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {currentItems.map((it) => (
-            <Card key={it.publicId} onClick={() => openDetail(it.publicId)} style={{ cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>{it.title}</div>
-                {tab === 'characters' && (
-                  <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>
-                    {KIND_LABELS[it.kind] || it.kind}
-                  </span>
-                )}
-              </div>
-              <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginTop: 4 }}>
-                {publicMetaLine(it)}
-              </div>
-              {tab === 'scenarios' && it.recommendedRuleset && (
-                <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginTop: 4 }}>
-                  推奨ルール: {it.recommendedRuleset}
-                </div>
-              )}
-            </Card>
-          ))}
-          {currentItems.length === 0 && (
-            <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-              まだ公開されたものがありません
-            </div>
-          )}
-        </div>
-      ) : detailLoading ? (
-        <div>
-          <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-            ← 一覧に戻る
-          </Button>
-          <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-        </div>
-      ) : detailError ? (
-        <div>
-          <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-            ← 一覧に戻る
-          </Button>
-          <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-        </div>
-      ) : (
-        detail && <PublicItemDetail type={tab} item={detail} onBack={backToList} />
-      )}
+      <PublicItemList
+        key={tab}
+        type={tab}
+        ownerId={userId}
+        active={viewMode === 'list'}
+        onOpenDetail={openDetail}
+      />
+
+      {viewMode !== 'list' &&
+        (detailLoading ? (
+          <div>
+            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
+              ← 一覧に戻る
+            </Button>
+            <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
+          </div>
+        ) : detailError ? (
+          <div>
+            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
+              ← 一覧に戻る
+            </Button>
+            <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
+          </div>
+        ) : (
+          detail && <PublicItemDetail type={tab} item={detail} onBack={backToList} />
+        ))}
     </div>
   );
 }
