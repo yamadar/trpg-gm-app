@@ -4,7 +4,16 @@ import { screen, waitFor, fireEvent } from '@testing-library/react';
 import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
+import * as sceneImageClient from '../api/sceneImageClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+
+// 既定 imageGen:false。getConfig をモックすることで、既存テストで挿絵UIが描画されず、
+// かつ getConfig が global.fetch を呼ばないため既存の fetch 呼び出し回数アサーションが不変。
+vi.mock('../api/sceneImageClient.js', () => ({
+  getConfig: vi.fn().mockResolvedValue({ imageGen: false }),
+  generateSceneImage: vi.fn(),
+  sceneImageUrl: (sessionId, imageId) => `/api/sessions/${sessionId}/images/${imageId}`,
+}));
 
 function makeSession(overrides = {}) {
   return {
@@ -293,6 +302,52 @@ describe('Play', () => {
       />
     );
     expect(horrorBg).not.toBe(plain.container.firstChild.style.background);
+  });
+
+  it('imageGenが有効なら未生成GMエントリに「この場面を描く」ボタンを出す', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });
+    renderWithAuth(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('この場面を描く')).toBeInTheDocument());
+  });
+
+  it('imageGenが無効なら挿絵ボタンを出さない', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: false });
+    const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });
+    renderWithAuth(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
+    await waitFor(() => expect(sceneImageClient.getConfig).toHaveBeenCalled());
+    expect(screen.queryByText('この場面を描く')).not.toBeInTheDocument();
+  });
+
+  it('ボタン押下で画像を生成し、entry.imageとして表示する', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockResolvedValueOnce({ imageId: 'img_1', newAppearances: [] });
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: '既存のログ' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('この場面を描く')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('この場面を描く'));
+    await waitFor(() => {
+      expect(document.querySelector('img[src*="img_1"]')).toBeTruthy();
+    });
+  });
+
+  it('既にimageを持つエントリは画像を表示しボタンを出さない', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: 'ログ', image: { imageId: 'img_9' } }] });
+    renderWithAuth(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
+    await waitFor(() => expect(document.querySelector('img[src*="img_9"]')).toBeTruthy());
+    expect(screen.queryByText('この場面を描く')).not.toBeInTheDocument();
+  });
+
+  it('生成失敗時はエラーを表示しimageIdを保存しない', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockRejectedValueOnce(new Error('boom'));
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: 'ログ' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('この場面を描く')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('この場面を描く'));
+    await waitFor(() => expect(screen.getByText(/挿絵の生成に失敗/)).toBeInTheDocument());
+    expect(document.querySelector('img')).toBeFalsy();
   });
 
   it('refuses to run a turn when logged out', async () => {

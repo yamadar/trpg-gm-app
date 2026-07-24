@@ -5,6 +5,7 @@ import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
 import { putSessionToServer } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
+import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -18,6 +19,9 @@ export default function Play({ session, setSession, onExit }) {
   const [saveWarning, setSaveWarning] = useState('');
   const [narrating, setNarrating] = useState(false);
   const handleNarrationDone = useCallback(() => setNarrating(false), []);
+  const [imageGen, setImageGen] = useState(false);
+  const [generatingIndex, setGeneratingIndex] = useState(null);
+  const [imageError, setImageError] = useState(null); // { index, message } | null
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
   const mood = moodTheme(session.moods);
@@ -28,6 +32,41 @@ export default function Play({ session, setSession, onExit }) {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [session.log.length, busy]);
+
+  useEffect(() => {
+    getConfig()
+      .then((c) => setImageGen(!!c.imageGen))
+      .catch(() => setImageGen(false));
+  }, []);
+
+  // 挿絵生成。baseSession を引数に取り、手動ボタンとシーン変化時の自動生成の双方で再利用する。
+  // runTurn より前に定義し、runTurn から参照できるようにする。
+  const illustrate = useCallback(
+    async (baseSession, i) => {
+      if (generatingIndex !== null) return;
+      setGeneratingIndex(i);
+      setImageError(null);
+      try {
+        const { imageId, newAppearances } = await generateSceneImage(baseSession.id, i);
+        const appearances = { ...(baseSession.appearances || {}) };
+        for (const a of newAppearances || []) appearances[a.name] = { name: a.name, description: a.description };
+        const updated = {
+          ...baseSession,
+          log: baseSession.log.map((e, idx) => (idx === i ? { ...e, image: { imageId } } : e)),
+          appearances,
+          updatedAt: Date.now(),
+        };
+        setSession(updated);
+        await saveSession(updated);
+        putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
+      } catch (e) {
+        setImageError({ index: i, message: '挿絵の生成に失敗した: ' + e.message });
+      } finally {
+        setGeneratingIndex(null);
+      }
+    },
+    [generatingIndex, setSession]
+  );
 
   const runTurn = useCallback(
     async (playerText, displayText) => {
@@ -168,6 +207,37 @@ export default function Play({ session, setSession, onExit }) {
             </div>
           ) : (
             <Card key={i}>
+              {entry.image?.imageId && (
+                <img
+                  src={sceneImageUrl(session.id, entry.image.imageId)}
+                  alt="場面の挿絵"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    maxWidth: '100%',
+                    borderRadius: 6,
+                    border: `1px solid ${COLORS.line}`,
+                    marginBottom: 10,
+                  }}
+                />
+              )}
+              {imageGen && !entry.image?.imageId && (
+                <div style={{ marginBottom: 8 }}>
+                  {generatingIndex === i ? (
+                    <span style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>挿絵を描いています…</span>
+                  ) : (
+                    <Button variant="ghost" onClick={() => illustrate(session, i)} disabled={generatingIndex !== null}>
+                      この場面を描く
+                    </Button>
+                  )}
+                  {imageError && imageError.index === i && (
+                    <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 4 }}>{imageError.message}</div>
+                  )}
+                </div>
+              )}
               <Stamp roll={entry.roll} animate={i >= initialLogLenRef.current} />
               <GmNarrative
                 text={entry.text}
