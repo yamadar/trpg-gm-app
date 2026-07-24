@@ -39,21 +39,27 @@ export default function UserPage({ userId }) {
     setDetail(null);
     setDetailError('');
 
+    let cancelled = false;
     (async () => {
       try {
         const [p, i] = await Promise.all([getUserProfile(userId), getUserPublicItems(userId)]);
+        if (cancelled) return;
         setProfile(p);
         setItems(i);
       } catch (e) {
+        if (cancelled) return;
         if (e.status === 404) {
           setNotFound(true);
         } else {
           setLoadError('取得に失敗した: ' + e.message);
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   useEffect(() => {

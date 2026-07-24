@@ -402,4 +402,33 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByText('閉じる'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores a stale list response from a previous tab after switching tabs', async () => {
+    let resolveStaleNovels;
+    vi.spyOn(shareClient, 'listPublic').mockImplementation((type) => {
+      if (type === 'novels') {
+        return new Promise((resolve) => {
+          resolveStaleNovels = resolve;
+        });
+      }
+      if (type === 'worlds') {
+        return Promise.resolve([{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    renderWithAuth(<Gallery onClose={vi.fn()} />);
+    // novels タブの取得が未解決のまま世界観タブへ切替える。
+    fireEvent.click(screen.getByText('世界観'));
+    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
+
+    // novels の遅れたレスポンスが後から解決しても、世界観タブの一覧を上書きしない。
+    await act(async () => {
+      resolveStaleNovels([{ publicId: 'n1', title: 'Stale Novel', ownerName: 'Bob', publishedAt: PUBLISHED_AT }]);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('Stale Novel')).not.toBeInTheDocument();
+    expect(screen.getByText('World A')).toBeInTheDocument();
+  });
 });

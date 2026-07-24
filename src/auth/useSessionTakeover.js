@@ -11,9 +11,11 @@ export function useSessionTakeover() {
   useEffect(() => {
     if (!user || checkedForRef.current === user.id) return;
     checkedForRef.current = user.id;
+    let cancelled = false;
     (async () => {
       try {
         const [local, server] = await Promise.all([listSessions(), listServerSessions()]);
+        if (cancelled) return;
         const serverById = new Map(server.map((s) => [s.id, s]));
         setCandidates(
           local.filter((s) => {
@@ -25,6 +27,9 @@ export function useSessionTakeover() {
         console.error('session takeover check failed', e);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   const confirm = useCallback(async () => {

@@ -1,9 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import UserPage from './UserPage.jsx';
 import * as shareClient from '../api/shareClient.js';
 import * as hashRoute from '../router/useHashRoute.js';
+import { AuthContext } from '../auth/AuthContext.jsx';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+
+const DEFAULT_AUTH_VALUE = {
+  user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
+  loading: false,
+  refresh: async () => {},
+  logout: async () => {},
+};
+
+function rerenderWithAuth(rerender, ui) {
+  rerender(<AuthContext.Provider value={DEFAULT_AUTH_VALUE}>{ui}</AuthContext.Provider>);
+}
 
 const PUBLISHED_AT = 1700000000000;
 const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
@@ -237,5 +249,35 @@ describe('UserPage', () => {
     await waitFor(() => expect(screen.queryByText('物語本文')).not.toBeInTheDocument());
     expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument();
     expect(screen.queryByText('Epic Adventure')).not.toBeInTheDocument();
+  });
+
+  it('ignores a stale profile response after userId changes', async () => {
+    let resolveStaleProfile;
+    const profileSpy = vi
+      .spyOn(shareClient, 'getUserProfile')
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveStaleProfile = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ id: 'usr_B', displayName: 'Bob', avatarUrl: null, bio: '' });
+    vi.spyOn(shareClient, 'getUserPublicItems').mockResolvedValue(EMPTY_ITEMS);
+
+    const { rerender } = renderWithAuth(<UserPage userId="usr_A" />);
+    await waitFor(() => expect(profileSpy).toHaveBeenCalledWith('usr_A'));
+
+    rerenderWithAuth(rerender, <UserPage userId="usr_B" />);
+    await waitFor(() => expect(profileSpy).toHaveBeenCalledWith('usr_B'));
+    expect(await screen.findByText('Bob')).toBeInTheDocument();
+
+    // usr_A の遅れたレスポンスが後から解決しても、Bob の表示を上書きしない。
+    await act(async () => {
+      resolveStaleProfile({ id: 'usr_A', displayName: 'Alice', avatarUrl: null, bio: '' });
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
   });
 });

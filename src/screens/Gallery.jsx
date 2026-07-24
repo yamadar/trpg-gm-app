@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -26,24 +26,27 @@ export default function Gallery({ onClose }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
 
-  const refresh = useCallback(async (t) => {
-    setLoading(true);
-    setListError('');
-    try {
-      setItems(await listPublic(t));
-    } catch (e) {
-      setListError('一覧の取得に失敗した: ' + e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     setViewMode('list');
     setDetail(null);
     setDetailError('');
-    refresh(tab);
-  }, [tab, refresh]);
+    setLoading(true);
+    setListError('');
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listPublic(tab);
+        if (!cancelled) setItems(list);
+      } catch (e) {
+        if (!cancelled) setListError('一覧の取得に失敗した: ' + e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
 
   async function openDetail(publicId) {
     setViewMode('detail');
