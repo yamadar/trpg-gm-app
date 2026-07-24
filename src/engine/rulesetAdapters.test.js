@@ -102,3 +102,66 @@ describe('gurps.evaluate', () => {
     expect(getAdapter('coc7e').evaluate(60, rng(40)).margin).toBeUndefined();
   });
 });
+
+describe('resourceDefs / sideEffectKinds', () => {
+  it('coc7e declares the SAN resource (60/99) and the sanity side-effect kind', () => {
+    const coc = getAdapter('coc7e');
+    expect(coc.resourceDefs).toEqual([{ key: 'san', label: '正気度', max: 99, initial: 60 }]);
+    expect(coc.sideEffectKinds).toEqual(['sanity']);
+  });
+
+  it('other adapters declare no resources and no side-effect kinds', () => {
+    for (const f of ['simple', 'dnd5e', 'gurps']) {
+      expect(getAdapter(f).resourceDefs).toEqual([]);
+      expect(getAdapter(f).sideEffectKinds).toEqual([]);
+    }
+  });
+});
+
+describe('coc7e.sideEffect', () => {
+  const coc = getAdapter('coc7e');
+
+  it('returns null for non-sanity kinds', () => {
+    expect(coc.sideEffect('normal', 'fail', rng(1))).toBeNull();
+    expect(coc.sideEffect(undefined, 'fail', rng(1))).toBeNull();
+  });
+
+  it('strong successes keep sanity (delta 0)', () => {
+    expect(coc.sideEffect('sanity', 'critical', rng(1))).toEqual({ key: 'san', delta: 0 });
+    expect(coc.sideEffect('sanity', 'extreme', rng(1))).toEqual({ key: 'san', delta: 0 });
+    expect(coc.sideEffect('sanity', 'hard', rng(1))).toEqual({ key: 'san', delta: 0 });
+  });
+
+  it('a plain success costs 1 sanity', () => {
+    expect(coc.sideEffect('sanity', 'success', rng(1))).toEqual({ key: 'san', delta: -1 });
+  });
+
+  it('a fail costs 1d6 (rng 1-100 mapped onto 1-6)', () => {
+    expect(coc.sideEffect('sanity', 'fail', rng(1))).toEqual({ key: 'san', delta: -1 });
+    expect(coc.sideEffect('sanity', 'fail', rng(6))).toEqual({ key: 'san', delta: -6 });
+    expect(coc.sideEffect('sanity', 'fail', rng(7))).toEqual({ key: 'san', delta: -1 }); // 7 -> 1+((7-1)%6)=1
+  });
+
+  it('a fumble costs 1d10', () => {
+    expect(coc.sideEffect('sanity', 'fumble', rng(10))).toEqual({ key: 'san', delta: -10 });
+    expect(coc.sideEffect('sanity', 'fumble', rng(11))).toEqual({ key: 'san', delta: -1 });
+  });
+
+  it('non-coc7e adapters always return null even for sanity', () => {
+    expect(getAdapter('simple').sideEffect('sanity', 'fail', rng(1))).toBeNull();
+  });
+});
+
+describe('promptText', () => {
+  it('every adapter has a promptText describing its degrees', () => {
+    for (const f of ['simple', 'coc7e', 'dnd5e', 'gurps']) {
+      expect(getAdapter(f).promptText).toContain('degree');
+    }
+  });
+
+  it('coc7e has a sideEffectPrompt mentioning check_kind and san_loss', () => {
+    expect(getAdapter('coc7e').sideEffectPrompt).toContain('sanity');
+    expect(getAdapter('coc7e').sideEffectPrompt).toContain('san_loss');
+    expect(getAdapter('simple').sideEffectPrompt).toBeUndefined();
+  });
+});
