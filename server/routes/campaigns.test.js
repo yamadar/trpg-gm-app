@@ -49,4 +49,12 @@ describe('campaigns routes', () => {
     expect((await request(app).put('/api/worlds/w1/campaigns/cp1').send({ carriedPc: { raw: 'x', xp: 0 } })).status).toBe(400);
     expect((await request(app).put('/api/worlds/w1/campaigns/cp1').send({ title: 'A', carriedPc: { raw: 'x' } })).status).toBe(400);
   });
+  it('deletes a campaign and is idempotent', async () => {
+    await request(app).put('/api/worlds/w1/campaigns/cp1').send(body);
+    const del = await request(app).delete('/api/worlds/w1/campaigns/cp1');
+    expect(del.status).toBe(204);
+    expect((await request(app).get('/api/worlds/w1/campaigns/cp1')).status).toBe(404);
+    // 未存在でも204(冪等)
+    expect((await request(app).delete('/api/worlds/w1/campaigns/cp1')).status).toBe(204);
+  });
 });

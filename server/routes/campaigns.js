@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { saveCampaign, getCampaign, listCampaigns } from '../storage/campaignLibrary.js';
+import { saveCampaign, getCampaign, listCampaigns, deleteCampaign } from '../storage/campaignLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
@@ -35,6 +35,11 @@ export function createCampaignsRouter({ dataStore }) {
       chapters,
     });
     res.json(campaign);
+  }));
+
+  router.delete('/worlds/:worldId/campaigns/:id', asyncHandler(async (req, res) => {
+    await deleteCampaign(dataStore, req.userId, req.params.worldId, req.params.id);
+    res.status(204).end();
   }));
 
   return router;
