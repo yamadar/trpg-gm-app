@@ -462,3 +462,58 @@ describe('Play', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
+
+describe('resource side effects', () => {
+  it('saves the reduced SAN into state.resources after a sanity check', async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tool_1',
+              name: 'roll_check',
+              input: { check_label: '正気度チェック', success_percent: 50, check_kind: 'sanity' },
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ narrative: '恐怖に震えた。', state_update: {}, choices: [] }),
+            },
+          ],
+        }),
+      });
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.79); // roll=80 fail -> 1d6=2 -> -2
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+
+    const session = makeSession({
+      ruleset: { id: 'coc7e', label: 'CoC7e風', formula: 'coc7e', growthUnit: '経験値' },
+      state: {
+        current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], turn_count: 0,
+        resources: { san: { value: 60, max: 99 } },
+      },
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('恐怖に震えた。')).toBeInTheDocument());
+
+    const saved = saveSpy.mock.calls.at(-1)[0];
+    expect(saved.state.resources.san).toEqual({ value: 58, max: 99 });
+    randomSpy.mockRestore();
+  });
+
+  it('does not add a resources key for sessions without resources', async () => {
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    const saved = saveSpy.mock.calls.at(-1)[0];
+    expect('resources' in saved.state).toBe(false);
+  });
+});

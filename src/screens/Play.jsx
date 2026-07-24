@@ -89,13 +89,23 @@ export default function Play({ session, setSession, onExit }) {
       setBusy(true);
       setError('');
       try {
-        const { result, roll } = await takeTurn(session, playerText);
+        const { result, roll, resourceChange } = await takeTurn(session, playerText);
         const norm = normalizeTurnResult(result);
 
         const newFlags = norm.stateUpdate.flags
           ? { ...session.state.flags, ...norm.stateUpdate.flags }
           : session.state.flags;
         const newXp = (Number.isFinite(session.state.xp) ? session.state.xp : 0) + norm.stateUpdate.xpGain;
+        // SAN等のリソース副作用。takeTurnは非破壊なので、ここでclamp済みの新値を合成する。
+        const newResources = resourceChange
+          ? {
+              ...(session.state.resources || {}),
+              [resourceChange.key]: {
+                ...(session.state.resources?.[resourceChange.key] || { max: resourceChange.after }),
+                value: resourceChange.after,
+              },
+            }
+          : session.state.resources;
         // 応答待ちの間に挿絵生成が完了して既存エントリへ画像が付いた場合でも失わないよう、
         // ログと素の基底は最新セッションから取る(状態計算はターン開始時のsessionを使う)。
         const latest = sessionRef.current;
@@ -119,6 +129,7 @@ export default function Play({ session, setSession, onExit }) {
             turn_count: (Number.isFinite(session.state.turn_count) ? session.state.turn_count : 0) + 1,
             xp: newXp,
             tension_level: norm.stateUpdate.tension_level ?? session.state.tension_level ?? 'medium',
+            ...(newResources ? { resources: newResources } : {}),
           },
           log: newLog,
           updatedAt: Date.now(),
