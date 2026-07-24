@@ -59,4 +59,27 @@ describe('CharacterPanel', () => {
     fireEvent.click(screen.getByLabelText('パネルを閉じる'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+  it('shows resources like SAN when present', () => {
+    render(
+      <CharacterPanel
+        session={{
+          ruleset: { id: 'coc7e', formula: 'coc7e', growthUnit: '経験値' },
+          pc: { raw: 'PC' },
+          state: { xp: 0, resources: { san: { value: 55, max: 99 } } },
+        }}
+        docked
+      />
+    );
+    expect(screen.getByText('正気度: 55/99')).toBeInTheDocument();
+  });
+
+  it('hides the resource block when resources are absent', () => {
+    render(
+      <CharacterPanel
+        session={{ ruleset: { id: 'simple' }, pc: { raw: 'PC' }, state: { xp: 0 } }}
+        docked
+      />
+    );
+    expect(screen.queryByText(/正気度/)).not.toBeInTheDocument();
+  });
 });

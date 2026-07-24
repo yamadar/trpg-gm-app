@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../../theme.js';
+import { getAdapter } from '../../engine/rulesetAdapters.js';
 
 const PANEL_WIDTH = 320;
 
 export default function CharacterPanel({ session, docked, onClose, onRecall }) {
   const growthUnit = session.ruleset?.growthUnit || '経験値';
   const xp = session.state?.xp || 0;
+  const resources = session.state?.resources || {};
+  const adapter = getAdapter(session.ruleset?.formula);
   const raw = session.pc?.raw?.trim();
   const goal = session.pc?.goal;
   const bonds = session.pc?.bonds;
@@ -61,6 +64,12 @@ export default function CharacterPanel({ session, docked, onClose, onRecall }) {
       <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginBottom: 12 }}>
         {growthUnit}: {xp}
       </div>
+
+      {Object.entries(resources).map(([key, r]) => (
+        <div key={key} style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.stampDark, marginBottom: 12 }}>
+          {adapter.resourceDefs.find((d) => d.key === key)?.label || key}: {r.value}/{r.max}
+        </div>
+      ))}
 
       {goal && (
         <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.brassDark, marginBottom: 4 }}>目標: {goal}</div>
