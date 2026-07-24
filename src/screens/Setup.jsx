@@ -15,19 +15,21 @@ import Field from '../components/ui/Field.jsx';
 import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
 
-export default function Setup({ onStart, onCancel }) {
+export default function Setup({ onStart, onCancel, campaignContext = null }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [libraryWarning, setLibraryWarning] = useState('');
 
   // World
-  const [worldMode, setWorldMode] = useState('skip'); // existing | new | skip
+  const [worldMode, setWorldMode] = useState(campaignContext ? 'existing' : 'skip'); // existing | new | skip
   const [worldTitle, setWorldTitle] = useState('');
   const [worldRaw, setWorldRaw] = useState('');
   const [worldFiles, setWorldFiles] = useState([]);
   const [existingWorlds, setExistingWorlds] = useState([]);
-  const [selectedWorld, setSelectedWorld] = useState(null); // { id, title, raw } | null
+  const [selectedWorld, setSelectedWorld] = useState(
+    campaignContext ? { id: campaignContext.worldId, raw: campaignContext.world.summary } : null
+  ); // { id, title, raw } | null
 
   // Scenario
   const [scenarioMode, setScenarioMode] = useState('paste'); // existing | paste | generate
@@ -38,12 +40,12 @@ export default function Setup({ onStart, onCancel }) {
   const [existingScenarios, setExistingScenarios] = useState([]);
   const [selectedScenario, setSelectedScenario] = useState(null); // { id, title, raw, recommendedRuleset } | null
 
-  const [rulesetId, setRulesetId] = useState('simple');
+  const [rulesetId, setRulesetId] = useState(campaignContext ? campaignContext.rulesetId || 'simple' : 'simple');
   const [customRulesets, setCustomRulesets] = useState([]);
 
   // PC
   const [pcMode, setPcMode] = useState('new'); // existing | new
-  const [pcRaw, setPcRaw] = useState('');
+  const [pcRaw, setPcRaw] = useState(campaignContext ? campaignContext.pcRaw || '' : '');
   const [existingPCs, setExistingPCs] = useState([]);
   const [selectedPC, setSelectedPC] = useState(null); // { name, raw } | null
 
@@ -240,6 +242,8 @@ export default function Setup({ onStart, onCancel }) {
       const session = {
         id: 'sess_' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
         title: title || 'セッション ' + new Date().toLocaleDateString('ja-JP'),
+        worldId: resolvedWorldId || undefined,
+        campaignId: campaignContext?.campaignId,
         world: { raw: worldRawForSession, summary: worldSummary },
         scenario: { raw: scenario },
         // 雰囲気タグ: World優先、無ければScenarioから継承(Play画面の配色に使う)
@@ -264,7 +268,7 @@ export default function Setup({ onStart, onCancel }) {
           history_summary: '',
           recent_log: [],
           turn_count: 0,
-          xp: 0,
+          xp: campaignContext?.xp || 0,
         },
         log: [],
         updatedAt: Date.now(),

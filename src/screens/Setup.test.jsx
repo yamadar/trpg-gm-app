@@ -379,6 +379,34 @@ describe('Setup', () => {
     expect(session.scenario.raw).not.toBe('w1のシナリオ');
   });
 
+  it('campaignContextを渡すとworld/pc/rulesetを前埋めし、worldId/campaignId/xpをセッションへ反映する', async () => {
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成シナリオ');
+    const onStart = vi.fn();
+    const campaignContext = {
+      worldId: 'w1',
+      world: { raw: 'World原文', summary: 'World要約' },
+      moods: [],
+      pcRaw: 'PC名: カイ(熟練)',
+      xp: 12,
+      rulesetId: 'simple',
+      campaignId: 'cp1',
+    };
+    render(<Setup onStart={onStart} onCancel={vi.fn()} campaignContext={campaignContext} />);
+    // シナリオ→ルール→PC→確認→開始(Worldは前埋め済み)
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.worldId).toBe('w1');
+    expect(session.campaignId).toBe('cp1');
+    expect(session.state.xp).toBe(12);
+    expect(session.pc.raw).toContain('PC名: カイ(熟練)');
+  });
+
   it('surfaces a fatal error and does not start the session when scenario generation fails', async () => {
     vi.spyOn(sessionApi, 'generateScenario').mockRejectedValue(new Error('LLM down'));
     const onStart = vi.fn();
