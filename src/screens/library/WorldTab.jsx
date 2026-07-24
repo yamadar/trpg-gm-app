@@ -7,6 +7,7 @@ import ConfirmModal from '../../components/library/ConfirmModal.jsx';
 import {
   getWorld,
   deleteWorld,
+  putWorld,
   putRegion,
   putCategory,
   putWorldSource,
@@ -18,6 +19,20 @@ import {
 import { importWorld, reimportWorld } from '../../api/worldImport.js';
 import { publishWorld, unpublishWorld, publishedWorlds as fetchPublishedWorlds } from '../../api/shareClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { MOODS } from '../../constants/moods.js';
+
+function moodChipStyle(active) {
+  return {
+    fontFamily: F_MONO,
+    fontSize: 12,
+    padding: '4px 10px',
+    borderRadius: 3,
+    cursor: 'pointer',
+    background: active ? COLORS.ink : 'transparent',
+    color: active ? COLORS.paper : COLORS.faint,
+    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
+  };
+}
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
   const { user } = useAuth();
@@ -30,6 +45,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
   const [detail, setDetail] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editRaw, setEditRaw] = useState('');
+  const [editMoods, setEditMoods] = useState([]);
   const [adjustmentRequest, setAdjustmentRequest] = useState('');
   const [regions, setRegions] = useState([]); // [{id, title, content}] content may be null until fetched
   const [categories, setCategories] = useState([]);
@@ -65,6 +81,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         setDetail(world);
         setEditTitle(world.title);
         setEditRaw(world.raw);
+        setEditMoods(world.moods ?? []);
         const [regionIds, categoryIds] = await Promise.all([
           listRegions(selectedWorldId),
           listCategories(selectedWorldId),
@@ -159,6 +176,8 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         await putWorldSource(selectedWorldId, editRaw);
       }
       const split = await reimportWorld(selectedWorldId, editTitle, adjustmentRequest || undefined);
+      // reimportWorld再保存時はmoodsを送らないため、雰囲気タグは別途PUTして反映する。
+      await putWorld(selectedWorldId, { title: editTitle, raw: split.world, moods: editMoods });
       setRegions(split.regions.map((r) => ({ id: r.id, title: r.title, content: r.content })));
       setCategories(split.categories.map((c) => ({ id: c.id, title: c.title, content: c.content })));
       setAdjustmentRequest('');
@@ -167,11 +186,16 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       setDetail(world);
       setEditTitle(world.title);
       setEditRaw(world.raw);
+      setEditMoods(world.moods ?? []);
     } catch (e) {
       setError('World更新に失敗した: ' + e.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleEditMood(mood) {
+    setEditMoods((prev) => (prev.includes(mood) ? prev.filter((m) => m !== mood) : [...prev, mood]));
   }
 
   async function startEditingRegion(region) {
@@ -281,7 +305,14 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
             style={{ cursor: 'pointer', borderColor: selectedWorldId === w.id ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
+              <div>
+                <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
+                {w.moods && w.moods.length > 0 && (
+                  <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, marginTop: 2 }}>
+                    {w.moods.join(' / ')}
+                  </div>
+                )}
+              </div>
               {user && (
                 <div
                   style={{ display: 'flex', gap: 6, alignItems: 'center' }}
@@ -357,6 +388,21 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
               rows={10}
               style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
             />
+          </Field>
+          <Field label="雰囲気" hint="複数選択可。">
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {MOODS.map((mood) => (
+                <button
+                  key={mood}
+                  type="button"
+                  onClick={() => toggleEditMood(mood)}
+                  style={moodChipStyle(editMoods.includes(mood))}
+                  aria-pressed={editMoods.includes(mood)}
+                >
+                  {mood}
+                </button>
+              ))}
+            </div>
           </Field>
           <Field label="再分割の修正依頼" hint="任意。空欄でも再分割できる。">
             <input value={adjustmentRequest} onChange={(e) => setAdjustmentRequest(e.target.value)} style={inputStyle} />

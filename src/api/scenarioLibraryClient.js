@@ -11,11 +11,11 @@ export async function getScenario(worldId, id) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(id)}`, { method: 'GET' });
 }
 
-export async function putScenario(worldId, id, { title, raw, recommendedRuleset }) {
+export async function putScenario(worldId, id, { title, raw, recommendedRuleset, moods }) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, raw, recommendedRuleset }),
+    body: JSON.stringify({ title, raw, recommendedRuleset, moods }),
   });
 }
 

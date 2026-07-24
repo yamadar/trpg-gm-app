@@ -10,6 +10,10 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue([]);
   vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue([]);
+  // handleReimport()はreimportWorldの後にmoods反映のためputWorldを直接呼ぶので、
+  // 既存テスト(putWorldを個別にモックしていないもの)が実ネットワーク呼び出しに
+  // ならないようデフォルトで解決させておく。
+  vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
 });
 
 describe('WorldTab', () => {
@@ -101,6 +105,97 @@ describe('WorldTab', () => {
     const putOrder = putWorldSourceSpy.mock.invocationCallOrder[0];
     const reimportOrder = reimportSpy.mock.invocationCallOrder[0];
     expect(putOrder).toBeLessThan(reimportOrder);
+  });
+
+  describe('雰囲気(moods)', () => {
+    it('pre-selects the world\'s saved moods when the editor opens', async () => {
+      vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+        id: 'w1',
+        title: 'Waterdeep',
+        raw: '原文',
+        moods: ['SF', 'コメディ'],
+      });
+
+      render(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId="w1"
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn().mockResolvedValue()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'SF', pressed: true })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'コメディ', pressed: true })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'ホラー', pressed: false })).toBeInTheDocument();
+    });
+
+    it('includes the selected moods in the World PUT body when saving', async () => {
+      vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+        id: 'w1',
+        title: 'Waterdeep',
+        raw: '原文',
+        moods: [],
+      });
+      vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
+      vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({ world: '目次', regions: [], categories: [] });
+      const putWorldSpy = vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
+
+      render(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId="w1"
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn().mockResolvedValue()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('ホラー'));
+      fireEvent.click(screen.getByText('冒険'));
+      fireEvent.click(screen.getByText('保存して再分割'));
+
+      await waitFor(() =>
+        expect(putWorldSpy).toHaveBeenCalledWith('w1', {
+          title: 'Waterdeep',
+          raw: '目次',
+          moods: ['ホラー', '冒険'],
+        })
+      );
+    });
+
+    it('sends an empty moods array when none are selected', async () => {
+      vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+        id: 'w1',
+        title: 'Waterdeep',
+        raw: '原文',
+        moods: [],
+      });
+      vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
+      vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({ world: '目次', regions: [], categories: [] });
+      const putWorldSpy = vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
+
+      render(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId="w1"
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn().mockResolvedValue()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('保存して再分割'));
+
+      await waitFor(() =>
+        expect(putWorldSpy).toHaveBeenCalledWith('w1', {
+          title: 'Waterdeep',
+          raw: '目次',
+          moods: [],
+        })
+      );
+    });
   });
 
   it('deletes a world after confirmation', async () => {

@@ -7,11 +7,11 @@ async function apiFetch(url, options) {
   return res.json();
 }
 
-export async function putWorld(id, { title, raw }) {
+export async function putWorld(id, { title, raw, moods }) {
   return apiFetch(`/api/worlds/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, raw }),
+    body: JSON.stringify({ title, raw, moods }),
   });
 }
 

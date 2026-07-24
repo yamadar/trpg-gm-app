@@ -102,6 +102,88 @@ describe('ScenarioTab', () => {
     expect(screen.queryByDisplayValue('sc1の本文(stale)')).not.toBeInTheDocument();
   });
 
+  describe('雰囲気(moods)', () => {
+    it("pre-selects a scenario's saved moods when the editor opens", async () => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+        { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: null, moods: ['SF', '日常'] },
+      ]);
+      vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+        title: '失踪事件',
+        raw: '## 概要',
+        recommendedRuleset: null,
+        moods: ['SF', '日常'],
+      });
+
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('失踪事件'));
+      await waitFor(() => expect(screen.getByDisplayValue('## 概要')).toBeInTheDocument());
+
+      expect(screen.getByRole('button', { name: 'SF', pressed: true })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '日常', pressed: true })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'ホラー', pressed: false })).toBeInTheDocument();
+    });
+
+    it('includes the selected moods in the PUT body when saving', async () => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+        { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: null, moods: [] },
+      ]);
+      vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+        title: '失踪事件',
+        raw: '## 概要',
+        recommendedRuleset: null,
+        moods: [],
+      });
+      const putSpy = vi.spyOn(scenarioLibraryClient, 'putScenario').mockResolvedValue({});
+
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('失踪事件'));
+      await waitFor(() => expect(screen.getByDisplayValue('## 概要')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByText('ホラー'));
+      fireEvent.click(screen.getByText('ミステリー'));
+      fireEvent.click(screen.getByText('保存する'));
+
+      await waitFor(() =>
+        expect(putSpy).toHaveBeenCalledWith('w1', 'sc1', {
+          title: '失踪事件',
+          raw: '## 概要',
+          recommendedRuleset: null,
+          moods: ['ホラー', 'ミステリー'],
+        })
+      );
+    });
+
+    it('sends an empty moods array when none are selected', async () => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+        { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: null, moods: [] },
+      ]);
+      vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+        title: '失踪事件',
+        raw: '## 概要',
+        recommendedRuleset: null,
+        moods: [],
+      });
+      const putSpy = vi.spyOn(scenarioLibraryClient, 'putScenario').mockResolvedValue({});
+
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('失踪事件'));
+      await waitFor(() => expect(screen.getByDisplayValue('## 概要')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('保存する'));
+
+      await waitFor(() =>
+        expect(putSpy).toHaveBeenCalledWith('w1', 'sc1', {
+          title: '失踪事件',
+          raw: '## 概要',
+          recommendedRuleset: null,
+          moods: [],
+        })
+      );
+    });
+  });
+
   describe('publish controls', () => {
     beforeEach(() => {
       vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([

@@ -11,6 +11,20 @@ import {
   publishedScenarios as fetchPublishedScenarios,
 } from '../../api/shareClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { MOODS } from '../../constants/moods.js';
+
+function moodChipStyle(active) {
+  return {
+    fontFamily: F_MONO,
+    fontSize: 12,
+    padding: '4px 10px',
+    borderRadius: 3,
+    cursor: 'pointer',
+    background: active ? COLORS.ink : 'transparent',
+    color: active ? COLORS.paper : COLORS.faint,
+    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
+  };
+}
 
 export default function ScenarioTab({ worldId }) {
   const { user } = useAuth();
@@ -26,6 +40,7 @@ export default function ScenarioTab({ worldId }) {
   const [editTitle, setEditTitle] = useState('');
   const [editRaw, setEditRaw] = useState('');
   const [editRecommendedRuleset, setEditRecommendedRuleset] = useState('');
+  const [editMoods, setEditMoods] = useState([]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -58,6 +73,7 @@ export default function ScenarioTab({ worldId }) {
         setEditTitle(s.title);
         setEditRaw(s.raw);
         setEditRecommendedRuleset(s.recommendedRuleset || '');
+        setEditMoods(s.moods ?? []);
       } catch (e) {
         if (!cancelled) setError('取得に失敗した: ' + e.message);
       }
@@ -147,6 +163,7 @@ export default function ScenarioTab({ worldId }) {
         title: editTitle,
         raw: editRaw,
         recommendedRuleset: editRecommendedRuleset || null,
+        moods: editMoods,
       });
       await refresh();
     } catch (e) {
@@ -154,6 +171,10 @@ export default function ScenarioTab({ worldId }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleEditMood(mood) {
+    setEditMoods((prev) => (prev.includes(mood) ? prev.filter((m) => m !== mood) : [...prev, mood]));
   }
 
   async function handleDelete() {
@@ -212,6 +233,11 @@ export default function ScenarioTab({ worldId }) {
                 <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
                   推奨ルール: {s.recommendedRuleset || '未設定'}
                 </div>
+                {s.moods && s.moods.length > 0 && (
+                  <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, marginTop: 2 }}>
+                    {s.moods.join(' / ')}
+                  </div>
+                )}
               </div>
               {user && (
                 <div
@@ -303,6 +329,21 @@ export default function ScenarioTab({ worldId }) {
               onChange={(e) => setEditRecommendedRuleset(e.target.value)}
               style={inputStyle}
             />
+          </Field>
+          <Field label="雰囲気" hint="複数選択可。">
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {MOODS.map((mood) => (
+                <button
+                  key={mood}
+                  type="button"
+                  onClick={() => toggleEditMood(mood)}
+                  style={moodChipStyle(editMoods.includes(mood))}
+                  aria-pressed={editMoods.includes(mood)}
+                >
+                  {mood}
+                </button>
+              ))}
+            </div>
           </Field>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="brass" onClick={handleSave} disabled={busy}>
