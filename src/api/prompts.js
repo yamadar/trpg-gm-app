@@ -108,6 +108,7 @@ export function resolveAdapter(session) {
 // 毎ターン変わる状態(シーン・フラグ・要約・ログ)はbuildTurnUserContent側に置く。
 export function buildSystemBlocks(session) {
   const rs = resolveRuleset(session);
+  const adapter = resolveAdapter(session);
   const growthUnit = session.ruleset?.growthUnit || '経験値';
   const pcGoalBondsSection =
     session.pc.goal || session.pc.bonds
@@ -128,12 +129,18 @@ ${session.pc.raw}
 ${pcGoalBondsSection}
 # ルール性向: ${rs.label}
 ${rs.hint || '特別な演出指定なし。'}
-
+${
+  adapter.resourceDefs.length
+    ? `\n# リソース\n${adapter.resourceDefs
+        .map((d) => `- ${d.label}: 最大${d.max}。現在値は毎ターンの「現在の状況」に示される。`)
+        .join('\n')}\n`
+    : ''
+}
 # 判定ルール
 - 行動の結果が不確実な場面では、先にroll_checkツールを呼び出し、結果を受け取ってからJSONを出力すること。判定が不要ならそのままJSONを出力する。
 - 判定は1ターンに最大1回。複数の行動が含まれる場合は、最も重要な1つだけを判定する。
 - success_percentは目安(ほぼ確実=85 / 有利=70 / 五分=50 / 困難=30 / 無謀=10)を基準に、PCの能力・道具・状況で調整して自分で設定する。結果そのものは自分で決めない(ロール結果は別途渡される)。
-- ロール結果のdegreeは演出に反映する: critical=劇的な大成功、success=成功、fail=失敗、fumble=手痛い代償を伴う大失敗。
+- ${adapter.promptText}${adapter.sideEffectPrompt ? `\n- ${adapter.sideEffectPrompt}` : ''}
 
 # GMの心得
 - PCの行動・発言・感情を勝手に決めないこと。narrativeはプレイヤーの行動の結果を描写し、次の判断材料となる状況の提示で終えること。
@@ -162,10 +169,17 @@ export function buildTurnUserContent(session, playerText) {
     (session.state.recent_log || [])
       .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
       .join('\n') || '(まだなし)';
+  const adapter = resolveAdapter(session);
+  const resources = session.state.resources || {};
+  const resourceLine = Object.keys(resources).length
+    ? `\nリソース: ${Object.entries(resources)
+        .map(([k, r]) => `${adapter.resourceDefs.find((d) => d.key === k)?.label || k} ${r.value}/${r.max}`)
+        .join(', ')}`
+    : '';
 
   return `# 現在の状況
 シーン: ${session.state.current_scene}
-テンション: ${session.state.tension_level || 'medium'}
+テンション: ${session.state.tension_level || 'medium'}${resourceLine}
 既知フラグ: ${flagsText}
 物語要約: ${session.state.history_summary || '(まだなし)'}
 

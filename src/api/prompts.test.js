@@ -155,6 +155,50 @@ describe('resolveAdapter', () => {
   });
 });
 
+describe('buildSystemBlocks adapter injection', () => {
+  it('injects the simple promptText for legacy sessions', () => {
+    const text = buildSystemBlocks({
+      world: { summary: 'w' }, scenario: { raw: 's' }, pc: { raw: 'p' },
+      rulesetId: 'simple',
+    })[0].text;
+    expect(text).toContain('critical=劇的な大成功');
+    expect(text).not.toContain('# リソース');
+  });
+
+  it('injects coc7e degree text, sideEffectPrompt, and a resource section', () => {
+    const text = buildSystemBlocks({
+      world: { summary: 'w' }, scenario: { raw: 's' }, pc: { raw: 'p' },
+      ruleset: { id: 'coc7e', label: 'CoC7e風', formula: 'coc7e' },
+    })[0].text;
+    expect(text).toContain('ハード成功');
+    expect(text).toContain('check_kind');
+    expect(text).toContain('# リソース');
+    expect(text).toContain('正気度');
+  });
+});
+
+describe('buildTurnUserContent resources', () => {
+  const base = {
+    ruleset: { id: 'coc7e', formula: 'coc7e' },
+    state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [] },
+  };
+
+  it('includes a resource line when state.resources exists', () => {
+    const content = buildTurnUserContent(
+      { ...base, state: { ...base.state, resources: { san: { value: 55, max: 99 } } } },
+      '進む'
+    );
+    expect(content).toContain('リソース: 正気度 55/99');
+  });
+
+  it('omits the resource line when resources are absent or empty', () => {
+    expect(buildTurnUserContent(base, '進む')).not.toContain('リソース:');
+    expect(
+      buildTurnUserContent({ ...base, state: { ...base.state, resources: {} } }, '進む')
+    ).not.toContain('リソース:');
+  });
+});
+
 describe('buildRollTool', () => {
   it('returns the plain ROLL_TOOL for adapters without side-effect kinds', () => {
     expect(buildRollTool(getAdapter('simple'))).toEqual(ROLL_TOOL);
