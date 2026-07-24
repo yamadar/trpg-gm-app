@@ -16,6 +16,10 @@ export async function getNovel(id) {
   return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel`, { method: 'GET' });
 }
 
+export async function getIllustratedNovel(id) {
+  return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel/illustrated`, { method: 'GET' });
+}
+
 export async function listServerSessions() {
   return apiFetch('/api/sessions');
 }

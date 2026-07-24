@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { putSessionToServer, novelizeSession, getNovel } from './sessionSyncClient.js';
+import { putSessionToServer, novelizeSession, getNovel, getIllustratedNovel } from './sessionSyncClient.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -52,6 +52,19 @@ describe('getNovel', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
     vi.stubGlobal('fetch', fetchMock);
     await expect(getNovel('s1')).rejects.toThrow('API error 404: not found');
+  });
+});
+
+describe('getIllustratedNovel', () => {
+  it('GETs the illustrated novel endpoint with an encoded id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ markdown: '![挿絵1](data:...)' }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await getIllustratedNovel('s 1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/s%201/novel/illustrated',
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(result).toEqual({ markdown: '![挿絵1](data:...)' });
   });
 });
 

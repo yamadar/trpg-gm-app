@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
-import { novelizeSession, getNovel } from '../api/sessionSyncClient.js';
+import { novelizeSession, getNovel, getIllustratedNovel } from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
@@ -87,6 +87,18 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     }
   }
 
+  function downloadMarkdown(filename, text) {
+    const blob = new Blob([text], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function handleNovelize(e, session) {
     e.stopPropagation();
     setNovelizing((prev) => ({ ...prev, [session.id]: true }));
@@ -94,15 +106,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     try {
       await novelizeSession(session.id);
       const { text, stale } = await getNovel(session.id);
-      const blob = new Blob([text], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${sanitizeFilename(session.title)}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      downloadMarkdown(`${sanitizeFilename(session.title)}.md`, text);
       if (stale) {
         setNovelizeError((prev) => ({
           ...prev,
@@ -111,6 +115,25 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       }
     } catch (err) {
       setNovelizeError((prev) => ({ ...prev, [session.id]: '小説化に失敗した: ' + err.message }));
+    } finally {
+      setNovelizing((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+    }
+  }
+
+  async function handleNovelizeIllustrated(e, session) {
+    e.stopPropagation();
+    setNovelizing((prev) => ({ ...prev, [session.id]: true }));
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      await novelizeSession(session.id);
+      const { markdown } = await getIllustratedNovel(session.id);
+      downloadMarkdown(`${sanitizeFilename(session.title)}-挿絵付き.md`, markdown);
+    } catch (err) {
+      setNovelizeError((prev) => ({ ...prev, [session.id]: '挿絵付き小説化に失敗した: ' + err.message }));
     } finally {
       setNovelizing((prev) => {
         const next = { ...prev };
@@ -267,6 +290,16 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
                       >
                         {novelizing[s.id] ? '小説化中…' : '小説化'}
                       </Button>
+                      {s.log?.some((en) => en.role === 'gm' && en.image?.imageId) && (
+                        <Button
+                          variant="ghost"
+                          onClick={(e) => handleNovelizeIllustrated(e, s)}
+                          disabled={!!novelizing[s.id] || !user}
+                          style={{ fontSize: 11, padding: '4px 8px' }}
+                        >
+                          挿絵付き
+                        </Button>
+                      )}
                       {user &&
                         (publishedNovelIds[s.id] ? (
                           <>

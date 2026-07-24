@@ -82,6 +82,42 @@ describe('Home', () => {
     expect(onContinue).not.toHaveBeenCalled();
   });
 
+  it('挿絵のあるセッションにのみ「挿絵付き」ボタンを表示する', () => {
+    const sessions = [
+      {
+        id: 's1',
+        title: '挿絵あり',
+        updatedAt: 2,
+        state: {},
+        log: [{ role: 'gm', text: 'x', image: { imageId: 'img_a' } }],
+      },
+      { id: 's2', title: '挿絵なし', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'y' }] },
+    ];
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    expect(screen.getAllByText('挿絵付き')).toHaveLength(1);
+  });
+
+  it('「挿絵付き」クリックで挿絵付きMarkdownをダウンロードする', async () => {
+    vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ ok: true });
+    const illustratedSpy = vi
+      .spyOn(sessionSyncClient, 'getIllustratedNovel')
+      .mockResolvedValue({ markdown: '![挿絵1](data:image/png;base64,AQ==)' });
+    const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: vi.fn() });
+
+    const sessions = [
+      { id: 's1', title: '挿絵あり', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'x', image: { imageId: 'img_a' } }] },
+    ];
+    const onContinue = vi.fn();
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('挿絵付き'));
+
+    await waitFor(() => expect(illustratedSpy).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+
   it('shows an error message when novelization fails', async () => {
     vi.spyOn(sessionSyncClient, 'novelizeSession').mockRejectedValue(new Error('upstream down'));
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
