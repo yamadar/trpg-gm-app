@@ -227,6 +227,22 @@ describe('Play', () => {
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
   });
 
+  it('再開時の既存ログのロールは演出無しで即時表示される(判定中「…」を出さない)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }); // motion許可環境でも
+    const session = makeSession({
+      log: [
+        {
+          role: 'gm',
+          text: '既存のログ',
+          roll: { check_label: '探索', roll: 30, success_percent: 60, success: true, degree: 'success' },
+        },
+      ],
+    });
+    renderWithAuth(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
+    expect(screen.getByText('成功')).toBeInTheDocument();
+    delete window.matchMedia;
+  });
+
   it('refuses to run a turn when logged out', async () => {
     // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
     const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });

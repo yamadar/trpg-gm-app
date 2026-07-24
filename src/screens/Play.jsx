@@ -17,6 +17,9 @@ export default function Play({ session, setSession, onExit }) {
   const [saveWarning, setSaveWarning] = useState('');
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
+  // マウント時点のログ長。これ以降に追加されたエントリだけを演出対象にする
+  // (セッション再開時に履歴全体が演出され直すのを防ぐ)。
+  const initialLogLenRef = useRef(session.log.length);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -158,7 +161,7 @@ export default function Play({ session, setSession, onExit }) {
             </div>
           ) : (
             <Card key={i}>
-              <Stamp roll={entry.roll} />
+              <Stamp roll={entry.roll} animate={i >= initialLogLenRef.current} />
               <div
                 style={{
                   fontFamily: F_BODY,
