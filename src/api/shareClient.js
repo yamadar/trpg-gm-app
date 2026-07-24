@@ -13,8 +13,16 @@ async function rawDelete(url) {
   }
 }
 
-export async function listPublic(type) {
-  return apiFetch(`/api/public/${encodeURIComponent(type)}`);
+export async function listPublic(type, { q, moods, ruleset, ownerId, limit, offset } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (moods && moods.length > 0) params.set('moods', moods.join(','));
+  if (ruleset) params.set('ruleset', ruleset);
+  if (ownerId) params.set('ownerId', ownerId);
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (offset !== undefined) params.set('offset', String(offset));
+  const qs = params.toString();
+  return apiFetch(`/api/public/${encodeURIComponent(type)}${qs ? `?${qs}` : ''}`);
 }
 
 export async function getPublic(type, publicId) {
@@ -101,8 +109,4 @@ export async function importScenario(publicId, targetWorldId) {
 
 export async function getUserProfile(userId) {
   return apiFetch(`/api/users/${encodeURIComponent(userId)}`);
-}
-
-export async function getUserPublicItems(userId) {
-  return apiFetch(`/api/users/${encodeURIComponent(userId)}/public`);
 }

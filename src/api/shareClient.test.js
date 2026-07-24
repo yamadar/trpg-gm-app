@@ -7,7 +7,7 @@ import {
   publishNovel, unpublishNovel,
   publishedWorlds, publishedCharacters, publishedScenarios, publishedNovels,
   importWorld, importCharacter, importScenario,
-  getUserProfile, getUserPublicItems,
+  getUserProfile,
 } from './shareClient.js';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -36,11 +36,63 @@ function stub204Fetch() {
 
 describe('shareClient', () => {
   describe('listPublic / getPublic', () => {
-    it('listPublic GETs /api/public/{type}', async () => {
-      const f = stubJsonFetch([{ publicId: 'p1' }]);
-      expect(await listPublic('worlds')).toEqual([{ publicId: 'p1' }]);
+    it('listPublic GETs /api/public/{type} with no query string when no params', async () => {
+      const f = stubJsonFetch({ items: [{ publicId: 'p1' }], total: 1, hasMore: false });
+      expect(await listPublic('worlds')).toEqual({ items: [{ publicId: 'p1' }], total: 1, hasMore: false });
       expect(f.mock.calls[0][0]).toBe('/api/public/worlds');
       expect(f.mock.calls[0][1]?.method ?? 'GET').toBe('GET');
+    });
+
+    it('listPublic adds q query param when provided', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { q: 'test' });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds?q=test');
+    });
+
+    it('listPublic adds moods as comma-separated query param', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { moods: ['happy', 'sad'] });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds?moods=happy%2Csad');
+    });
+
+    it('listPublic adds ruleset query param when provided', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { ruleset: 'D&D5e' });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds?ruleset=D%26D5e');
+    });
+
+    it('listPublic adds ownerId query param when provided', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { ownerId: 'user123' });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds?ownerId=user123');
+    });
+
+    it('listPublic adds limit and offset query params', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { limit: 10, offset: 20 });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds?limit=10&offset=20');
+    });
+
+    it('listPublic combines multiple params', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { q: 'magic', moods: ['epic'], limit: 5 });
+      const url = f.mock.calls[0][0];
+      expect(url).toContain('/api/public/worlds?');
+      expect(url).toContain('q=magic');
+      expect(url).toContain('moods=epic');
+      expect(url).toContain('limit=5');
+    });
+
+    it('listPublic does not add params with falsy or empty values', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { q: '', moods: [], ruleset: null });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds');
+    });
+
+    it('listPublic includes offset 0 even though it is falsy', async () => {
+      const f = stubJsonFetch({ items: [], total: 0, hasMore: false });
+      await listPublic('worlds', { offset: 0 });
+      expect(f.mock.calls[0][0]).toBe('/api/public/worlds?offset=0');
     });
 
     it('getPublic GETs /api/public/{type}/{publicId}', async () => {
@@ -207,19 +259,12 @@ describe('shareClient', () => {
     });
   });
 
-  describe('getUserProfile / getUserPublicItems', () => {
+  describe('getUserProfile', () => {
     it('getUserProfile GETs /api/users/{id}', async () => {
       const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'usr_1' }) });
       vi.stubGlobal('fetch', f);
       expect(await getUserProfile('usr_1')).toEqual({ id: 'usr_1' });
       expect(f.mock.calls[0][0]).toBe('/api/users/usr_1');
-    });
-
-    it('getUserPublicItems GETs /api/users/{id}/public', async () => {
-      const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ worlds: [] }) });
-      vi.stubGlobal('fetch', f);
-      await getUserPublicItems('usr_1');
-      expect(f.mock.calls[0][0]).toBe('/api/users/usr_1/public');
     });
   });
 });
