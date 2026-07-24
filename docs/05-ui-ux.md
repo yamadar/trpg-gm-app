@@ -43,7 +43,7 @@
 │   ・...                                │
 └─────────────────────────────────────┘
 ```
-セッション一覧カードにはタイトル・現在シーン名・手数(turn_count)・直近のGM発言1行程度のサマリを表示、カードのクリックで再開する。各カードに「小説化」ボタンがあり、`POST /api/sessions/:id/novelize`でAIにログを小説化させてから`GET /api/sessions/:id/novel`で取得し、Markdownファイルとしてダウンロードする(古いログのまま生成された場合は鮮度警告を表示)。挿絵のあるセッションにはさらに「挿絵付き」ボタンが表示され、`GET /api/sessions/:id/novel/illustrated`からbase64画像埋め込みの自己完結Markdownをダウンロードできる(2026-07-24追加、06-content-generation.md 10.5節参照)。世界観名・キャンペーン名の表示や章単位の進行表示は無い。
+セッション一覧カードにはタイトル・現在シーン名・手数(turn_count)・直近のGM発言1行程度のサマリを表示、カードのクリックで再開する。各カードに「小説化」ボタンがあり、`POST /api/sessions/:id/novelize`でAIにログを小説化させてから`GET /api/sessions/:id/novel`で取得し、Markdownファイルとしてダウンロードする(古いログのまま生成された場合は鮮度警告を表示)。挿絵のあるセッションにはさらに「挿絵付き」ボタンが表示され、`GET /api/sessions/:id/novel/illustrated`からbase64画像埋め込みの自己完結Markdownをダウンロードできる(2026-07-24追加、06-content-generation.md 10.5節参照)。ライブラリWorld由来のセッション(`worldId`あり)のカードにはさらに「次の章へ」ボタンが表示され(2026-07-24追加、02-data-model.md 3.5節参照)、押下で`advanceCampaignPc`が引き継ぎPCシートを生成→Campaignメタを作成/更新(`PUT /api/worlds/:worldId/campaigns/:id`)→World/PC/Rulesetを前埋めした次章のSetupへ遷移し、xp・worldId・campaignIdを引き継いだ新セッションを作る。キャンペーンの管理UI(章一覧・改名・削除)や章単位の進行表示はSP2として未実装。
 
 ### 14.2 新規プレイ作成フロー(`src/screens/Setup.jsx`)
 5ステップのウィザード(ステップインジケータに「1. 世界観 / 2. シナリオ / 3. ルール / 4. PC / 5. 確認」を表示):
