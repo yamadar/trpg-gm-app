@@ -19,14 +19,27 @@ describe('CharacterPanel', () => {
     expect(screen.getByText(/村長は恩人/)).toBeInTheDocument();
     expect(screen.getByText('CP: 7')).toBeInTheDocument();
   });
-  it('既知フラグをkey = valueで一覧表示する', () => {
+  it('生フラグのkey=value一覧は表示しない', () => {
     render(<CharacterPanel session={makeSession()} docked />);
-    expect(screen.getByText('鍵入手 = true')).toBeInTheDocument();
-    expect(screen.getByText('村人の信頼 = 3')).toBeInTheDocument();
+    expect(screen.queryByText('鍵入手 = true')).not.toBeInTheDocument();
+    expect(screen.queryByText(/入手情報/)).not.toBeInTheDocument();
   });
-  it('フラグが空なら「まだなし」を表示する', () => {
-    render(<CharacterPanel session={makeSession({ state: { xp: 0, flags: {} } })} docked />);
-    expect(screen.getByText('まだなし')).toBeInTheDocument();
+  it('onRecall未指定なら「これまでを思い出す」ボタンを出さない', () => {
+    render(<CharacterPanel session={makeSession()} docked />);
+    expect(screen.queryByText('これまでを思い出す')).not.toBeInTheDocument();
+  });
+  it('ボタン押下で回想を取得し表示する', async () => {
+    const onRecall = vi.fn().mockResolvedValue('カイはこれまでの旅を思い返した。');
+    render(<CharacterPanel session={makeSession()} docked onRecall={onRecall} />);
+    fireEvent.click(screen.getByText('これまでを思い出す'));
+    expect(await screen.findByText('カイはこれまでの旅を思い返した。')).toBeInTheDocument();
+    expect(onRecall).toHaveBeenCalledTimes(1);
+  });
+  it('回想の取得に失敗したらエラーを表示する', async () => {
+    const onRecall = vi.fn().mockRejectedValue(new Error('offline'));
+    render(<CharacterPanel session={makeSession()} docked onRecall={onRecall} />);
+    fireEvent.click(screen.getByText('これまでを思い出す'));
+    expect(await screen.findByText(/思い出せなかった/)).toBeInTheDocument();
   });
   it('pc.rawが無ければプレースホルダを表示する', () => {
     render(<CharacterPanel session={makeSession({ pc: { raw: '' } })} docked />);

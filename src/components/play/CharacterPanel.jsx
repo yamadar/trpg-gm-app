@@ -1,14 +1,31 @@
+import { useState } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../../theme.js';
 
 const PANEL_WIDTH = 320;
 
-export default function CharacterPanel({ session, docked, onClose }) {
+export default function CharacterPanel({ session, docked, onClose, onRecall }) {
   const growthUnit = session.ruleset?.growthUnit || '経験値';
   const xp = session.state?.xp || 0;
   const raw = session.pc?.raw?.trim();
   const goal = session.pc?.goal;
   const bonds = session.pc?.bonds;
-  const flags = Object.entries(session.state?.flags || {});
+
+  const [recallText, setRecallText] = useState(null);
+  const [recalling, setRecalling] = useState(false);
+  const [recallError, setRecallError] = useState(null);
+
+  async function handleRecall() {
+    if (recalling) return;
+    setRecalling(true);
+    setRecallError(null);
+    try {
+      setRecallText(await onRecall());
+    } catch (e) {
+      setRecallError('思い出せなかった: ' + e.message);
+    } finally {
+      setRecalling(false);
+    }
+  }
 
   return (
     <div
@@ -67,18 +84,39 @@ export default function CharacterPanel({ session, docked, onClose }) {
         {raw || '(PC設定なし)'}
       </div>
 
-      <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginTop: 16, marginBottom: 6 }}>
-        入手情報
-      </div>
-      {flags.length === 0 ? (
-        <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>まだなし</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {flags.map(([k, v]) => (
-            <div key={k} style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.inkSoft }}>
-              {k} = {String(v)}
+      {onRecall && (
+        <div style={{ marginTop: 16 }}>
+          <button
+            onClick={handleRecall}
+            disabled={recalling}
+            style={{
+              fontFamily: F_MONO,
+              fontSize: 12,
+              color: COLORS.brassDark,
+              background: 'none',
+              border: `1px solid ${COLORS.line}`,
+              borderRadius: 4,
+              padding: '6px 10px',
+              cursor: recalling ? 'default' : 'pointer',
+            }}
+          >
+            {recalling ? '思い出している…' : 'これまでを思い出す'}
+          </button>
+          {recallText && (
+            <div
+              style={{
+                fontFamily: F_BODY,
+                fontSize: 13,
+                lineHeight: 1.7,
+                color: COLORS.inkSoft,
+                whiteSpace: 'pre-wrap',
+                marginTop: 10,
+              }}
+            >
+              {recallText}
             </div>
-          ))}
+          )}
+          {recallError && <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 8 }}>{recallError}</div>}
         </div>
       )}
     </div>
