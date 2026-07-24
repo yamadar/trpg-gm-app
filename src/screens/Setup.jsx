@@ -242,6 +242,13 @@ export default function Setup({ onStart, onCancel }) {
         title: title || 'セッション ' + new Date().toLocaleDateString('ja-JP'),
         world: { raw: worldRawForSession, summary: worldSummary },
         scenario: { raw: scenario },
+        // 雰囲気タグ: World優先、無ければScenarioから継承(Play画面の配色に使う)
+        moods:
+          worldMode === 'existing' && selectedWorld?.moods?.length
+            ? selectedWorld.moods
+            : scenarioMode === 'existing' && selectedScenario?.moods?.length
+            ? selectedScenario.moods
+            : [],
         rulesetId,
         ruleset: {
           id: resolvedRuleset.id,

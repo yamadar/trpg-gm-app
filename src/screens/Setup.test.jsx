@@ -99,6 +99,47 @@ describe('Setup', () => {
     expect(session.state.xp).toBe(0);
   });
 
+  it('既存World選択時はWorldのmoodsがsession.moodsへ継承される(Scenarioより優先)', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+      id: 'w1',
+      title: 'Waterdeep',
+      raw: '要約本文',
+      moods: ['ホラー', 'ミステリー'],
+    });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+      { id: 'sc1', worldId: 'w1', title: '失踪事件' },
+    ]);
+    vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+      id: 'sc1',
+      title: '失踪事件',
+      raw: 'シナリオ本文',
+      moods: ['コメディ'],
+    });
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World: 既存
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('失踪事件'));
+    await waitFor(() => expect(scenarioLibraryClient.getScenario).toHaveBeenCalledWith('w1', 'sc1'));
+
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.moods).toEqual(['ホラー', 'ミステリー']);
+  });
+
   it('respects a manual Ruleset pick made after a Scenario recommendedRuleset was applied, instead of reverting it', async () => {
     // 回帰テスト: allRulesetsがuseMemoで安定化される前は、毎render新しい配列参照になり、
     // それをdepsに持つuseEffectが毎render再実行されてrecommendedRulesetに巻き戻していた。
@@ -173,6 +214,8 @@ describe('Setup', () => {
     const session = onStart.mock.calls[0][0];
     expect(session.world.summary).toBe('分割済み要約');
     expect(session.world.raw).toBe('世界観の原文');
+    // 既存World/Scenarioを選んでいないのでmoodsは空
+    expect(session.moods).toEqual([]);
   });
 
   it('does not block session start when a library save fails, and shows a non-fatal warning', async () => {
