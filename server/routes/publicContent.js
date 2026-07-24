@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
-import { listPublic, getPublicWorld, getPublicItem } from '../storage/shareLibrary.js';
+import { queryPublic, getPublicWorld, getPublicItem } from '../storage/shareLibrary.js';
 import { getUser } from '../auth/users.js';
 
 const TYPES = new Set(['worlds', 'characters', 'scenarios', 'novels']);
@@ -15,7 +15,15 @@ export function createPublicContentRouter({ dataStore, textStore }) {
       res.status(404).json({ error: 'unknown type' });
       return;
     }
-    res.json(await listPublic(dataStore, req.params.type));
+    const moods = String(req.query.moods ?? '').split(',').filter(Boolean);
+    res.json(await queryPublic(dataStore, req.params.type, {
+      q: req.query.q,
+      moods,
+      ruleset: req.query.ruleset || undefined,
+      ownerId: req.query.ownerId || undefined,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }));
   }));
 
   router.get('/public/:type/:publicId', asyncHandler(async (req, res) => {
@@ -43,19 +51,6 @@ export function createPublicContentRouter({ dataStore, textStore }) {
       return;
     }
     res.json({ id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl, bio: user.bio });
-  }));
-
-  router.get('/users/:userId/public', asyncHandler(async (req, res) => {
-    const user = await getUser(dataStore, req.params.userId);
-    if (!user) {
-      res.status(404).json({ error: 'user not found' });
-      return;
-    }
-    const result = {};
-    for (const type of TYPES) {
-      result[type] = (await listPublic(dataStore, type)).filter((m) => m.ownerId === req.params.userId);
-    }
-    res.json(result);
   }));
 
   return router;

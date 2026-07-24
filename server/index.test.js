@@ -156,6 +156,20 @@ describe('createApp', () => {
   it('serves public user profile without auth', async () => {
     const { user } = await createTestUserSession(app.locals.dataStore);
     expect((await request(app).get(`/api/users/${user.id}`)).status).toBe(200);
-    expect((await request(app).get(`/api/users/${user.id}/public`)).status).toBe(200);
+  });
+
+  it('?ownerId= scopes the public gallery so other users\' public items are not mixed in', async () => {
+    const a = await createTestUserSession(app.locals.dataStore);
+    const b = await createTestUserSession(app.locals.dataStore);
+    await request(app).put('/api/worlds/w1').set('Cookie', a.cookie).send({ title: 'Aの世界', raw: '# A' });
+    await request(app).put('/api/worlds/w1').set('Cookie', b.cookie).send({ title: 'Bの世界', raw: '# B' });
+    await request(app).post('/api/publish/worlds/w1').set('Cookie', a.cookie);
+    await request(app).post('/api/publish/worlds/w1').set('Cookie', b.cookie);
+
+    const res = await request(app).get('/api/public/worlds').query({ ownerId: a.user.id });
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBe(1);
+    expect(res.body.items[0].ownerId).toBe(a.user.id);
+    expect(res.body.items[0].title).toBe('Aの世界');
   });
 });

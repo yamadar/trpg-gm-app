@@ -35,6 +35,7 @@ import {
   unpublishNovel,
   unpublishWorldCascade,
   listPublic,
+  queryPublic,
   getPublicWorld,
   getPublicItem,
   getPublishedWorlds,
@@ -402,6 +403,107 @@ describe('listPublic', () => {
 
   it('returns an empty array when nothing is published', async () => {
     expect(await listPublic(dataStore, 'worlds')).toEqual([]);
+  });
+});
+
+describe('queryPublic', () => {
+  async function seedMeta(publicId, overrides = {}) {
+    await dataStore.set(publicMetaKey('scenarios', publicId), {
+      publicId,
+      ownerId: 'usr_1',
+      ownerName: '太郎',
+      publishedAt: Date.now(),
+      updatedAt: Date.now(),
+      title: 'タイトル',
+      ...overrides,
+    });
+  }
+
+  it('filters by q across title, ownerName and worldTitle (case-insensitive)', async () => {
+    await seedMeta('pub_1', { title: 'Dragon Quest', ownerName: '太郎', worldTitle: '西の大陸' });
+    await seedMeta('pub_2', { title: '失踪事件', ownerName: 'DragonMaster', worldTitle: '東の島' });
+    await seedMeta('pub_3', { title: '日常の物語', ownerName: '花子', worldTitle: 'Dragon World' });
+    await seedMeta('pub_4', { title: '関係ないもの', ownerName: '次郎', worldTitle: '無関係世界' });
+
+    const { items, total } = await queryPublic(dataStore, 'scenarios', { q: 'dragon' });
+    expect(total).toBe(3);
+    expect(items.map((m) => m.publicId).sort()).toEqual(['pub_1', 'pub_2', 'pub_3']);
+  });
+
+  it('filters moods with OR semantics and ignores unknown moods', async () => {
+    await seedMeta('pub_1', { moods: ['ホラー'] });
+    await seedMeta('pub_2', { moods: ['コメディ'] });
+    await seedMeta('pub_3', { moods: ['SF', 'ミステリー'] });
+    await seedMeta('pub_4', { moods: [] });
+
+    const { items } = await queryPublic(dataStore, 'scenarios', { moods: ['ホラー', 'ミステリー'] });
+    expect(items.map((m) => m.publicId).sort()).toEqual(['pub_1', 'pub_3']);
+
+    // unknown/invalid mood values are ignored entirely (no filter applied)
+    const unfiltered = await queryPublic(dataStore, 'scenarios', { moods: ['no-such-mood'] });
+    expect(unfiltered.items.length).toBe(4);
+  });
+
+  it('filters by ruleset and by ownerId', async () => {
+    await seedMeta('pub_1', { ownerId: 'usr_1', recommendedRuleset: 'coc' });
+    await seedMeta('pub_2', { ownerId: 'usr_1', recommendedRuleset: 'dnd5e' });
+    await seedMeta('pub_3', { ownerId: 'usr_2', recommendedRuleset: 'coc' });
+
+    const byRuleset = await queryPublic(dataStore, 'scenarios', { ruleset: 'coc' });
+    expect(byRuleset.items.map((m) => m.publicId).sort()).toEqual(['pub_1', 'pub_3']);
+
+    const byOwner = await queryPublic(dataStore, 'scenarios', { ownerId: 'usr_2' });
+    expect(byOwner.items.map((m) => m.publicId)).toEqual(['pub_3']);
+
+    const byBoth = await queryPublic(dataStore, 'scenarios', { ruleset: 'coc', ownerId: 'usr_1' });
+    expect(byBoth.items.map((m) => m.publicId)).toEqual(['pub_1']);
+  });
+
+  it('paginates: limit/offset, total, hasMore; clamps limit>100 and offset beyond total → empty items', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      await seedMeta(`pub_${i}`, { publishedAt: 1000 + i });
+    }
+
+    const page1 = await queryPublic(dataStore, 'scenarios', { limit: 2, offset: 0 });
+    expect(page1.items.length).toBe(2);
+    expect(page1.total).toBe(5);
+    expect(page1.hasMore).toBe(true);
+    // sorted by publishedAt desc, so first page is the two most recent
+    expect(page1.items.map((m) => m.publicId)).toEqual(['pub_4', 'pub_3']);
+
+    const page3 = await queryPublic(dataStore, 'scenarios', { limit: 2, offset: 4 });
+    expect(page3.items.length).toBe(1);
+    expect(page3.hasMore).toBe(false);
+
+    const clampedLimit = await queryPublic(dataStore, 'scenarios', { limit: 1000 });
+    expect(clampedLimit.items.length).toBe(5); // only 5 exist, but limit itself is clamped to 100 internally
+
+    const beyondTotal = await queryPublic(dataStore, 'scenarios', { offset: 999 });
+    expect(beyondTotal.items).toEqual([]);
+    expect(beyondTotal.total).toBe(5);
+    expect(beyondTotal.hasMore).toBe(false);
+  });
+
+  it('legacy metas without moods/worldTitle pass through when no filter targets them', async () => {
+    const legacy = {
+      publicId: 'pub_legacy',
+      ownerId: 'usr_1',
+      ownerName: '太郎',
+      publishedAt: Date.now(),
+      updatedAt: Date.now(),
+      title: '古い公開データ',
+      // no moods, no worldTitle — mirrors metas published before Task 2
+    };
+    await dataStore.set(publicMetaKey('scenarios', 'pub_legacy'), legacy);
+
+    const { items } = await queryPublic(dataStore, 'scenarios', {});
+    expect(items).toEqual([legacy]);
+
+    const { items: byQ } = await queryPublic(dataStore, 'scenarios', { q: '古い' });
+    expect(byQ.map((m) => m.publicId)).toEqual(['pub_legacy']);
+
+    const { items: byMood } = await queryPublic(dataStore, 'scenarios', { moods: ['ホラー'] });
+    expect(byMood).toEqual([]);
   });
 });
 

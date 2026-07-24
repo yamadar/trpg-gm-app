@@ -71,13 +71,15 @@ describe('publicContent routes — authentication-free gallery read', () => {
 
       const res = await request(app).get('/api/public/worlds');
       expect(res.status).toBe(200);
-      expect(res.body).toBeInstanceOf(Array);
-      expect(res.body.length).toBe(2);
+      expect(res.body.items).toBeInstanceOf(Array);
+      expect(res.body.total).toBe(2);
+      expect(res.body.hasMore).toBe(false);
+      expect(res.body.items.length).toBe(2);
       // Most recently published first (desc)
-      expect(res.body[0].publicId).toBe(pub2.meta.publicId);
-      expect(res.body[0].title).toBe('Second World');
-      expect(res.body[1].publicId).toBe(pub1.meta.publicId);
-      expect(res.body[1].title).toBe('First World');
+      expect(res.body.items[0].publicId).toBe(pub2.meta.publicId);
+      expect(res.body.items[0].title).toBe('Second World');
+      expect(res.body.items[1].publicId).toBe(pub1.meta.publicId);
+      expect(res.body.items[1].title).toBe('First World');
     });
 
     it('lists public characters without auth, sorted desc by publishedAt', async () => {
@@ -104,13 +106,13 @@ describe('publicContent routes — authentication-free gallery read', () => {
 
       const res = await request(app).get('/api/public/characters');
       expect(res.status).toBe(200);
-      expect(res.body.length).toBe(2);
-      expect(res.body[0].publicId).toBe(char2.meta.publicId);
-      expect(res.body[0].title).toBe('villain');
-      expect(res.body[0].kind).toBe('npc');
-      expect(res.body[1].publicId).toBe(char1.meta.publicId);
-      expect(res.body[1].title).toBe('hero');
-      expect(res.body[1].kind).toBe('pc');
+      expect(res.body.items.length).toBe(2);
+      expect(res.body.items[0].publicId).toBe(char2.meta.publicId);
+      expect(res.body.items[0].title).toBe('villain');
+      expect(res.body.items[0].kind).toBe('npc');
+      expect(res.body.items[1].publicId).toBe(char1.meta.publicId);
+      expect(res.body.items[1].title).toBe('hero');
+      expect(res.body.items[1].kind).toBe('pc');
     });
 
     it('lists public scenarios without auth, sorted desc by publishedAt', async () => {
@@ -137,13 +139,13 @@ describe('publicContent routes — authentication-free gallery read', () => {
 
       const res = await request(app).get('/api/public/scenarios');
       expect(res.status).toBe(200);
-      expect(res.body.length).toBe(2);
-      expect(res.body[0].publicId).toBe(sc2.meta.publicId);
-      expect(res.body[0].title).toBe('Scenario 2');
-      expect(res.body[0].recommendedRuleset).toBe('dnd5e');
-      expect(res.body[1].publicId).toBe(sc1.meta.publicId);
-      expect(res.body[1].title).toBe('Scenario 1');
-      expect(res.body[1].recommendedRuleset).toBeNull();
+      expect(res.body.items.length).toBe(2);
+      expect(res.body.items[0].publicId).toBe(sc2.meta.publicId);
+      expect(res.body.items[0].title).toBe('Scenario 2');
+      expect(res.body.items[0].recommendedRuleset).toBe('dnd5e');
+      expect(res.body.items[1].publicId).toBe(sc1.meta.publicId);
+      expect(res.body.items[1].title).toBe('Scenario 1');
+      expect(res.body.items[1].recommendedRuleset).toBeNull();
     });
 
     it('lists public novels without auth, sorted desc by publishedAt', async () => {
@@ -169,17 +171,53 @@ describe('publicContent routes — authentication-free gallery read', () => {
 
       const res = await request(app).get('/api/public/novels');
       expect(res.status).toBe(200);
-      expect(res.body.length).toBe(2);
-      expect(res.body[0].publicId).toBe(nov2.meta.publicId);
-      expect(res.body[0].title).toBe('Session 2');
-      expect(res.body[1].publicId).toBe(nov1.meta.publicId);
-      expect(res.body[1].title).toBe('Session 1');
+      expect(res.body.items.length).toBe(2);
+      expect(res.body.items[0].publicId).toBe(nov2.meta.publicId);
+      expect(res.body.items[0].title).toBe('Session 2');
+      expect(res.body.items[1].publicId).toBe(nov1.meta.publicId);
+      expect(res.body.items[1].title).toBe('Session 1');
     });
 
     it('returns empty list for a type with no published items', async () => {
       const res = await request(app).get('/api/public/worlds');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body).toEqual({ items: [], total: 0, hasMore: false });
+    });
+
+    it('returns { items, total, hasMore } and honors query params (q, moods, ruleset, ownerId, limit, offset)', async () => {
+      const owner = { id: 'usr_query', displayName: 'Quinn' };
+      await dataStore.set(worldMetaKey('usr_query', 'w1'), { id: 'w1', title: 'W1', updatedAt: Date.now() });
+      await textStore.write(worldDocPath('usr_query', 'w1'), '# W1');
+      await saveScenarioMetaAndPublish('usr_query', 'w1', 'sc1', 'Dragon Hunt', 'coc', ['ホラー'], owner);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await saveScenarioMetaAndPublish('usr_query', 'w1', 'sc2', 'Peaceful Village', 'dnd5e', ['日常'], owner);
+
+      const byQ = await request(app).get('/api/public/scenarios').query({ q: 'dragon' });
+      expect(byQ.status).toBe(200);
+      expect(byQ.body.items.length).toBe(1);
+      expect(byQ.body.items[0].title).toBe('Dragon Hunt');
+
+      const byMood = await request(app).get('/api/public/scenarios').query({ moods: '日常' });
+      expect(byMood.body.items.map((m) => m.title)).toEqual(['Peaceful Village']);
+
+      const byRuleset = await request(app).get('/api/public/scenarios').query({ ruleset: 'coc' });
+      expect(byRuleset.body.items.map((m) => m.title)).toEqual(['Dragon Hunt']);
+
+      const byOwner = await request(app).get('/api/public/scenarios').query({ ownerId: 'usr_query' });
+      expect(byOwner.body.total).toBe(2);
+
+      const paged = await request(app).get('/api/public/scenarios').query({ limit: 1, offset: 0 });
+      expect(paged.body.items.length).toBe(1);
+      expect(paged.body.total).toBe(2);
+      expect(paged.body.hasMore).toBe(true);
+
+      async function saveScenarioMetaAndPublish(userId, worldId, scenarioId, title, recommendedRuleset, moods, own) {
+        await dataStore.set(scenarioMetaKey(userId, worldId, scenarioId), {
+          id: scenarioId, worldId, title, recommendedRuleset, moods, updatedAt: Date.now(),
+        });
+        await textStore.write(scenarioDocPath(userId, worldId, scenarioId), `## ${title}`);
+        return publishScenario(dataStore, textStore, userId, worldId, scenarioId, own);
+      }
     });
 
     it('returns 404 for unknown type in list', async () => {
@@ -445,14 +483,19 @@ describe('public user profile', () => {
 
   it('404 for an unknown user', async () => {
     expect((await request(app).get('/api/users/usr_nothere')).status).toBe(404);
-    expect((await request(app).get('/api/users/usr_nothere/public')).status).toBe(404);
   });
 
   it('rejects a malformed userId', async () => {
     expect((await request(app).get('/api/users/..evil')).status).toBe(400);
   });
 
-  it('lists only the given user\'s public items grouped by type', async () => {
+  it('GET /users/:userId/public is gone (404) — superseded by GET /public/:type?ownerId=', async () => {
+    const user = await findOrCreateUser(dataStore, { provider: 'google', providerUserId: '222', displayName: '花子', avatarUrl: null });
+    const res = await request(app).get(`/api/users/${user.id}/public`);
+    expect(res.status).toBe(404);
+  });
+
+  it('narrows to a single owner\'s public items via GET /public/:type?ownerId=', async () => {
     const userA = await findOrCreateUser(dataStore, { provider: 'google', providerUserId: 'aaa', displayName: 'Alice', avatarUrl: null });
     const userB = await findOrCreateUser(dataStore, { provider: 'google', providerUserId: 'bbb', displayName: 'Bob', avatarUrl: null });
 
@@ -468,14 +511,10 @@ describe('public user profile', () => {
     const pubB = await publishWorld(dataStore, textStore, userB.id, 'w1', userB);
     expect(pubB.ok).toBe(true);
 
-    const res = await request(app).get(`/api/users/${userA.id}/public`);
+    const res = await request(app).get('/api/public/worlds').query({ ownerId: userA.id });
     expect(res.status).toBe(200);
-    expect(res.body.worlds).toBeInstanceOf(Array);
-    expect(res.body.worlds.length).toBe(1);
-    expect(res.body.worlds[0].publicId).toBe(pubA.meta.publicId);
-    expect(res.body.worlds[0].ownerId).toBe(userA.id);
-    expect(res.body.characters).toEqual([]);
-    expect(res.body.scenarios).toEqual([]);
-    expect(res.body.novels).toEqual([]);
+    expect(res.body.items.length).toBe(1);
+    expect(res.body.items[0].publicId).toBe(pubA.meta.publicId);
+    expect(res.body.items[0].ownerId).toBe(userA.id);
   });
 });

@@ -11,6 +11,7 @@ import { getWorld } from './worldLibrary.js';
 import { getCharacter } from './characterLibrary.js';
 import { getScenario } from './scenarioLibrary.js';
 import { listRegions, getRegion, listCategories, getCategory } from './worldContentLibrary.js';
+import { MOODS } from './moods.js';
 
 function newPublicId() {
   return `pub_${crypto.randomBytes(6).toString('hex')}`;
@@ -154,6 +155,29 @@ export async function listPublic(dataStore, type) {
   const keys = await dataStore.list(publicListPrefix(type));
   const metas = (await Promise.all(keys.map((k) => dataStore.get(k)))).filter(Boolean);
   return metas.sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
+export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId, limit, offset } = {}) {
+  const all = await listPublic(dataStore, type);
+  const norm = (s) => String(s ?? '').toLowerCase();
+  const query = norm(q).trim();
+  const moodSet = new Set((moods ?? []).filter((m) => MOODS.includes(m)));
+
+  const filtered = all.filter((meta) => {
+    if (ownerId && meta.ownerId !== ownerId) return false;
+    if (ruleset && meta.recommendedRuleset !== ruleset) return false;
+    if (moodSet.size > 0 && !(meta.moods ?? []).some((m) => moodSet.has(m))) return false;
+    if (query) {
+      const haystack = [meta.title, meta.ownerName, meta.worldTitle].map(norm).join('\n');
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+
+  const lim = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(Number(limit), 100) : 20;
+  const off = Number.isFinite(Number(offset)) && Number(offset) > 0 ? Number(offset) : 0;
+  const items = filtered.slice(off, off + lim);
+  return { items, total: filtered.length, hasMore: off + items.length < filtered.length };
 }
 
 export async function getPublicWorld(dataStore, textStore, publicId) {
