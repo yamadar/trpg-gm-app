@@ -5,15 +5,7 @@ import Button from '../components/ui/Button.jsx';
 import { listPublic, getPublic } from '../api/shareClient.js';
 import PublicItemDetail, { formatPublicDate, authorButtonStyle } from '../components/share/PublicItemDetail.jsx';
 import { navigateToUser } from '../router/useHashRoute.js';
-
-const TABS = [
-  { key: 'novels', label: '小説' },
-  { key: 'worlds', label: '世界観' },
-  { key: 'characters', label: 'キャラクター' },
-  { key: 'scenarios', label: 'シナリオ' },
-];
-
-const KIND_LABELS = { pc: 'PC', npc: 'NPC' };
+import { PUBLIC_TABS as TABS, KIND_LABELS } from '../constants/publicContent.js';
 
 export default function Gallery({ onClose }) {
   const [tab, setTab] = useState('novels');

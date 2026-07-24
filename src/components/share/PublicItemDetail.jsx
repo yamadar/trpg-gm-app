@@ -5,8 +5,7 @@ import Button from '../ui/Button.jsx';
 import { importWorld, importCharacter, importScenario } from '../../api/shareClient.js';
 import { listWorlds } from '../../api/worldLibraryClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
-
-const KIND_LABELS = { pc: 'PC', npc: 'NPC' };
+import { KIND_LABELS } from '../../constants/publicContent.js';
 
 export const authorButtonStyle = {
   font: 'inherit',

@@ -2,6 +2,8 @@ import crypto from 'node:crypto';
 
 const PROVIDER_USER_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
+export const DEFAULT_DISPLAY_NAME = 'ユーザー';
+
 export function userProfileKey(userId) {
   return `users/${userId}/profile`;
 }
@@ -23,7 +25,7 @@ export async function findOrCreateUser(dataStore, { provider, providerUserId, di
   const now = Date.now();
   const user = {
     id: `usr_${crypto.randomBytes(8).toString('hex')}`,
-    displayName: displayName || 'ユーザー',
+    displayName: displayName || DEFAULT_DISPLAY_NAME,
     avatarUrl: avatarUrl || null,
     bio: '',
     createdAt: now,

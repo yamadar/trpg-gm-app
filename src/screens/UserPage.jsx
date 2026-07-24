@@ -5,15 +5,7 @@ import Button from '../components/ui/Button.jsx';
 import { getUserProfile, getUserPublicItems, getPublic } from '../api/shareClient.js';
 import PublicItemDetail, { publicMetaLine } from '../components/share/PublicItemDetail.jsx';
 import { clearHash } from '../router/useHashRoute.js';
-
-const TABS = [
-  { key: 'novels', label: '小説' },
-  { key: 'worlds', label: '世界観' },
-  { key: 'characters', label: 'キャラクター' },
-  { key: 'scenarios', label: 'シナリオ' },
-];
-
-const KIND_LABELS = { pc: 'PC', npc: 'NPC' };
+import { PUBLIC_TABS as TABS, KIND_LABELS } from '../constants/publicContent.js';
 
 export default function UserPage({ userId }) {
   const [loading, setLoading] = useState(true);

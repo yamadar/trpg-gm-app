@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard, kindParamGuard } from './validateId.js';
-import { getUser } from '../auth/users.js';
+import { getUser, DEFAULT_DISPLAY_NAME } from '../auth/users.js';
 import {
   publishWorld, publishCharacter, publishScenario, publishNovel,
   unpublishWorld, unpublishCharacter, unpublishScenario, unpublishNovel,
@@ -15,7 +15,7 @@ export function createPublishRouter({ dataStore, textStore }) {
 
   async function ownerOf(req) {
     const user = await getUser(dataStore, req.userId);
-    return { id: req.userId, displayName: user?.displayName ?? 'ユーザー' };
+    return { id: req.userId, displayName: user?.displayName ?? DEFAULT_DISPLAY_NAME };
   }
 
   function send(res, result) {
