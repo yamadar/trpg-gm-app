@@ -8,6 +8,9 @@ import { renderWithAuth } from '../test/renderWithAuth.jsx';
 const PUBLISHED_AT = 1700000000000;
 const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
 
+const DEFAULT_LIST_PARAMS = { q: '', moods: [], ruleset: '', ownerId: undefined, limit: 20, offset: 0 };
+const EMPTY_PAGE = { items: [], total: 0, hasMore: false };
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
@@ -18,9 +21,9 @@ afterEach(() => {
 
 describe('Gallery', () => {
   it('loads the novels tab by default', async () => {
-    const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue([]);
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     renderWithAuth(<Gallery onClose={vi.fn()} />);
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels'));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
   });
 
   it('shows a loading indicator while the list is in flight', async () => {
@@ -32,14 +35,14 @@ describe('Gallery', () => {
     expect(screen.getByText('読み込み中…')).toBeInTheDocument();
 
     await act(async () => {
-      resolveList([]);
+      resolveList(EMPTY_PAGE);
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument());
   });
 
   it('shows the empty state when a type has no published items', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockResolvedValue([]);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     renderWithAuth(<Gallery onClose={vi.fn()} />);
     await waitFor(() =>
       expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument()
@@ -54,17 +57,21 @@ describe('Gallery', () => {
 
   it('switches tabs and calls listPublic with the matching type, rendering cards', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'novels') return [];
+      if (type === 'novels') return EMPTY_PAGE;
       if (type === 'worlds') {
-        return [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }];
+        return {
+          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     renderWithAuth(<Gallery onClose={vi.fn()} />);
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels'));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
 
     fireEvent.click(screen.getByText('世界観'));
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('worlds'));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('worlds', DEFAULT_LIST_PARAMS));
     expect(screen.getByText('World A')).toBeInTheDocument();
     expect(screen.getByText(/Alice/)).toBeInTheDocument();
     expect(screen.getByText(new RegExp(EXPECTED_DATE.replace(/\//g, '\\/')))).toBeInTheDocument();
@@ -73,9 +80,13 @@ describe('Gallery', () => {
   it('shows a kind badge on character cards', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'characters') {
-        return [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'npc' }];
+        return {
+          items: [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'npc' }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     renderWithAuth(<Gallery onClose={vi.fn()} />);
     fireEvent.click(screen.getByText('キャラクター'));
@@ -86,17 +97,21 @@ describe('Gallery', () => {
   it('shows the recommended ruleset on scenario cards when present', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'scenarios') {
-        return [
-          {
-            publicId: 's1',
-            title: 'Dragon Quest',
-            ownerName: 'Grace',
-            publishedAt: PUBLISHED_AT,
-            recommendedRuleset: 'pathfinder2e',
-          },
-        ];
+        return {
+          items: [
+            {
+              publicId: 's1',
+              title: 'Dragon Quest',
+              ownerName: 'Grace',
+              publishedAt: PUBLISHED_AT,
+              recommendedRuleset: 'pathfinder2e',
+            },
+          ],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     renderWithAuth(<Gallery onClose={vi.fn()} />);
     fireEvent.click(screen.getByText('シナリオ'));
@@ -107,9 +122,13 @@ describe('Gallery', () => {
   it('shows detail with body text, and worlds also show region/category headings; back button returns to list', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'worlds') {
-        return [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }];
+        return {
+          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
@@ -140,9 +159,13 @@ describe('Gallery', () => {
   it('does not show an add button or add prompt on the novels tab', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'novels') {
-        return [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Henry', publishedAt: PUBLISHED_AT }];
+        return {
+          items: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Henry', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'n1',
@@ -163,9 +186,13 @@ describe('Gallery', () => {
   it('shows a login prompt instead of the add button when logged out', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'worlds') {
-        return [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }];
+        return {
+          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
@@ -188,9 +215,13 @@ describe('Gallery', () => {
   it('imports a world directly and shows a success message', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'worlds') {
-        return [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }];
+        return {
+          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
@@ -217,9 +248,13 @@ describe('Gallery', () => {
   it('shows the err.message when importing a world fails', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'worlds') {
-        return [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }];
+        return {
+          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
@@ -245,9 +280,13 @@ describe('Gallery', () => {
   it('opens a target-world picker for characters and imports into the chosen world', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'characters') {
-        return [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'npc' }];
+        return {
+          items: [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'npc' }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'c1',
@@ -281,9 +320,15 @@ describe('Gallery', () => {
   it('opens a target-world picker for scenarios and imports into the chosen world', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'scenarios') {
-        return [{ publicId: 's1', title: 'Dragon Quest', ownerName: 'Grace', publishedAt: PUBLISHED_AT, recommendedRuleset: null }];
+        return {
+          items: [
+            { publicId: 's1', title: 'Dragon Quest', ownerName: 'Grace', publishedAt: PUBLISHED_AT, recommendedRuleset: null },
+          ],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 's1',
@@ -311,9 +356,13 @@ describe('Gallery', () => {
   it('shows a message in the picker when the user has no worlds yet', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'characters') {
-        return [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'pc' }];
+        return {
+          items: [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'pc' }],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'c1',
@@ -338,21 +387,25 @@ describe('Gallery', () => {
   it('navigates to the author page when a card author name is clicked, without opening the detail', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'novels') {
-        return [
-          {
-            publicId: 'n1',
-            title: 'Epic Adventure',
-            ownerName: 'Henry',
-            ownerId: 'usr_henry',
-            publishedAt: PUBLISHED_AT,
-          },
-        ];
+        return {
+          items: [
+            {
+              publicId: 'n1',
+              title: 'Epic Adventure',
+              ownerName: 'Henry',
+              ownerId: 'usr_henry',
+              publishedAt: PUBLISHED_AT,
+            },
+          ],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     const getPublicSpy = vi.spyOn(shareClient, 'getPublic');
     renderWithAuth(<Gallery onClose={vi.fn()} />);
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels'));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
     await screen.findByText('Epic Adventure');
 
     fireEvent.click(screen.getByText('Henry'));
@@ -366,11 +419,15 @@ describe('Gallery', () => {
   it('navigates to the author page from the detail view via onAuthorClick', async () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'worlds') {
-        return [
-          { publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'usr_alice', publishedAt: PUBLISHED_AT },
-        ];
+        return {
+          items: [
+            { publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'usr_alice', publishedAt: PUBLISHED_AT },
+          ],
+          total: 1,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
@@ -396,7 +453,7 @@ describe('Gallery', () => {
   });
 
   it('calls onClose when the close button is clicked', () => {
-    vi.spyOn(shareClient, 'listPublic').mockResolvedValue([]);
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     const onClose = vi.fn();
     renderWithAuth(<Gallery onClose={onClose} />);
     fireEvent.click(screen.getByText('閉じる'));
@@ -412,19 +469,27 @@ describe('Gallery', () => {
         });
       }
       if (type === 'worlds') {
-        return Promise.resolve([{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }]);
+        return Promise.resolve({
+          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        });
       }
-      return Promise.resolve([]);
+      return Promise.resolve(EMPTY_PAGE);
     });
 
     renderWithAuth(<Gallery onClose={vi.fn()} />);
-    // novels タブの取得が未解決のまま世界観タブへ切替える。
+    // novels タブの取得が未解決のまま世界観タブへ切替える(PublicItemListはtabをkeyに再マウントされる)。
     fireEvent.click(screen.getByText('世界観'));
     await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
 
-    // novels の遅れたレスポンスが後から解決しても、世界観タブの一覧を上書きしない。
+    // novels の遅れたレスポンスが後から解決しても(アンマウント済みのため)、世界観タブの一覧を上書きしない。
     await act(async () => {
-      resolveStaleNovels([{ publicId: 'n1', title: 'Stale Novel', ownerName: 'Bob', publishedAt: PUBLISHED_AT }]);
+      resolveStaleNovels({
+        items: [{ publicId: 'n1', title: 'Stale Novel', ownerName: 'Bob', publishedAt: PUBLISHED_AT }],
+        total: 1,
+        hasMore: false,
+      });
       await Promise.resolve();
     });
 
@@ -436,12 +501,16 @@ describe('Gallery', () => {
     let resolveA;
     vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
       if (type === 'novels') {
-        return [
-          { publicId: 'a1', title: 'Item A', ownerName: 'Alice', publishedAt: PUBLISHED_AT },
-          { publicId: 'b1', title: 'Item B', ownerName: 'Bob', publishedAt: PUBLISHED_AT },
-        ];
+        return {
+          items: [
+            { publicId: 'a1', title: 'Item A', ownerName: 'Alice', publishedAt: PUBLISHED_AT },
+            { publicId: 'b1', title: 'Item B', ownerName: 'Bob', publishedAt: PUBLISHED_AT },
+          ],
+          total: 2,
+          hasMore: false,
+        };
       }
-      return [];
+      return EMPTY_PAGE;
     });
     vi.spyOn(shareClient, 'getPublic').mockImplementation(async (type, publicId) => {
       if (publicId === 'a1') {
@@ -459,8 +528,9 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByText('Item A'));
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'a1'));
 
-    // 一覧に戻り、Bを開く(こちらは即解決)。
+    // 一覧に戻り、Bを開く(こちらは即解決)。一覧に戻ると PublicItemList が再マウントされ、再取得を待つ必要がある。
     fireEvent.click(screen.getByText('← 一覧に戻る'));
+    await waitFor(() => expect(screen.getByText('Item B')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Item B'));
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'b1'));
     await screen.findByText('B本文');

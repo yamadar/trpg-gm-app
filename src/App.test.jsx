@@ -47,6 +47,9 @@ describe('App', () => {
         if (String(url).includes('/api/me')) {
           return Promise.resolve({ ok: true, json: async () => ({ user: null }) });
         }
+        if (String(url).includes('/api/public/')) {
+          return Promise.resolve({ ok: true, json: async () => ({ items: [], total: 0, hasMore: false }) });
+        }
         return Promise.resolve({ ok: true, json: async () => [] });
       })
     );
