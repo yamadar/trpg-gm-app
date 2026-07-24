@@ -25,3 +25,7 @@ export async function listCampaigns(dataStore, userId, worldId) {
   const metas = await Promise.all(keys.map((k) => dataStore.get(k)));
   return metas.filter(Boolean);
 }
+
+export async function deleteCampaign(dataStore, userId, worldId, id) {
+  await dataStore.delete(campaignMetaKey(userId, worldId, id));
+}

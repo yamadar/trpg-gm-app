@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './dataStore.js';
-import { saveCampaign, getCampaign, listCampaigns } from './campaignLibrary.js';
+import { saveCampaign, getCampaign, listCampaigns, deleteCampaign } from './campaignLibrary.js';
 
 let dir, dataStore;
 beforeEach(async () => {
@@ -45,5 +45,13 @@ describe('campaignLibrary', () => {
   });
   it('returns null for a missing campaign', async () => {
     expect(await getCampaign(dataStore, 'u', 'w1', 'nope')).toBeNull();
+  });
+  it('deletes a campaign so it is no longer retrievable', async () => {
+    await saveCampaign(dataStore, 'u', { id: 'cp1', worldId: 'w1', title: 'A', carriedPc: { raw: 'x', xp: 0 }, chapters: [] });
+    await deleteCampaign(dataStore, 'u', 'w1', 'cp1');
+    expect(await getCampaign(dataStore, 'u', 'w1', 'cp1')).toBeNull();
+  });
+  it('does not throw when deleting a missing campaign', async () => {
+    await expect(deleteCampaign(dataStore, 'u', 'w1', 'nope')).resolves.toBeUndefined();
   });
 });
