@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { rollD100, evaluateRoll } from './dice.js';
+import { rollD100, evaluateRoll, normalizePercent } from './dice.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -92,5 +92,27 @@ describe('evaluateRoll', () => {
     const result = evaluateRoll(false);
     expect(result.success_percent).toBe(50);
     expect(result.success).toBe(true);
+  });
+});
+
+describe('normalizePercent', () => {
+  it('rounds and clamps into [1, 99]', () => {
+    expect(normalizePercent(150)).toBe(99);
+    expect(normalizePercent(0)).toBe(1);
+    expect(normalizePercent(49.6)).toBe(50);
+  });
+
+  it('falls back to 50 for non-finite values', () => {
+    expect(normalizePercent(undefined)).toBe(50);
+    expect(normalizePercent(NaN)).toBe(50);
+    expect(normalizePercent('')).toBe(50);
+  });
+});
+
+describe('evaluateRoll with injected rng', () => {
+  it('uses the injected rng instead of Math.random', () => {
+    const result = evaluateRoll(60, () => 97);
+    expect(result.roll).toBe(97);
+    expect(result.degree).toBe('fumble');
   });
 });
