@@ -58,4 +58,35 @@ describe('Stamp', () => {
     act(() => vi.advanceTimersByTime(250)); // 押印
     expect(screen.getByText('成功')).toBeInTheDocument();
   });
+
+  it('labels hard and extreme degrees (coc7e)', () => {
+    render(<Stamp roll={{ check_label: 'a', roll: 25, success_percent: 60, success: true, degree: 'hard' }} />);
+    expect(screen.getByText('ハード成功')).toBeInTheDocument();
+    render(<Stamp roll={{ check_label: 'b', roll: 10, success_percent: 60, success: true, degree: 'extreme' }} />);
+    expect(screen.getByText('イクストリーム')).toBeInTheDocument();
+  });
+
+  it('shows a resource note when the roll carries a non-zero resourceChange', () => {
+    render(
+      <Stamp
+        roll={{
+          check_label: '正気度チェック', roll: 80, success_percent: 50, success: false, degree: 'fail',
+          resourceChange: { key: 'san', label: '正気度', delta: -4, before: 60, after: 56 },
+        }}
+      />
+    );
+    expect(screen.getByText('正気度 -4')).toBeInTheDocument();
+  });
+
+  it('hides the resource note when delta is 0', () => {
+    render(
+      <Stamp
+        roll={{
+          check_label: '正気度チェック', roll: 10, success_percent: 50, success: true, degree: 'extreme',
+          resourceChange: { key: 'san', label: '正気度', delta: 0, before: 60, after: 60 },
+        }}
+      />
+    );
+    expect(screen.queryByText(/正気度 /)).not.toBeInTheDocument();
+  });
 });

@@ -4,9 +4,20 @@ import { COLORS, F_MONO, motionAllowed } from '../../theme.js';
 // degree別の演出色。文字と枠を揃え、criticalのみ真鍮系で強調する。
 const DEGREE_COLORS = {
   critical: { fg: COLORS.brassDark, border: COLORS.brass },
+  extreme: { fg: COLORS.brassDark, border: COLORS.brass },
+  hard: { fg: COLORS.stamp, border: COLORS.stamp },
   success: { fg: COLORS.stamp, border: COLORS.stamp },
   fail: { fg: COLORS.stamp, border: COLORS.line },
   fumble: { fg: COLORS.stampDark, border: COLORS.stampDark },
+};
+
+const DEGREE_LABELS = {
+  critical: '会心',
+  extreme: 'イクストリーム',
+  hard: 'ハード成功',
+  success: '成功',
+  fail: '失敗',
+  fumble: '大失敗',
 };
 
 const KEYFRAMES_ID = 'trpg-stamp-anim';
@@ -59,14 +70,7 @@ export default function Stamp({ roll, animate = false }) {
 
   if (!roll) return null;
 
-  const label =
-    roll.degree === 'critical'
-      ? '会心'
-      : roll.degree === 'fumble'
-      ? '大失敗'
-      : roll.success
-      ? '成功'
-      : '失敗';
+  const label = DEGREE_LABELS[roll.degree] || (roll.success ? '成功' : '失敗');
   const colors = DEGREE_COLORS[roll.degree] || DEGREE_COLORS.success;
   const stamped = phase === 'stamped';
 
@@ -108,6 +112,14 @@ export default function Stamp({ roll, animate = false }) {
         </span>
       ) : (
         <span style={{ opacity: 0.5 }}>…</span>
+      )}
+      {roll.resourceChange && roll.resourceChange.delta !== 0 && (
+        <>
+          <span style={{ opacity: 0.6 }}>|</span>
+          <span style={{ color: COLORS.stampDark }}>
+            {roll.resourceChange.label} {roll.resourceChange.delta}
+          </span>
+        </>
       )}
     </div>
   );
