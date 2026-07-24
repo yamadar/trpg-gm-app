@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { buildImagePrompt } from './imagePrompt.js';
+import { buildImagePrompt, buildPortraitPrompt } from './imagePrompt.js';
 
 describe('buildImagePrompt', () => {
   it('includes the base style and a mood-specific keyword', () => {
@@ -25,5 +25,26 @@ describe('buildImagePrompt', () => {
   });
   it('does not throw on empty inputs', () => {
     expect(() => buildImagePrompt({})).not.toThrow();
+  });
+});
+
+describe('buildPortraitPrompt', () => {
+  it('バストアップ・無地背景・mood画風・人物記述を含む', () => {
+    const p = buildPortraitPrompt({ name: 'カイ', description: '赤髪の猟師', moods: ['ホラー'] });
+    expect(p).toContain('bust shot');
+    expect(p).toContain('plain background');
+    expect(p).toContain('horror');
+    expect(p).toContain('人物: カイ=赤髪の猟師');
+  });
+  it('空入力で例外を投げない', () => {
+    expect(() => buildPortraitPrompt({})).not.toThrow();
+  });
+});
+
+describe('buildImagePrompt hasReferences', () => {
+  it('hasReferences時のみ参照維持の指示を含む', () => {
+    const base = { narrative: 'x', moods: [], appearances: [] };
+    expect(buildImagePrompt({ ...base, hasReferences: true })).toContain('厳密に維持');
+    expect(buildImagePrompt(base)).not.toContain('厳密に維持');
   });
 });

@@ -14,7 +14,7 @@ const MOOD_STYLE = {
 
 const NARRATIVE_MAX = 400;
 
-export function buildImagePrompt({ narrative = '', moods = [], appearances = [] }) {
+export function buildImagePrompt({ narrative = '', moods = [], appearances = [], hasReferences = false }) {
   const moodKey = Array.isArray(moods) ? moods.find((m) => MOOD_STYLE[m]) : undefined;
   const style = moodKey ? MOOD_STYLE[moodKey] : 'neutral tone';
   const scene = String(narrative || '').slice(0, NARRATIVE_MAX).trim();
@@ -25,5 +25,16 @@ export function buildImagePrompt({ narrative = '', moods = [], appearances = [] 
   const lines = [`${BASE_STYLE}, ${style}.`];
   if (cast) lines.push(`登場人物: ${cast}`);
   if (scene) lines.push(`場面: ${scene}`);
+  if (hasReferences) lines.push('参照画像の人物の外見(顔・髪・服装)を厳密に維持すること。');
+  return lines.join('\n');
+}
+
+// キャラポートレート用プロンプト。シーン挿絵の参照画像として使うため
+// バストアップ・無地背景に固定し、画風はシーンと同じmoodマッピングを共用する。
+export function buildPortraitPrompt({ name = '', description = '', moods = [] }) {
+  const moodKey = Array.isArray(moods) ? moods.find((m) => MOOD_STYLE[m]) : undefined;
+  const style = moodKey ? MOOD_STYLE[moodKey] : 'neutral tone';
+  const lines = [`character portrait, bust shot, plain background, ${BASE_STYLE}, ${style}.`];
+  if (name || description) lines.push(`人物: ${name}=${description}`);
   return lines.join('\n');
 }
