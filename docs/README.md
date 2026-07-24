@@ -27,3 +27,4 @@ AI-GMがシナリオに沿って進行、プレイヤーはPCの行動・選択�
 - [05-ui-ux.md](05-ui-ux.md) — UI/UX方針・演出方針・起動直後のUI
 - [06-content-generation.md](06-content-generation.md) — シナリオ自動生成・世界観分割/インポート・活用方針
 - [07-risks-and-roadmap.md](07-risks-and-roadmap.md) — 留意点・リスク一覧・実装フェーズ計画・設計決定事項
+- [08-feature-ideas.md](08-feature-ideas.md) — 機能アイデア集(楽しさ向上・未着手候補の整理)
