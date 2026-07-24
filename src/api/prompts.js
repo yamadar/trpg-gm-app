@@ -1,4 +1,5 @@
 import { RULESETS } from '../data/rulesets.js';
+import { getAdapter } from '../engine/rulesetAdapters.js';
 
 export const ROLL_TOOL = {
   name: 'roll_check',
@@ -22,6 +23,25 @@ export const ROLL_TOOL = {
     required: ['check_label', 'success_percent'],
   },
 };
+
+// アダプタが副作用kind(sanity等)を持つ場合のみcheck_kindを受け付けるroll_checkを組み立てる。
+export function buildRollTool(adapter) {
+  if (!adapter?.sideEffectKinds?.length) return ROLL_TOOL;
+  return {
+    ...ROLL_TOOL,
+    input_schema: {
+      ...ROLL_TOOL.input_schema,
+      properties: {
+        ...ROLL_TOOL.input_schema.properties,
+        check_kind: {
+          type: 'string',
+          enum: ['normal', ...adapter.sideEffectKinds],
+          description: '判定の種別。恐怖・正気を試される場面ではsanity、それ以外はnormal(省略可)。',
+        },
+      },
+    },
+  };
+}
 
 // GMターン応答のstructured outputsスキーマ。
 // flagsは自由キーのオブジェクトをスキーマで表現できないため{key, value}の配列で受け取り、
@@ -78,6 +98,10 @@ export const TURN_OUTPUT_FORMAT = {
 
 function resolveRuleset(session) {
   return session.ruleset || RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
+}
+
+export function resolveAdapter(session) {
+  return getAdapter(resolveRuleset(session).formula);
 }
 
 // セッション中は変わらない静的な指示。cache_controlを付けてプロンプトキャッシュを効かせる。

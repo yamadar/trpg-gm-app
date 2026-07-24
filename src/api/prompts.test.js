@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { ROLL_TOOL, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
+import {
+  ROLL_TOOL,
+  TURN_OUTPUT_FORMAT,
+  buildSystemBlocks,
+  buildTurnUserContent,
+  buildRollTool,
+  resolveAdapter,
+} from './prompts.js';
+import { getAdapter } from '../engine/rulesetAdapters.js';
 
 function makeSession(overrides = {}) {
   return {
@@ -129,6 +137,35 @@ describe('buildSystemBlocks', () => {
     expect(text).toContain('PCの行動・発言・感情を勝手に決めない');
     expect(text).toContain('narrative・choices・state_updateのいずれにも含めない');
     expect(text).toContain('fumble');
+  });
+});
+
+describe('resolveAdapter', () => {
+  it('resolves the adapter from session.ruleset.formula', () => {
+    expect(resolveAdapter({ ruleset: { id: 'x', formula: 'coc7e' } }).id).toBe('coc7e');
+  });
+
+  it('falls back to simple for legacy sessions without formula', () => {
+    expect(resolveAdapter({ ruleset: { id: 'coc7e', label: 'CoC7e風' } }).id).toBe('simple');
+    expect(resolveAdapter({ rulesetId: 'nonexistent' }).id).toBe('simple');
+  });
+
+  it('resolves builtin formula via rulesetId lookup when no snapshot exists', () => {
+    expect(resolveAdapter({ rulesetId: 'dnd5e' }).id).toBe('dnd5e');
+  });
+});
+
+describe('buildRollTool', () => {
+  it('returns the plain ROLL_TOOL for adapters without side-effect kinds', () => {
+    expect(buildRollTool(getAdapter('simple'))).toEqual(ROLL_TOOL);
+    expect(buildRollTool(getAdapter('simple')).input_schema.properties.check_kind).toBeUndefined();
+  });
+
+  it('adds an optional check_kind enum for coc7e', () => {
+    const tool = buildRollTool(getAdapter('coc7e'));
+    expect(tool.input_schema.properties.check_kind.enum).toEqual(['normal', 'sanity']);
+    expect(tool.input_schema.required).toEqual(['check_label', 'success_percent']); // check_kindは必須にしない
+    expect(tool.input_schema.properties.success_percent).toBeDefined();
   });
 });
 
