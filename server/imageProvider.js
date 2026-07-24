@@ -1,12 +1,17 @@
 const GEMINI_TIMEOUT_MS = 120000;
 
-export async function generateImage({ prompt, apiKey, model, fetchImpl = fetch }) {
+export async function generateImage({ prompt, apiKey, model, fetchImpl = fetch, referenceImages = [] }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  // 参照画像(キャラポートレート等)を先頭に並べ、最後にテキスト指示を置く
+  const parts = [
+    ...referenceImages.map((r) => ({ inlineData: { data: r.base64, mimeType: r.mimeType || 'image/png' } })),
+    { text: prompt },
+  ];
   const upstream = await fetchImpl(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts }],
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
     }),
     signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),

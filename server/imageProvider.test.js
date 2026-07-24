@@ -23,6 +23,28 @@ describe('generateImage', () => {
     const out = await generateImage({ prompt: 'x', apiKey: 'k', model: 'm', fetchImpl });
     expect(out.mimeType).toBe('image/png');
   });
+  it('sends referenceImages as leading inlineData parts before the text prompt', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ inlineData: { data: 'B' } }] } }] }));
+    await generateImage({
+      prompt: 'scene',
+      apiKey: 'k',
+      model: 'm',
+      fetchImpl,
+      referenceImages: [{ base64: 'REF1', mimeType: 'image/png' }, { base64: 'REF2' }],
+    });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.contents[0].parts).toEqual([
+      { inlineData: { data: 'REF1', mimeType: 'image/png' } },
+      { inlineData: { data: 'REF2', mimeType: 'image/png' } },
+      { text: 'scene' },
+    ]);
+  });
+  it('sends only the text part when no referenceImages are given', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ inlineData: { data: 'B' } }] } }] }));
+    await generateImage({ prompt: 'scene', apiKey: 'k', model: 'm', fetchImpl });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.contents[0].parts).toEqual([{ text: 'scene' }]);
+  });
   it('throws when the response has no image part', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(ok({ candidates: [{ content: { parts: [{ text: 'no image' }] } }] }));
     await expect(generateImage({ prompt: 'x', apiKey: 'k', model: 'm', fetchImpl })).rejects.toThrow(/no image/);
