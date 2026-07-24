@@ -275,6 +275,26 @@ describe('Play', () => {
     }
   });
 
+  it('session.moodsに応じてPlay画面の背景色が変わる(無ければ既定と同じにならない)', () => {
+    const horror = renderWithAuth(
+      <Play
+        session={makeSession({ moods: ['ホラー'], log: [{ role: 'gm', text: '既存のログ' }] })}
+        setSession={vi.fn()}
+        onExit={vi.fn()}
+      />
+    );
+    const horrorBg = horror.container.firstChild.style.background;
+    expect(horrorBg).toBeTruthy();
+    const plain = renderWithAuth(
+      <Play
+        session={makeSession({ log: [{ role: 'gm', text: '別のログ' }] })}
+        setSession={vi.fn()}
+        onExit={vi.fn()}
+      />
+    );
+    expect(horrorBg).not.toBe(plain.container.firstChild.style.background);
+  });
+
   it('refuses to run a turn when logged out', async () => {
     // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
     const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle, motionAllowed } from '../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle, motionAllowed, moodTheme } from '../theme.js';
 import { useTypewriter } from '../hooks/useTypewriter.js';
 import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
@@ -20,6 +20,7 @@ export default function Play({ session, setSession, onExit }) {
   const handleNarrationDone = useCallback(() => setNarrating(false), []);
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
+  const mood = moodTheme(session.moods);
   // マウント時点のログ長。これ以降に追加されたエントリだけを演出対象にする
   // (セッション再開時に履歴全体が演出され直すのを防ぐ)。
   const initialLogLenRef = useRef(session.log.length);
@@ -120,6 +121,7 @@ export default function Play({ session, setSession, onExit }) {
         margin: '0 auto',
         padding: '24px 20px 140px',
         minHeight: '100vh',
+        background: mood.paper,
       }}
     >
       <div
@@ -201,7 +203,7 @@ export default function Play({ session, setSession, onExit }) {
           bottom: 0,
           left: 0,
           right: 0,
-          background: COLORS.paper,
+          background: mood.paper,
           borderTop: `1px solid ${COLORS.line}`,
           padding: 16,
         }}
