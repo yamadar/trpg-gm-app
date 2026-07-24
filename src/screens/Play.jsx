@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle, motionAllowed, moodTheme } from '../theme.js';
 import { useTypewriter } from '../hooks/useTypewriter.js';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
+import CharacterPanel from '../components/play/CharacterPanel.jsx';
 import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
 import { putSessionToServer } from '../api/sessionSyncClient.js';
@@ -29,6 +31,9 @@ export default function Play({ session, setSession, onExit }) {
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const mood = moodTheme(session.moods);
+  const docked = useMediaQuery('(min-width: 1024px)');
+  const [panelOpen, setPanelOpen] = useState(false);
+  const PANEL_W = 320;
   // マウント時点のログ長。これ以降に追加されたエントリだけを演出対象にする
   // (セッション再開時に履歴全体が演出され直すのを防ぐ)。
   const initialLogLenRef = useRef(session.log.length);
@@ -178,6 +183,7 @@ export default function Play({ session, setSession, onExit }) {
         padding: '24px 20px 140px',
         minHeight: '100vh',
         background: mood.paper,
+        ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
       }}
     >
       <div
@@ -200,6 +206,11 @@ export default function Play({ session, setSession, onExit }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center' }}>
+          {!docked && (
+            <Button variant="ghost" onClick={() => setPanelOpen((v) => !v)} style={{ marginRight: 12 }}>
+              PC
+            </Button>
+          )}
           {imageGen && (
             <label
               style={{
@@ -316,7 +327,7 @@ export default function Play({ session, setSession, onExit }) {
           position: 'fixed',
           bottom: 0,
           left: 0,
-          right: 0,
+          right: docked ? PANEL_W : 0,
           background: mood.paper,
           borderTop: `1px solid ${COLORS.line}`,
           padding: 16,
@@ -338,6 +349,20 @@ export default function Play({ session, setSession, onExit }) {
           </Button>
         </div>
       </div>
+
+      {docked ? (
+        <CharacterPanel session={session} docked />
+      ) : (
+        panelOpen && (
+          <>
+            <div
+              onClick={() => setPanelOpen(false)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 19 }}
+            />
+            <CharacterPanel session={session} docked={false} onClose={() => setPanelOpen(false)} />
+          </>
+        )
+      )}
     </div>
   );
 }

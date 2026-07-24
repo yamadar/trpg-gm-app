@@ -436,6 +436,19 @@ describe('Play', () => {
     expect(screen.getByText('新しい場面')).toBeInTheDocument();
   });
 
+  it('非ドッキング時は「PC」トグルでパネルの開閉ができる', async () => {
+    const session = makeSession({ pc: { raw: 'PC名: テスト猟師' }, log: [{ role: 'gm', text: 'ログ' }] });
+    renderWithAuth(<Play session={session} setSession={vi.fn()} onExit={vi.fn()} />);
+    // 既定(matchMedia無し=非ドッキング)はパネル非表示
+    expect(screen.queryByText('PC名: テスト猟師')).not.toBeInTheDocument();
+    // 「PC」トグルで開く
+    fireEvent.click(screen.getByText('PC'));
+    expect(screen.getByText('PC名: テスト猟師')).toBeInTheDocument();
+    // 閉じるボタンで閉じる
+    fireEvent.click(screen.getByLabelText('パネルを閉じる'));
+    expect(screen.queryByText('PC名: テスト猟師')).not.toBeInTheDocument();
+  });
+
   it('refuses to run a turn when logged out', async () => {
     // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
     const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });

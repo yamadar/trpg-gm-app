@@ -13,8 +13,16 @@ export function useMediaQuery(query) {
     const mql = window.matchMedia(query);
     const handler = (e) => setMatches(e.matches);
     setMatches(mql.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
+    // 実ブラウザは addEventListener を持つが、部分モックや旧Safari(addListener)に防御的に対応する。
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', handler);
+      return () => mql.removeEventListener('change', handler);
+    }
+    if (typeof mql.addListener === 'function') {
+      mql.addListener(handler);
+      return () => mql.removeListener(handler);
+    }
+    return undefined;
   }, [query]);
 
   return matches;

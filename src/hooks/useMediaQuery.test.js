@@ -42,6 +42,11 @@ describe('useMediaQuery', () => {
     ctrl.fire(true);
     expect(result.current).toBe(true);
   });
+  it('matchMediaがリスナAPIを持たなくても例外を投げず初期値を返す', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }); // addEventListener等なし
+    const { result } = renderHook(() => useMediaQuery('(min-width: 1024px)'));
+    expect(result.current).toBe(true);
+  });
   it('removes its listener on unmount', () => {
     const ctrl = mockMatchMedia(true);
     const { unmount } = renderHook(() => useMediaQuery('(min-width: 1024px)'));
