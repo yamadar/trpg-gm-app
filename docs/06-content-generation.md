@@ -42,7 +42,8 @@ Google Gemini(既定 `gemini-2.5-flash-image`、`server/imageProvider.js`)でPla
 - **登場人物の一貫性**: `server/sceneAnalysis.js` がAnthropic(構造化出力)で地の文から登場人物を特定し、未登録者の見た目を生成する。結果はセッション専用の**見た目レジストリ** `session.appearances`(名前→見た目)に蓄積され、以降の挿絵プロンプトに差し込まれてキャラの見た目が一貫する。PCシートに見た目の記述があればそれを優先。**シナリオ本文は書き換えない**(公開・インポートされる共有素材のため)。解析はプレイヤー可視の地の文のみを入力とし、失敗しても挿絵生成は止めない(見た目条件なしで続行)。
 - **保存・配信**: 画像バイトは `server/storage/imageStore.js`(バイナリストア)がファイル保存し、`GET /api/sessions/:id/images/:imageId` で `image/png` 配信。セッションJSONには `log[i].image.imageId` 参照のみを持たせ、クライアントが永続化する(セッションはクライアントが真実源)。
 - **設定・制限**: env `GEMINI_API_KEY`(未設定なら `GET /api/config` が `imageGen:false` を返しUIごと無効化)、`GEMINI_IMAGE_MODEL`、日次上限 `LIMIT_IMAGES_PER_DAY`(既定30、`usage` 機構の `images` 種別。挿絵1回=解析1+画像1の計2 upstream呼び出しを1ユニットとして計上)。
-- **未実装(後続サブプロジェクト)**: 挿絵付き小説化(2)、キャラポートレート生成+参照画像による強い一貫性(3)。見た目レジストリ項目に `imageId` を足すだけで参照画像方式へ拡張できる設計。
+- **挿絵付き小説化(サブプロジェクト2、実装済み 2026-07-24)**: novelize時に挿絵を持つGMエントリの位置へ `〈挿絵N〉` マーカーを埋め込み(`server/novelMarkers.js`)、モデルに「対応場面の切れ目に行独立で残せ」と指示。`GET /api/sessions/:id/novel/illustrated` がマーカーをbase64 data URIの画像に置換した自己完結Markdownを返す(`server/illustratedNovel.js`。本文に現れなかった画像は末尾「## 挿絵」節へ救済)。プレーン `GET /novel` と公開小説はマーカー除去済みを返す/保存する。Home画面は挿絵ありセッションのみ「挿絵付き」ボタンを表示。
+- **未実装(後続サブプロジェクト)**: キャラポートレート生成+参照画像による強い一貫性(3)。見た目レジストリ項目に `imageId` を足すだけで参照画像方式へ拡張できる設計。
 
 ## 11. シナリオ自動生成モード
 
