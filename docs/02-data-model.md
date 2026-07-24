@@ -94,7 +94,9 @@ Ruleset(ルール)  … World/Scenarioとは独立したライブラリ。Sessio
 Session(プレイ単位) = World + Scenario + Ruleset(埋め込みスナップショット) + PC + state
                       ↑ 実際に保存・再開される単位
 ```
-**Campaign(連作シナリオ)SP1コアループ実装済み(2026-07-24)**。「育てたPCで次の冒険へ」を**オープンな連鎖**で繋ぐ。事前に全章を組まず、あるセッションを終えたら逐次次章へ接続する。引き継ぎは**テキスト方式**:章末に`advanceCampaignPc`(`/api/messages`経由のLLM)が既存PCシート(`pc.raw`)へ獲得物・成長・関係の変化を織り込んだ更新版を生成し、xpは数値で持ち越す。Campaignメタは World配下のライブラリ実体で、`campaignMetaKey`は`users/{userId}/worlds/{worldId}/campaigns/{campaignId}`へ**フラット化**(一覧可能)。形は`{ id, worldId, title, carriedPc: { raw, xp }, chapters: [{ sessionId, title, endedAt }], createdAt, updatedAt }`で、`carriedPc`はメタJSONに内包する(別ドキュメント不要)。セッションには任意`worldId?`/`campaignId?`が加わり、ライブラリWorld由来のセッション(`worldId`あり)のホームカードに「次の章へ」ボタンが出る。CRUDは`server/routes/campaigns.js`(`GET/PUT /api/worlds/:worldId/campaigns[/:id]`)。**管理UI(一覧・改名・削除)・クロスWorld・構造化インベントリはSP2として未実装**。
+**Campaign(連作シナリオ)SP1コアループ実装済み(2026-07-24)**。「育てたPCで次の冒険へ」を**オープンな連鎖**で繋ぐ。事前に全章を組まず、あるセッションを終えたら逐次次章へ接続する。引き継ぎは**テキスト方式**:章末に`advanceCampaignPc`(`/api/messages`経由のLLM)が既存PCシート(`pc.raw`)へ獲得物・成長・関係の変化を織り込んだ更新版を生成し、xpは数値で持ち越す。Campaignメタは World配下のライブラリ実体で、`campaignMetaKey`は`users/{userId}/worlds/{worldId}/campaigns/{campaignId}`へ**フラット化**(一覧可能)。形は`{ id, worldId, title, carriedPc: { raw, xp }, chapters: [{ sessionId, title, endedAt }], createdAt, updatedAt }`で、`carriedPc`はメタJSONに内包する(別ドキュメント不要)。セッションには任意`worldId?`/`campaignId?`が加わり、ライブラリWorld由来のセッション(`worldId`あり)のホームカードに「次の章へ」ボタンが出る。CRUDは`server/routes/campaigns.js`(`GET/PUT/DELETE /api/worlds/:worldId/campaigns[/:id]`)。
+
+**SP2(管理タブ+Homeグルーピング)実装済み(2026-07-25)**。素材ライブラリにCampaignタブ(`src/screens/library/CampaignTab.jsx`)が加わり、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC(`carriedPc`)閲覧・改名・削除ができる(`DELETE`は`campaignMetaKey`のみ削除する冪等操作で、メンバーセッションの`campaignId`は不変。dangling`campaignId`はHomeで非グループ表示にフォールバックする)。新規作成UIはタブに無く、Campaignはホームの「次の章へ」からのみ生成される。ホーム画面は`campaignId`付きセッションを、登場`worldId`ごとに`listCampaigns`でタイトル解決してキャンペーン見出し(全N章)配下にグループ表示する。**章からのセッション再開・クロスWorld・構造化インベントリ・NPC記憶連携・次章シナリオ自動提案はSP3以降として未実装**。
 
 **フォルダ構造(`server/storage/paths.js`が正)**
 ```

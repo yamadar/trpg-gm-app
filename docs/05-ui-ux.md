@@ -43,7 +43,7 @@
 │   ・...                                │
 └─────────────────────────────────────┘
 ```
-セッション一覧カードにはタイトル・現在シーン名・手数(turn_count)・直近のGM発言1行程度のサマリを表示、カードのクリックで再開する。各カードに「小説化」ボタンがあり、`POST /api/sessions/:id/novelize`でAIにログを小説化させてから`GET /api/sessions/:id/novel`で取得し、Markdownファイルとしてダウンロードする(古いログのまま生成された場合は鮮度警告を表示)。挿絵のあるセッションにはさらに「挿絵付き」ボタンが表示され、`GET /api/sessions/:id/novel/illustrated`からbase64画像埋め込みの自己完結Markdownをダウンロードできる(2026-07-24追加、06-content-generation.md 10.5節参照)。ライブラリWorld由来のセッション(`worldId`あり)のカードにはさらに「次の章へ」ボタンが表示され(2026-07-24追加、02-data-model.md 3.5節参照)、押下で`advanceCampaignPc`が引き継ぎPCシートを生成→Campaignメタを作成/更新(`PUT /api/worlds/:worldId/campaigns/:id`)→World/PC/Rulesetを前埋めした次章のSetupへ遷移し、xp・worldId・campaignIdを引き継いだ新セッションを作る。キャンペーンの管理UI(章一覧・改名・削除)や章単位の進行表示はSP2として未実装。
+セッション一覧カードにはタイトル・現在シーン名・手数(turn_count)・直近のGM発言1行程度のサマリを表示、カードのクリックで再開する。各カードに「小説化」ボタンがあり、`POST /api/sessions/:id/novelize`でAIにログを小説化させてから`GET /api/sessions/:id/novel`で取得し、Markdownファイルとしてダウンロードする(古いログのまま生成された場合は鮮度警告を表示)。挿絵のあるセッションにはさらに「挿絵付き」ボタンが表示され、`GET /api/sessions/:id/novel/illustrated`からbase64画像埋め込みの自己完結Markdownをダウンロードできる(2026-07-24追加、06-content-generation.md 10.5節参照)。ライブラリWorld由来のセッション(`worldId`あり)のカードにはさらに「次の章へ」ボタンが表示され(2026-07-24追加、02-data-model.md 3.5節参照)、押下で`advanceCampaignPc`が引き継ぎPCシートを生成→Campaignメタを作成/更新(`PUT /api/worlds/:worldId/campaigns/:id`)→World/PC/Rulesetを前埋めした次章のSetupへ遷移し、xp・worldId・campaignIdを引き継いだ新セッションを作る。さらにSP2(2026-07-25追加)で、`campaignId`を持つセッションはキャンペーンのタイトル見出し(全N章)配下にグループ表示される(タイトルは登場`worldId`ごとに`listCampaigns`で解決。解決できない`campaignId`は「続きから再開」の非グループ一覧にフォールバック)。章一覧・改名・削除は素材ライブラリのCampaignタブで行う(14.3節)。
 
 ### 14.2 新規プレイ作成フロー(`src/screens/Setup.jsx`)
 5ステップのウィザード(ステップインジケータに「1. 世界観 / 2. シナリオ / 3. ルール / 4. PC / 5. 確認」を表示):
@@ -63,7 +63,7 @@
 World/Scenario/PCとも「既存を選ぶ」はWorldを選択している場合のみ有効(Worldが空欄・新規の間は無効化される)。新規作成した世界観・シナリオ・PCはWorldが確定していればゲーム開始時に素材ライブラリへ自動保存される(保存に失敗してもセッション開始自体は続行し、警告のみ表示)。
 
 ### 14.3 素材ライブラリ画面(`src/screens/Library.jsx`)
-World/Character(PC・NPC)/Scenario/Rulesetの4タブ(**Campaignタブは無い**。Campaign自体が未実装、02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。
+World/Character(PC・NPC)/Scenario/Campaign/Rulesetの5タブ(Campaignタブは2026-07-25追加、02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。ただしCampaignタブは新規作成UIを持たず(Campaignはホームの「次の章へ」から生成される)、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC閲覧・改名・削除に限られる。
 
 - Worldタブ: World本文に加え、region/category(地域/カテゴリ)への分割結果を一覧表示し、個別に内容の閲覧・編集ができる(内部実装用語だが、素材管理者向けに公開されている)。World・Character(PC/NPC)・Scenarioの各タブには「公開」/「公開中(再公開)」/「公開解除」ボタンがあり(`src/screens/library/WorldTab.jsx`・`CharacterTab.jsx`・`ScenarioTab.jsx`)、`shareClient.js`経由で`POST`/`DELETE /api/publish/*`を呼ぶ(Phase 2で追加。公開状態は`GET /api/publish/*`で取得しバッジ表示する)。
 - World・Scenarioの編集フォームには「雰囲気」欄があり(`WorldTab.jsx`・`ScenarioTab.jsx`、Field label「雰囲気」hint「複数選択可。」)、固定8種(`src/constants/moods.js`の`MOODS`)をチップボタンとして横並び表示し、クリックでトグル選択する複数選択UI(`aria-pressed`で選択状態を示す)。一覧側にも雰囲気タグを設定済みの場合のみ`moods.join(' / ')`で表示する。Worldタブは分割結果の再生成(reimport)後に`moods`が引き継がれないため、再分割の保存時に本文とは別に`PUT /api/worlds/:id`へ`moods`を明示的に送り直す実装になっている。編集した雰囲気は保存時に`PUT /api/worlds/:id`・`PUT /api/worlds/:worldId/scenarios/:id`へ含まれ、公開時にそのまま公開メタへコピーされる(公開ギャラリーの雰囲気チップ絞り込みに使われる。[04-persistence.md](04-persistence.md)参照)。
