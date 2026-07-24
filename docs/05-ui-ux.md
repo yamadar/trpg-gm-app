@@ -60,6 +60,7 @@ World/Scenario/PCとも「既存を選ぶ」はWorldを選択している場合�
 World/Character(PC・NPC)/Scenario/Rulesetの4タブ(**Campaignタブは無い**。Campaign自体が未実装、02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。
 
 - Worldタブ: World本文に加え、region/category(地域/カテゴリ)への分割結果を一覧表示し、個別に内容の閲覧・編集ができる(内部実装用語だが、素材管理者向けに公開されている)。World・Character(PC/NPC)・Scenarioの各タブには「公開」/「公開中(再公開)」/「公開解除」ボタンがあり(`src/screens/library/WorldTab.jsx`・`CharacterTab.jsx`・`ScenarioTab.jsx`)、`shareClient.js`経由で`POST`/`DELETE /api/publish/*`を呼ぶ(Phase 2で追加。公開状態は`GET /api/publish/*`で取得しバッジ表示する)。
+- World・Scenarioの編集フォームには「雰囲気」欄があり(`WorldTab.jsx`・`ScenarioTab.jsx`、Field label「雰囲気」hint「複数選択可。」)、固定8種(`src/constants/moods.js`の`MOODS`)をチップボタンとして横並び表示し、クリックでトグル選択する複数選択UI(`aria-pressed`で選択状態を示す)。一覧側にも雰囲気タグを設定済みの場合のみ`moods.join(' / ')`で表示する。Worldタブは分割結果の再生成(reimport)後に`moods`が引き継がれないため、再分割の保存時に本文とは別に`PUT /api/worlds/:id`へ`moods`を明示的に送り直す実装になっている。編集した雰囲気は保存時に`PUT /api/worlds/:id`・`PUT /api/worlds/:worldId/scenarios/:id`へ含まれ、公開時にそのまま公開メタへコピーされる(公開ギャラリーの雰囲気チップ絞り込みに使われる。[04-persistence.md](04-persistence.md)参照)。
 - Characterタブ: PC/NPCの切り替えタブを持つ。NPCタブのみ`revealed`状態(開示済み/未開示)の一覧表示を含む(GM専用情報の管理を明示化するため)。
 - Scenarioタブ・Rulesetタブ: それぞれ本文/hint・growthUnit等を編集できる(Rulesetタブに公開機能は無い)。
 
@@ -67,7 +68,10 @@ World/Character(PC・NPC)/Scenario/Rulesetの4タブ(**Campaignタブは無い**
 
 Phase 2で追加。ホーム画面から遷移し、「小説」「世界観」「キャラクター」「シナリオ」の4タブでユーザーが公開した素材を横断的に閲覧できる。
 
-- 一覧はタブごとに`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼び、公開日時降順のカードを表示(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
+- 一覧は各タブ共通の`PublicItemList`コンポーネント(`src/components/share/PublicItemList.jsx`)が担い、`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼んで公開日時降順のカードを表示する(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
+- 検索・絞り込みUI: 上部にタイトル・作者名の自由文字列検索ボックスがあり、入力から300ms(デバウンス)後に実効クエリへ反映される(連続入力中は再取得しない)。その下にworlds/scenariosタブのみ雰囲気チップ(`MOODS`固定8種)が並び、クリックで複数選択のトグル(選択分はOR条件で絞り込み)。scenariosタブのみさらに推奨ルールの単一選択ドロップダウン(`RULESETS`+「すべて」)がある。worlds/scenarios以外(characters/novels)のタブではチップ・ドロップダウンとも非表示。
+- タブ切り替え・検索語(デバウンス後)・雰囲気チップ・ルールセット・(ユーザーページの場合)`ownerId`のいずれかが変わるたびoffset=0で一覧を取り直し、既存の表示を置き換える。カード末尾に**「もっと見る」**ボタンがあり(APIレスポンスの`hasMore`がtrueの間だけ表示)、クリックで次ページ(`offset + 20`件目以降)を末尾に追記取得する。取得中は「読み込み中…」表示になりボタンは無効化される。取得リクエストには連番ガード(`reqRef`)があり、フィルタ変更等で新しい取得が始まった場合、古い取得の応答が後から返っても無視される(stale response guard)。
+- 空状態は2パターンに分かれる: 検索語・雰囲気・ルールセットのいずれも指定していない状態で0件なら「まだ公開されたものがありません」、何か条件を指定した状態で0件なら「条件に合う公開物がありません」+「条件をクリア」ボタン(検索語・雰囲気・ルールセットを一括リセット)を表示する。
 - カードをクリックすると詳細表示(`GET /api/public/:type/:publicId`)に切り替わり、本文(worldsはregion/category本文も含む)を表示する。
 - 詳細表示では(小説タブを除き)「ライブラリに追加」ボタンからインポートできる(`importWorld`/`importCharacter`/`importScenario`、`POST /api/import/*`)。World以外はインポート先Worldを選ぶピッカーダイアログを表示する(`listWorlds`でユーザー自身のWorld一覧を取得)。**未ログイン時はボタンの代わりに「追加にはログインが必要です」という案内を表示**する(インポートAPIは認証必須のため)。
 
@@ -78,6 +82,6 @@ Phase 2で追加。ホーム画面から遷移し、「小説」「世界観」�
 URLのハッシュ`#/u/{userId}`で表示される、特定ユーザーの公開プロフィール+公開素材一覧画面。`src/router/useHashRoute.js`の`useHashRoute()`がハッシュを監視し、`App.jsx`は`routeUserId`が非nullの間、通常の画面遷移(home/setup/library/gallery/play)を素通りしてこのページのみを表示する(通常画面のstateは保持されたまま裏に残る)。未ログインでも認証不要APIのみで完結するため閲覧でき、URLをそのまま共有・ブックマークできる。
 
 - 遷移経路: 公開ギャラリー画面(14.4節)のカードに表示される公開者名をクリックすると`navigateToUser(ownerId)`(`useHashRoute.js`)が呼ばれ`#/u/{ownerId}`に遷移する。
-- 表示内容: `GET /api/users/:userId`(`displayName`・`avatarUrl`・`bio`)と`GET /api/users/:userId/public`(そのユーザーの公開`worlds`/`characters`/`scenarios`/`novels`)を並行取得し、上部にアバター(未設定時はイニシャル1文字のプレースホルダ)・表示名・`bio`(未設定なら非表示)、下に「小説」「世界観」「キャラクター」「シナリオ」の4タブで公開素材一覧を表示する(タブ構成はGallery画面と共通)。一覧のカードをクリックすると`GET /api/public/:type/:publicId`で詳細を取得し、Gallery画面と共通の`PublicItemDetail`コンポーネント(`src/components/share/PublicItemDetail.jsx`)で本文を表示する。
+- 表示内容: `GET /api/users/:userId`(`displayName`・`avatarUrl`・`bio`)を取得し、上部にアバター(未設定時はイニシャル1文字のプレースホルダ)・表示名・`bio`(未設定なら非表示)を表示する。下の「小説」「世界観」「キャラクター」「シナリオ」の4タブ(タブ構成はGallery画面と共通)の公開素材一覧は、Galleryと同じ`PublicItemList`コンポーネントに`ownerId={userId}`を渡して描画する(検索ボックス・雰囲気チップ・ルールセットドロップダウン・「もっと見る」・空状態の出し分けもGalleryと同一挙動、14.4節参照)。タブごとに`GET /api/public/:type?ownerId={userId}`を呼んでそのユーザーの公開素材のみに絞り込む。**旧`GET /api/users/:userId/public`一括APIは廃止済み**で、現在はこの`ownerId`絞り込みに一本化されている。一覧のカードをクリックすると`GET /api/public/:type/:publicId`で詳細を取得し、Gallery画面と共通の`PublicItemDetail`コンポーネント(`src/components/share/PublicItemDetail.jsx`)で本文を表示する。
 - ユーザーが存在しない場合(`404`)は「ユーザーが見つかりません」、その他の取得失敗時はエラーメッセージを表示し、いずれも「← 戻る」ボタン(`clearHash()`でハッシュを除去し通常画面に戻る)を出す。
 - `bio`はAuthBar(`src/components/auth/AuthBar.jsx`)のプロフィール編集フォームから自分で設定でき、`PATCH /api/me`経由で保存した内容が自分のユーザーページにも反映される。
