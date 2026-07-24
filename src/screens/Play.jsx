@@ -3,7 +3,7 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle, motionAllowed, moodTheme
 import { useTypewriter } from '../hooks/useTypewriter.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import CharacterPanel from '../components/play/CharacterPanel.jsx';
-import { takeTurn } from '../api/session.js';
+import { takeTurn, recallMemory } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
 import { putSessionToServer } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
@@ -351,7 +351,7 @@ export default function Play({ session, setSession, onExit }) {
       </div>
 
       {docked ? (
-        <CharacterPanel session={session} docked />
+        <CharacterPanel session={session} docked onRecall={() => recallMemory(session)} />
       ) : (
         panelOpen && (
           <>
@@ -359,7 +359,12 @@ export default function Play({ session, setSession, onExit }) {
               onClick={() => setPanelOpen(false)}
               style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 19 }}
             />
-            <CharacterPanel session={session} docked={false} onClose={() => setPanelOpen(false)} />
+            <CharacterPanel
+              session={session}
+              docked={false}
+              onClose={() => setPanelOpen(false)}
+              onRecall={() => recallMemory(session)}
+            />
           </>
         )
       )}

@@ -4,7 +4,7 @@
 
 - ログ表示: プレイヤー発言とGMの地の文を視覚的に区別(吹き出し位置・フォント・色)
 - 入力: 自由記述欄 + AI提示の選択肢ボタン併用(自由記述の判定トリガー誤検出リスクを選択肢で補完)
-- キャラシートパネル: **実装済み(2026-07-24)**。Play画面に、PCシート本文(`session.pc.raw`)・目標/因縁(`goal`/`bonds`)・成長ポイント(`{growthUnit}: {xp}`)・入手情報(既知フラグ`session.state.flags`)を読み取り表示する`CharacterPanel`(`src/components/play/CharacterPanel.jsx`)がある。広い画面(`min-width:1024px`)では右端に常時ドッキング、狭い画面ではヘッダーの「PC」トグルで右からドロワー表示する(`src/hooks/useMediaQuery.js`でmatchMedia購読、非対応環境はドロワー方式に倒す)。パネルは読み取り専用で、シート編集は引き続き素材ライブラリのCharacterタブで行う。HPはデータモデルにも無く、追跡対象ではない。
+- キャラシートパネル: **実装済み(2026-07-24)**。Play画面に、PCシート本文(`session.pc.raw`)・目標/因縁(`goal`/`bonds`)・成長ポイント(`{growthUnit}: {xp}`)を読み取り表示する`CharacterPanel`(`src/components/play/CharacterPanel.jsx`)がある。広い画面(`min-width:1024px`)では右端に常時ドッキング、狭い画面ではヘッダーの「PC」トグルで右からドロワー表示する(`src/hooks/useMediaQuery.js`でmatchMedia購読、非対応環境はドロワー方式に倒す)。既知フラグ(`session.state.flags`)の生一覧は**開示しない**(英語キーの内部状態で見づらく没入も削ぐため)。代わりに「これまでを思い出す」ボタンで、`recallMemory`(`src/api/session.js`、`/api/messages`経由)がPC視点の自然な日本語の回想をオンデマンド生成する(生フラグはLLMへの入力に留め、翻訳された地の文のみ表示)。パネルは読み取り専用で、シート編集は引き続き素材ライブラリのCharacterタブで行う。HPはデータモデルにも無く、追跡対象ではない。
 - ローディング: API応答待ち中はGMが「考えている」ような待機表現(`Play.jsx`の「GMが考えている…」表示)
 - ダイスロール演出(実装済み 2026-07-24): 新着ターンの判定スタンプ(`src/components/ui/Stamp.jsx`)は「d100の数字回転(約0.8秒)→出目停止→押印」の3段階アニメーションで表示される。degree別に配色が変わる(会心=真鍮、成功=朱、失敗=薄い朱、大失敗=暗い赤+揺れ)。セッション再開時の過去ログは即時表示。`prefers-reduced-motion`環境や`matchMedia`非対応環境ではアニメーションせず即時表示(`theme.js`の`motionAllowed()`)。
 - タイプライター表示(実装済み 2026-07-24): 新着GMターンの地の文は一文字ずつ表示され(`src/hooks/useTypewriter.js`)、表示中に本文クリックで全文スキップできる。速度は`state.tension_level`連動(high=15ms/字、medium=25、low=35)。タイプ完了まで選択肢ボタン・入力欄は無効化される。reduced-motion時は即時表示。
