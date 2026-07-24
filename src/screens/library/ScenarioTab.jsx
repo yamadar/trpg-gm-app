@@ -11,20 +11,8 @@ import {
   publishedScenarios as fetchPublishedScenarios,
 } from '../../api/shareClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
-import { MOODS } from '../../constants/moods.js';
-
-function moodChipStyle(active) {
-  return {
-    fontFamily: F_MONO,
-    fontSize: 12,
-    padding: '4px 10px',
-    borderRadius: 3,
-    cursor: 'pointer',
-    background: active ? COLORS.ink : 'transparent',
-    color: active ? COLORS.paper : COLORS.faint,
-    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
-  };
-}
+import { RULESETS } from '../../data/rulesets.js';
+import MoodChips from '../../components/ui/MoodChips.jsx';
 
 export default function ScenarioTab({ worldId }) {
   const { user } = useAuth();
@@ -296,13 +284,19 @@ export default function ScenarioTab({ worldId }) {
               style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
             />
           </Field>
-          <Field label="推奨ルール(recommendedRuleset)" hint="任意。自由テキスト。">
-            <input
+          <Field label="推奨ルール(recommendedRuleset)" hint="任意。未設定にできる。">
+            <select
               value={newRecommendedRuleset}
               onChange={(e) => setNewRecommendedRuleset(e.target.value)}
-              placeholder="例: coc7e"
               style={inputStyle}
-            />
+            >
+              <option value="">未設定</option>
+              {RULESETS.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
           </Field>
           <Button variant="brass" onClick={handleCreate} disabled={busy || !newId || !newTitle}>
             {busy ? '作成中…' : '作成する'}
@@ -323,26 +317,26 @@ export default function ScenarioTab({ worldId }) {
               style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
             />
           </Field>
-          <Field label="推奨ルール(recommendedRuleset)" hint="任意。自由テキスト。">
-            <input
+          <Field label="推奨ルール(recommendedRuleset)" hint="任意。未設定にできる。">
+            <select
               value={editRecommendedRuleset}
               onChange={(e) => setEditRecommendedRuleset(e.target.value)}
               style={inputStyle}
-            />
+            >
+              <option value="">未設定</option>
+              {RULESETS.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+              {editRecommendedRuleset && !RULESETS.some((r) => r.id === editRecommendedRuleset) && (
+                <option value={editRecommendedRuleset}>{editRecommendedRuleset}(既存の値)</option>
+              )}
+            </select>
           </Field>
           <Field label="雰囲気" hint="複数選択可。">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {MOODS.map((mood) => (
-                <button
-                  key={mood}
-                  type="button"
-                  onClick={() => toggleEditMood(mood)}
-                  style={moodChipStyle(editMoods.includes(mood))}
-                  aria-pressed={editMoods.includes(mood)}
-                >
-                  {mood}
-                </button>
-              ))}
+              <MoodChips selected={editMoods} onToggle={toggleEditMood} />
             </div>
           </Field>
           <div style={{ display: 'flex', gap: 8 }}>

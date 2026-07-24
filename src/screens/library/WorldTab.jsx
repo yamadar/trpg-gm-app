@@ -7,7 +7,6 @@ import ConfirmModal from '../../components/library/ConfirmModal.jsx';
 import {
   getWorld,
   deleteWorld,
-  putWorld,
   putRegion,
   putCategory,
   putWorldSource,
@@ -19,20 +18,7 @@ import {
 import { importWorld, reimportWorld } from '../../api/worldImport.js';
 import { publishWorld, unpublishWorld, publishedWorlds as fetchPublishedWorlds } from '../../api/shareClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
-import { MOODS } from '../../constants/moods.js';
-
-function moodChipStyle(active) {
-  return {
-    fontFamily: F_MONO,
-    fontSize: 12,
-    padding: '4px 10px',
-    borderRadius: 3,
-    cursor: 'pointer',
-    background: active ? COLORS.ink : 'transparent',
-    color: active ? COLORS.paper : COLORS.faint,
-    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
-  };
-}
+import MoodChips from '../../components/ui/MoodChips.jsx';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
   const { user } = useAuth();
@@ -175,9 +161,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       if (editRaw !== detail.raw) {
         await putWorldSource(selectedWorldId, editRaw);
       }
-      const split = await reimportWorld(selectedWorldId, editTitle, adjustmentRequest || undefined);
-      // reimportWorld再保存時はmoodsを送らないため、雰囲気タグは別途PUTして反映する。
-      await putWorld(selectedWorldId, { title: editTitle, raw: split.world, moods: editMoods });
+      const split = await reimportWorld(selectedWorldId, editTitle, adjustmentRequest || undefined, editMoods);
       setRegions(split.regions.map((r) => ({ id: r.id, title: r.title, content: r.content })));
       setCategories(split.categories.map((c) => ({ id: c.id, title: c.title, content: c.content })));
       setAdjustmentRequest('');
@@ -391,17 +375,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
           </Field>
           <Field label="雰囲気" hint="複数選択可。">
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {MOODS.map((mood) => (
-                <button
-                  key={mood}
-                  type="button"
-                  onClick={() => toggleEditMood(mood)}
-                  style={moodChipStyle(editMoods.includes(mood))}
-                  aria-pressed={editMoods.includes(mood)}
-                >
-                  {mood}
-                </button>
-              ))}
+              <MoodChips selected={editMoods} onToggle={toggleEditMood} />
             </div>
           </Field>
           <Field label="再分割の修正依頼" hint="任意。空欄でも再分割できる。">

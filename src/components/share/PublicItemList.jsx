@@ -5,23 +5,10 @@ import Button from '../ui/Button.jsx';
 import { listPublic } from '../../api/shareClient.js';
 import { formatPublicDate, publicMetaLine, authorButtonStyle } from './PublicItemDetail.jsx';
 import { KIND_LABELS } from '../../constants/publicContent.js';
-import { MOODS } from '../../constants/moods.js';
 import { RULESETS } from '../../data/rulesets.js';
+import MoodChips from '../ui/MoodChips.jsx';
 
 const LIMIT = 20;
-
-function chipStyle(active) {
-  return {
-    fontFamily: F_MONO,
-    fontSize: 12,
-    padding: '4px 10px',
-    borderRadius: 3,
-    cursor: 'pointer',
-    background: active ? COLORS.ink : 'transparent',
-    color: active ? COLORS.paper : COLORS.faint,
-    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
-  };
-}
 
 export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorClick, active = true }) {
   const [q, setQ] = useState('');
@@ -30,7 +17,6 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
   const [ruleset, setRuleset] = useState('');
 
   const [items, setItems] = useState([]);
-  const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -56,15 +42,17 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
     try {
       const res = await listPublic(type, {
         q: debouncedQ,
-        moods: selectedMoods,
-        ruleset,
+        // showMoods/showRuleset(typeで決まる)に応じて、非表示のコントロールの値は
+        // 常に「未指定」として送る。type変更時にstateが残っていても誤った軸で
+        // 絞り込まれないようにするためのガード。
+        moods: showMoods ? selectedMoods : [],
+        ruleset: showRuleset ? ruleset : '',
         ownerId,
         limit: LIMIT,
         offset: requestOffset,
       });
       if (my !== reqRef.current) return; // 別の取得が始まっていたら破棄(stale response guard)
       setItems((prev) => (replace ? res.items : [...prev, ...res.items]));
-      setTotal(res.total);
       setHasMore(res.hasMore);
       setOffset(requestOffset);
     } catch (e) {
@@ -104,22 +92,14 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
       <input
         style={inputStyle}
         placeholder="タイトル・作者名で検索"
+        aria-label="公開物を検索"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
 
       {showMoods && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-          {MOODS.map((mood) => (
-            <button
-              key={mood}
-              type="button"
-              onClick={() => toggleMood(mood)}
-              style={chipStyle(selectedMoods.includes(mood))}
-            >
-              {mood}
-            </button>
-          ))}
+          <MoodChips selected={selectedMoods} onToggle={toggleMood} />
         </div>
       )}
 

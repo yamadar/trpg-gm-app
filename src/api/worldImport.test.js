@@ -47,6 +47,27 @@ describe('reimportWorld', () => {
     expect(putWorldSpy).toHaveBeenCalledWith('w1', { title: 'Waterdeep World', raw: '更新後の目次' });
   });
 
+  it('includes moods in the single World PUT when a moods argument is passed, so they survive the reimport', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorldSource').mockResolvedValue({ raw: '保存済み原文' });
+    vi.spyOn(worldSplit, 'splitWorld').mockResolvedValue({
+      world: '更新後の目次',
+      regions: [],
+      categories: [],
+    });
+    const putWorldSpy = vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
+    vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue([]);
+    vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue([]);
+
+    await reimportWorld('w1', 'Waterdeep World', '海沿いの街を追加して', ['ホラー', '冒険']);
+
+    expect(putWorldSpy).toHaveBeenCalledTimes(1);
+    expect(putWorldSpy).toHaveBeenCalledWith('w1', {
+      title: 'Waterdeep World',
+      raw: '更新後の目次',
+      moods: ['ホラー', '冒険'],
+    });
+  });
+
   it('prunes regions/categories that are absent from the new split', async () => {
     vi.spyOn(worldLibraryClient, 'getWorldSource').mockResolvedValue({ raw: '原文' });
     vi.spyOn(worldSplit, 'splitWorld').mockResolvedValue({

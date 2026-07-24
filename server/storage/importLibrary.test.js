@@ -89,6 +89,23 @@ describe('importWorld', () => {
       reason: 'not_found',
     });
   });
+
+  it('carries the moods tags over from the public snapshot into the imported copy', async () => {
+    await saveWorld(dataStore, textStore, 'usr_a', {
+      id: 'w1',
+      title: 'テスト世界',
+      raw: '# 本文',
+      moods: ['ホラー', '冒険'],
+    });
+    const { meta: pubMeta } = await publishWorld(dataStore, textStore, 'usr_a', 'w1', OWNER);
+
+    const result = await importWorld(dataStore, textStore, 'usr_b', pubMeta.publicId);
+
+    expect(result.ok).toBe(true);
+    expect(result.meta.moods).toEqual(['ホラー', '冒険']);
+    const imported = await getWorld(dataStore, textStore, 'usr_b', result.meta.id);
+    expect(imported.moods).toEqual(['ホラー', '冒険']);
+  });
 });
 
 describe('importCharacter', () => {
@@ -227,6 +244,27 @@ describe('importScenario', () => {
       ok: false,
       reason: 'not_found',
     });
+  });
+
+  it('carries the moods tags over from the public snapshot into the imported copy', async () => {
+    await seedWorld('usr_a', 'w1', 'テスト世界');
+    await saveScenario(dataStore, textStore, 'usr_a', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: '失踪事件',
+      raw: '## シナリオ概要',
+      moods: ['ミステリー', '日常'],
+    });
+    const { meta: pubMeta } = await publishScenario(dataStore, textStore, 'usr_a', 'w1', 'sc1', OWNER);
+
+    await saveWorld(dataStore, textStore, 'usr_b', { id: 'target', title: '受け入れ先', raw: 'r' });
+
+    const result = await importScenario(dataStore, textStore, 'usr_b', pubMeta.publicId, 'target');
+
+    expect(result.ok).toBe(true);
+    expect(result.meta.moods).toEqual(['ミステリー', '日常']);
+    const imported = await getScenario(dataStore, textStore, 'usr_b', 'target', result.meta.id);
+    expect(imported.moods).toEqual(['ミステリー', '日常']);
   });
 });
 

@@ -192,6 +192,27 @@ describe('PublicItemList', () => {
     );
   });
 
+  it('does not send moods in the request when type is characters (moods hidden), even if moods state is left over from an in-place type change', async () => {
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
+    // type='worlds' shows the mood chips; select one before switching type in place (no remount,
+    // same as the real Gallery/UserPage usage the component's own tests exercise elsewhere).
+    const { rerender } = renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText('ホラー'));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+    expect(listSpy).toHaveBeenLastCalledWith('worlds', expect.objectContaining({ moods: ['ホラー'] }));
+
+    // Switch to 'characters', which does not render the mood chips at all. The leftover
+    // selectedMoods state must not leak into the request for the new type/axis.
+    rerenderWithAuth(rerender, <PublicItemList type="characters" onOpenDetail={vi.fn()} />);
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(3));
+    expect(listSpy).toHaveBeenLastCalledWith(
+      'characters',
+      expect.objectContaining({ moods: [], ruleset: '' })
+    );
+  });
+
   it('refetches with ruleset and resets offset to 0 when the ruleset dropdown changes', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
     renderWithAuth(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
@@ -331,6 +352,21 @@ describe('PublicItemList', () => {
 
     rerenderWithAuth(rerender, <PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
     expect(screen.getByText('ホラー')).toBeInTheDocument();
+  });
+
+  it('marks mood chips with aria-pressed reflecting selection state (via the shared MoodChips component)', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'ホラー', pressed: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('ホラー'));
+    expect(screen.getByRole('button', { name: 'ホラー', pressed: true })).toBeInTheDocument();
+  });
+
+  it('gives the search input an accessible name via aria-label', () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    expect(screen.getByLabelText('公開物を検索')).toBeInTheDocument();
   });
 
   it('shows the ruleset dropdown only for scenarios', () => {

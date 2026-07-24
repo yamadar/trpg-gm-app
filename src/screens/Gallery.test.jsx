@@ -528,7 +528,7 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByText('Item A'));
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'a1'));
 
-    // 一覧に戻り、Bを開く(こちらは即解決)。一覧に戻ると PublicItemList が再マウントされ、再取得を待つ必要がある。
+    // 一覧に戻り、Bを開く(こちらは即解決)。タブは変わらないので PublicItemList は再マウントされず、一覧はそのまま。
     fireEvent.click(screen.getByText('← 一覧に戻る'));
     await waitFor(() => expect(screen.getByText('Item B')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Item B'));

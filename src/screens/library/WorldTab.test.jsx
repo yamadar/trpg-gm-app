@@ -10,10 +10,6 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue([]);
   vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue([]);
-  // handleReimport()はreimportWorldの後にmoods反映のためputWorldを直接呼ぶので、
-  // 既存テスト(putWorldを個別にモックしていないもの)が実ネットワーク呼び出しに
-  // ならないようデフォルトで解決させておく。
-  vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
 });
 
 describe('WorldTab', () => {
@@ -72,7 +68,9 @@ describe('WorldTab', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('保存して再分割'));
 
-    await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined));
+    // reimportWorldは(worldId, title, adjustmentRequest, moods)で呼ばれる。moodsは1回のPUTに
+    // まとめて渡されるようになったため、editMoodsの初期値(未設定=[])も併せて検証する。
+    await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined, []));
     await waitFor(() => expect(screen.getByText('港')).toBeInTheDocument());
     expect(putWorldSourceSpy).not.toHaveBeenCalled();
   });
@@ -100,7 +98,7 @@ describe('WorldTab', () => {
     fireEvent.click(screen.getByText('保存して再分割'));
 
     await waitFor(() => expect(putWorldSourceSpy).toHaveBeenCalledWith('w1', '編集後の本文'));
-    await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined));
+    await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined, []));
 
     const putOrder = putWorldSourceSpy.mock.invocationCallOrder[0];
     const reimportOrder = reimportSpy.mock.invocationCallOrder[0];
@@ -131,7 +129,7 @@ describe('WorldTab', () => {
       expect(screen.getByRole('button', { name: 'ホラー', pressed: false })).toBeInTheDocument();
     });
 
-    it('includes the selected moods in the World PUT body when saving', async () => {
+    it('passes the selected moods into reimportWorld so they are saved in the single World PUT', async () => {
       vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
         id: 'w1',
         title: 'Waterdeep',
@@ -139,7 +137,69 @@ describe('WorldTab', () => {
         moods: [],
       });
       vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
-      vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({ world: '目次', regions: [], categories: [] });
+      const reimportSpy = vi
+        .spyOn(worldImport, 'reimportWorld')
+        .mockResolvedValue({ world: '目次', regions: [], categories: [] });
+
+      render(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId="w1"
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn().mockResolvedValue()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('ホラー'));
+      fireEvent.click(screen.getByText('冒険'));
+      fireEvent.click(screen.getByText('保存して再分割'));
+
+      await waitFor(() =>
+        expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined, ['ホラー', '冒険'])
+      );
+    });
+
+    it('passes an empty moods array into reimportWorld when none are selected', async () => {
+      vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+        id: 'w1',
+        title: 'Waterdeep',
+        raw: '原文',
+        moods: [],
+      });
+      vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
+      const reimportSpy = vi
+        .spyOn(worldImport, 'reimportWorld')
+        .mockResolvedValue({ world: '目次', regions: [], categories: [] });
+
+      render(
+        <WorldTab
+          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+          selectedWorldId="w1"
+          onSelectWorld={vi.fn()}
+          onWorldsChanged={vi.fn().mockResolvedValue()}
+        />
+      );
+
+      await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('保存して再分割'));
+
+      await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined, []));
+    });
+
+    it('persists moods through the reimport save path (single PUT, no separate putWorld call)', async () => {
+      // Unlike the tests above, this one does NOT mock worldImport.reimportWorld — it lets the
+      // real implementation run so we can prove moods actually reach worldLibraryClient.putWorld
+      // in the one and only PUT, with no second putWorld call following it.
+      vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+        id: 'w1',
+        title: 'Waterdeep',
+        raw: '原文',
+        moods: [],
+      });
+      vi.spyOn(worldLibraryClient, 'getWorldSource').mockResolvedValue({ raw: '原文' });
+      const worldSplitModule = await import('../../api/worldSplit.js');
+      vi.spyOn(worldSplitModule, 'splitWorld').mockResolvedValue({ world: '目次', regions: [], categories: [] });
       const putWorldSpy = vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
 
       render(
@@ -163,38 +223,7 @@ describe('WorldTab', () => {
           moods: ['ホラー', '冒険'],
         })
       );
-    });
-
-    it('sends an empty moods array when none are selected', async () => {
-      vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
-        id: 'w1',
-        title: 'Waterdeep',
-        raw: '原文',
-        moods: [],
-      });
-      vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
-      vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({ world: '目次', regions: [], categories: [] });
-      const putWorldSpy = vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
-
-      render(
-        <WorldTab
-          worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
-          selectedWorldId="w1"
-          onSelectWorld={vi.fn()}
-          onWorldsChanged={vi.fn().mockResolvedValue()}
-        />
-      );
-
-      await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
-      fireEvent.click(screen.getByText('保存して再分割'));
-
-      await waitFor(() =>
-        expect(putWorldSpy).toHaveBeenCalledWith('w1', {
-          title: 'Waterdeep',
-          raw: '目次',
-          moods: [],
-        })
-      );
+      expect(putWorldSpy).toHaveBeenCalledTimes(1);
     });
   });
 

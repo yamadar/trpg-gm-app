@@ -11,8 +11,8 @@ import {
   deleteCategory,
 } from './worldLibraryClient.js';
 
-async function saveSplitResult(worldId, title, split) {
-  await putWorld(worldId, { title, raw: split.world });
+async function saveSplitResult(worldId, title, split, moods) {
+  await putWorld(worldId, { title, raw: split.world, ...(moods !== undefined ? { moods } : {}) });
   await Promise.all(split.regions.map((r) => putRegion(worldId, r.id, r.content)));
   await Promise.all(split.categories.map((c) => putCategory(worldId, c.id, c.content)));
 }
@@ -24,7 +24,7 @@ export async function importWorld(worldId, title, rawText) {
   return split;
 }
 
-export async function reimportWorld(worldId, title, adjustmentRequest) {
+export async function reimportWorld(worldId, title, adjustmentRequest, moods) {
   const source = await getWorldSource(worldId);
   const split = await splitWorld(source.raw, adjustmentRequest);
 
@@ -36,6 +36,6 @@ export async function reimportWorld(worldId, title, adjustmentRequest) {
     existingCategories.filter((id) => !newCategoryIds.has(id)).map((id) => deleteCategory(worldId, id))
   );
 
-  await saveSplitResult(worldId, title, split);
+  await saveSplitResult(worldId, title, split, moods);
   return split;
 }

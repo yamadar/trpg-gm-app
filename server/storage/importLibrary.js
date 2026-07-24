@@ -18,7 +18,12 @@ export async function importWorld(dataStore, textStore, userId, publicId) {
   const pub = await getPublicWorld(dataStore, textStore, publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   const id = await findAvailable(slugify(pub.title), async (c) => (await dataStore.get(worldMetaKey(userId, c))) !== null);
-  const world = await saveWorld(dataStore, textStore, userId, { id, title: pub.title, raw: pub.raw });
+  const world = await saveWorld(dataStore, textStore, userId, {
+    id,
+    title: pub.title,
+    raw: pub.raw,
+    moods: pub.moods ?? [],
+  });
   for (const region of pub.regions) await saveRegion(textStore, userId, id, region.name, region.raw);
   for (const category of pub.categories) await saveCategory(textStore, userId, id, category.name, category.raw);
   return { ok: true, meta: world };
@@ -50,6 +55,7 @@ export async function importScenario(dataStore, textStore, userId, publicId, tar
     title: pub.title,
     raw: pub.raw,
     recommendedRuleset: pub.recommendedRuleset ?? null,
+    moods: pub.moods ?? [],
   });
   return { ok: true, meta: scenario };
 }

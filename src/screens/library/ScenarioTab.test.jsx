@@ -4,6 +4,7 @@ import ScenarioTab from './ScenarioTab.jsx';
 import * as scenarioLibraryClient from '../../api/scenarioLibraryClient.js';
 import * as shareClient from '../../api/shareClient.js';
 import { renderWithAuth } from '../../test/renderWithAuth.jsx';
+import { RULESETS } from '../../data/rulesets.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -34,7 +35,7 @@ describe('ScenarioTab', () => {
     fireEvent.change(screen.getByPlaceholderText('例: missing-heir'), { target: { value: 'sc1' } });
     fireEvent.change(screen.getByPlaceholderText('シナリオタイトル'), { target: { value: '失踪事件' } });
     fireEvent.change(screen.getByPlaceholderText('シナリオ本文'), { target: { value: '## 概要' } });
-    fireEvent.change(screen.getByPlaceholderText('例: coc7e'), { target: { value: 'coc7e' } });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'coc7e' } });
     fireEvent.click(screen.getByText('作成する'));
 
     await waitFor(() =>
@@ -44,6 +45,71 @@ describe('ScenarioTab', () => {
         recommendedRuleset: 'coc7e',
       })
     );
+  });
+
+  describe('推奨ルール(select)', () => {
+    it('offers 未設定 plus every RULESETS entry as options in the create form', async () => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(scenarioLibraryClient.listScenarios).toHaveBeenCalled());
+
+      fireEvent.click(screen.getByText('+ 新規Scenario'));
+      const select = screen.getByRole('combobox');
+      expect(select.querySelector('option[value=""]').textContent).toBe('未設定');
+      RULESETS.forEach((r) => {
+        expect(select.querySelector(`option[value="${r.id}"]`).textContent).toBe(r.label);
+      });
+    });
+
+    it("keeps a legacy free-text recommendedRuleset (not in RULESETS) selected as its own option when opening the editor, instead of blanking it", async () => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+        { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: 'my-custom-system' },
+      ]);
+      vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+        title: '失踪事件',
+        raw: '## 概要',
+        recommendedRuleset: 'my-custom-system',
+      });
+
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('失踪事件'));
+      await waitFor(() => expect(screen.getByDisplayValue('## 概要')).toBeInTheDocument());
+
+      const select = screen.getByRole('combobox');
+      expect(select.value).toBe('my-custom-system');
+      expect(select.querySelector('option[value="my-custom-system"]')).not.toBeNull();
+    });
+
+    it('overwrites a legacy recommendedRuleset only when the user actively picks a different option', async () => {
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([
+        { id: 'sc1', worldId: 'w1', title: '失踪事件', recommendedRuleset: 'my-custom-system' },
+      ]);
+      vi.spyOn(scenarioLibraryClient, 'getScenario').mockResolvedValue({
+        title: '失踪事件',
+        raw: '## 概要',
+        recommendedRuleset: 'my-custom-system',
+        moods: [],
+      });
+      const putSpy = vi.spyOn(scenarioLibraryClient, 'putScenario').mockResolvedValue({});
+
+      render(<ScenarioTab worldId="w1" />);
+      await waitFor(() => expect(screen.getByText('失踪事件')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('失踪事件'));
+      await waitFor(() => expect(screen.getByDisplayValue('## 概要')).toBeInTheDocument());
+
+      fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dnd5e' } });
+      fireEvent.click(screen.getByText('保存する'));
+
+      await waitFor(() =>
+        expect(putSpy).toHaveBeenCalledWith('w1', 'sc1', {
+          title: '失踪事件',
+          raw: '## 概要',
+          recommendedRuleset: 'dnd5e',
+          moods: [],
+        })
+      );
+    });
   });
 
   it('deletes a scenario after confirmation', async () => {
