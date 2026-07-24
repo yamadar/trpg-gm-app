@@ -1,7 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import PublicItemList from './PublicItemList.jsx';
 import * as shareClient from '../../api/shareClient.js';
+import { AuthContext } from '../../auth/AuthContext.jsx';
+import { renderWithAuth } from '../../test/renderWithAuth.jsx';
+
+const DEFAULT_AUTH_VALUE = {
+  user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
+  loading: false,
+  refresh: async () => {},
+  logout: async () => {},
+};
+
+function rerenderWithAuth(rerender, ui) {
+  rerender(<AuthContext.Provider value={DEFAULT_AUTH_VALUE}>{ui}</AuthContext.Provider>);
+}
 
 const PUBLISHED_AT = 1700000000000;
 const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
@@ -24,7 +37,7 @@ describe('PublicItemList', () => {
     });
     const onOpenDetail = vi.fn();
     const onAuthorClick = vi.fn();
-    render(<PublicItemList type="worlds" onOpenDetail={onOpenDetail} onAuthorClick={onAuthorClick} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={onOpenDetail} onAuthorClick={onAuthorClick} />);
 
     await waitFor(() =>
       expect(listSpy).toHaveBeenCalledWith('worlds', {
@@ -51,7 +64,7 @@ describe('PublicItemList', () => {
 
   it('passes ownerId through to listPublic when provided', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    render(<PublicItemList type="novels" ownerId="usr_1" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="novels" ownerId="usr_1" onOpenDetail={vi.fn()} />);
     await waitFor(() =>
       expect(listSpy).toHaveBeenCalledWith('novels', {
         q: '',
@@ -70,7 +83,7 @@ describe('PublicItemList', () => {
       total: 1,
       hasMore: false,
     });
-    render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Epic Adventure')).toBeInTheDocument());
     expect(screen.getByText(`Henry ・ ${EXPECTED_DATE}`)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Henry' })).not.toBeInTheDocument();
@@ -82,7 +95,7 @@ describe('PublicItemList', () => {
       total: 1,
       hasMore: false,
     });
-    render(<PublicItemList type="characters" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="characters" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Dragon Lord')).toBeInTheDocument());
     expect(screen.getByText('NPC')).toBeInTheDocument();
   });
@@ -95,7 +108,7 @@ describe('PublicItemList', () => {
       total: 1,
       hasMore: false,
     });
-    render(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Dragon Quest')).toBeInTheDocument());
     expect(screen.getByText(/coc7e/)).toBeInTheDocument();
   });
@@ -105,7 +118,7 @@ describe('PublicItemList', () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(
       () => new Promise((resolve) => { resolveList = resolve; })
     );
-    render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
     expect(screen.getByText('読み込み中…')).toBeInTheDocument();
 
     await act(async () => {
@@ -117,14 +130,14 @@ describe('PublicItemList', () => {
 
   it('shows a fetch-error message when listPublic fails', async () => {
     vi.spyOn(shareClient, 'listPublic').mockRejectedValue(new Error('boom'));
-    render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
   });
 
   it('debounces the search input 300ms before refetching with q (offset reset to 0)', async () => {
     vi.useFakeTimers();
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
 
     await act(async () => {
       await Promise.resolve();
@@ -157,7 +170,7 @@ describe('PublicItemList', () => {
 
   it('refetches with moods and resets offset to 0 when a mood chip is toggled', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText('ホラー'));
@@ -181,7 +194,7 @@ describe('PublicItemList', () => {
 
   it('refetches with ruleset and resets offset to 0 when the ruleset dropdown changes', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    render(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'coc7e' } });
@@ -198,10 +211,10 @@ describe('PublicItemList', () => {
 
   it('refetches from offset 0 when the type prop changes, even without remounting', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    const { rerender } = render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    const { rerender } = renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
 
-    rerender(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    rerenderWithAuth(rerender, <PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
     expect(listSpy).toHaveBeenLastCalledWith('worlds', expect.objectContaining({ offset: 0 }));
   });
@@ -220,7 +233,7 @@ describe('PublicItemList', () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic')
       .mockResolvedValueOnce(page1)
       .mockResolvedValueOnce(page2);
-    render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
 
     fireEvent.click(screen.getByText('もっと見る'));
@@ -251,7 +264,7 @@ describe('PublicItemList', () => {
       .mockResolvedValueOnce(page1)
       .mockResolvedValueOnce(page2)
       .mockResolvedValueOnce(page3);
-    render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
 
     fireEvent.click(screen.getByText('もっと見る'));
@@ -270,21 +283,21 @@ describe('PublicItemList', () => {
       total: 1,
       hasMore: false,
     });
-    render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
     expect(screen.queryByText('もっと見る')).not.toBeInTheDocument();
   });
 
   it('shows the no-filters empty state when there are no items and no filters are active', async () => {
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
     expect(screen.queryByText('条件をクリア')).not.toBeInTheDocument();
   });
 
   it('shows the filtered empty state with a clear button, and clearing resets filters and refetches', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText('ホラー'));
@@ -307,26 +320,26 @@ describe('PublicItemList', () => {
 
   it('shows mood chips only for worlds/scenarios, not for novels/characters', () => {
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    const { rerender } = render(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
+    const { rerender } = renderWithAuth(<PublicItemList type="novels" onOpenDetail={vi.fn()} />);
     expect(screen.queryByText('ホラー')).not.toBeInTheDocument();
 
-    rerender(<PublicItemList type="characters" onOpenDetail={vi.fn()} />);
+    rerenderWithAuth(rerender, <PublicItemList type="characters" onOpenDetail={vi.fn()} />);
     expect(screen.queryByText('ホラー')).not.toBeInTheDocument();
 
-    rerender(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    rerenderWithAuth(rerender, <PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     expect(screen.getByText('ホラー')).toBeInTheDocument();
 
-    rerender(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
+    rerenderWithAuth(rerender, <PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
     expect(screen.getByText('ホラー')).toBeInTheDocument();
   });
 
   it('shows the ruleset dropdown only for scenarios', () => {
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
-    const { rerender } = render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    const { rerender } = renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     expect(screen.queryByText('すべて')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
 
-    rerender(<PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
+    rerenderWithAuth(rerender, <PublicItemList type="scenarios" onOpenDetail={vi.fn()} />);
     expect(screen.getByText('すべて')).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
@@ -348,7 +361,7 @@ describe('PublicItemList', () => {
       });
     });
 
-    render(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} />);
     // 1st request (novels initial) left unresolved; mood toggle triggers a 2nd request that resolves immediately.
     fireEvent.click(screen.getByText('ホラー'));
     await waitFor(() => expect(screen.getByText('Second')).toBeInTheDocument());

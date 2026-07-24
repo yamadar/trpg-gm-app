@@ -23,7 +23,7 @@ function chipStyle(active) {
   };
 }
 
-export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorClick }) {
+export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorClick, active = true }) {
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [selectedMoods, setSelectedMoods] = useState([]);
@@ -96,6 +96,8 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
     setSelectedMoods([]);
     setRuleset('');
   }
+
+  if (!active) return null;
 
   return (
     <div>

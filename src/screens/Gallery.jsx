@@ -73,37 +73,39 @@ export default function Gallery({ onClose }) {
         ))}
       </div>
 
-      {viewMode === 'list' ? (
-        <PublicItemList
-          key={tab}
-          type={tab}
-          onOpenDetail={openDetail}
-          onAuthorClick={(ownerId) => navigateToUser(ownerId)}
-        />
-      ) : detailLoading ? (
-        <div>
-          <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-            ← 一覧に戻る
-          </Button>
-          <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-        </div>
-      ) : detailError ? (
-        <div>
-          <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-            ← 一覧に戻る
-          </Button>
-          <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-        </div>
-      ) : (
-        detail && (
-          <PublicItemDetail
-            type={tab}
-            item={detail}
-            onBack={backToList}
-            onAuthorClick={(ownerId) => navigateToUser(ownerId)}
-          />
-        )
-      )}
+      <PublicItemList
+        key={tab}
+        type={tab}
+        active={viewMode === 'list'}
+        onOpenDetail={openDetail}
+        onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+      />
+
+      {viewMode !== 'list' &&
+        (detailLoading ? (
+          <div>
+            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
+              ← 一覧に戻る
+            </Button>
+            <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
+          </div>
+        ) : detailError ? (
+          <div>
+            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
+              ← 一覧に戻る
+            </Button>
+            <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
+          </div>
+        ) : (
+          detail && (
+            <PublicItemDetail
+              type={tab}
+              item={detail}
+              onBack={backToList}
+              onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+            />
+          )
+        ))}
     </div>
   );
 }

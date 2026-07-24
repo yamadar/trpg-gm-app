@@ -544,4 +544,63 @@ describe('Gallery', () => {
     expect(screen.queryByText('A本文')).not.toBeInTheDocument();
     expect(screen.getByText('B本文')).toBeInTheDocument();
   });
+
+  it('preserves list search text and results across a detail round trip, without an extra unfiltered refetch', async () => {
+    const listSpy = vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type, params) => {
+      if (type !== 'novels') return EMPTY_PAGE;
+      if (params.q === 'dragon') {
+        return {
+          items: [{ publicId: 'd1', title: 'Dragon Tale', ownerName: 'Dana', publishedAt: PUBLISHED_AT }],
+          total: 1,
+          hasMore: false,
+        };
+      }
+      return {
+        items: [{ publicId: 'n1', title: 'Item A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+        total: 1,
+        hasMore: false,
+      };
+    });
+    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'd1',
+      title: 'Dragon Tale',
+      ownerName: 'Dana',
+      publishedAt: PUBLISHED_AT,
+      raw: '龍の物語',
+    });
+
+    vi.useFakeTimers();
+    try {
+      renderWithAuth(<Gallery onClose={vi.fn()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(listSpy).toHaveBeenCalledTimes(1);
+
+      const input = screen.getByPlaceholderText('タイトル・作者名で検索');
+      fireEvent.change(input, { target: { value: 'dragon' } });
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+        await Promise.resolve();
+      });
+      expect(listSpy).toHaveBeenCalledTimes(2);
+      expect(listSpy).toHaveBeenLastCalledWith('novels', expect.objectContaining({ q: 'dragon', offset: 0 }));
+      expect(screen.getByText('Dragon Tale')).toBeInTheDocument();
+      vi.useRealTimers(); // waitFor 以降はリアルタイマーに戻す(fake timers下では setInterval ポーリングが進まないため)。
+
+      fireEvent.click(screen.getByText('Dragon Tale'));
+      await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'd1'));
+      await screen.findByText('龍の物語');
+
+      fireEvent.click(screen.getByText('← 一覧に戻る'));
+
+      // 検索欄の入力値・検索結果が往復後も保持されている(再マウントで消えていない)。
+      expect(screen.getByPlaceholderText('タイトル・作者名で検索').value).toBe('dragon');
+      expect(screen.getByText('Dragon Tale')).toBeInTheDocument();
+      // 一覧に戻っただけでは新規フェッチ(オフセット0の未絞り込み再取得含む)は発生しない。
+      expect(listSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
