@@ -16,6 +16,7 @@ import {
   scenarioDocPath,
   scenarioMetaKey,
   campaignMetaKey,
+  campaignListPrefix,
   rulesetListPrefix,
   rulesetMetaKey,
   publicListPrefix,
@@ -100,7 +101,10 @@ describe('storage paths', () => {
       'users/usr_1/worlds/waterdeep/scenarios/sc1',
     );
     expect(campaignMetaKey('usr_1', 'waterdeep', 'cp1')).toBe(
-      'users/usr_1/worlds/waterdeep/campaigns/cp1/campaign',
+      'users/usr_1/worlds/waterdeep/campaigns/cp1',
+    );
+    expect(campaignListPrefix('usr_1', 'waterdeep')).toBe(
+      'users/usr_1/worlds/waterdeep/campaigns',
     );
   });
 

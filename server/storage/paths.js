@@ -63,7 +63,11 @@ export function scenarioMetaKey(userId, worldId, scenarioId) {
 }
 
 export function campaignMetaKey(userId, worldId, campaignId) {
-  return `users/${userId}/worlds/${worldId}/campaigns/${campaignId}/campaign`;
+  return `users/${userId}/worlds/${worldId}/campaigns/${campaignId}`;
+}
+
+export function campaignListPrefix(userId, worldId) {
+  return `users/${userId}/worlds/${worldId}/campaigns`;
 }
 
 export function rulesetListPrefix(userId) {
