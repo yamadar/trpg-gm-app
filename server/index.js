@@ -38,6 +38,11 @@ function resolveBaseUrl(candidate) {
   }
 }
 
+function parseLimit(value, def) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
 export function createApp({
   apiKey = process.env.ANTHROPIC_API_KEY,
   env = process.env,
@@ -59,8 +64,8 @@ export function createApp({
   const usage = createUsage({
     dataStore,
     limits: {
-      messages: Number(env.LIMIT_MESSAGES_PER_DAY) || 200,
-      novelize: Number(env.LIMIT_NOVELIZE_PER_DAY) || 10,
+      messages: parseLimit(env.LIMIT_MESSAGES_PER_DAY, 200),
+      novelize: parseLimit(env.LIMIT_NOVELIZE_PER_DAY, 10),
     },
   });
 

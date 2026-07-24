@@ -56,4 +56,11 @@ describe('usage limits', () => {
     await usage.consume('usr_1', 'messages');
     expect(await dataStore.get(usageKey('usr_1', '2026-07-23'))).toEqual({ messages: 1 });
   });
+
+  it('does not exceed the limit under concurrent consume of the same key', async () => {
+    const usage = createUsage({ dataStore, limits: { messages: 5, novelize: 1 }, now: () => T0 });
+    const results = await Promise.all(Array.from({ length: 20 }, () => usage.consume('usr_1', 'messages')));
+    expect(results.filter((r) => r.ok).length).toBe(5);
+    expect(await dataStore.get(usageKey('usr_1', '2026-07-23'))).toEqual({ messages: 5 });
+  });
 });

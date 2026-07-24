@@ -93,6 +93,12 @@ describe('createApp', () => {
     expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(429);
   });
 
+  it('LIMIT_MESSAGES_PER_DAY=0 denies all messages', async () => {
+    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: { LIMIT_MESSAGES_PER_DAY: '0' } });
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+    expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(429);
+  });
+
   it('rejects cross-origin mutations', async () => {
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     const res = await request(app)
