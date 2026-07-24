@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle, motionAllowed } from '../theme.js';
+import { useTypewriter } from '../hooks/useTypewriter.js';
 import { takeTurn } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
 import { putSessionToServer } from '../api/sessionSyncClient.js';
@@ -15,6 +16,8 @@ export default function Play({ session, setSession, onExit }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saveWarning, setSaveWarning] = useState('');
+  const [narrating, setNarrating] = useState(false);
+  const handleNarrationDone = useCallback(() => setNarrating(false), []);
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
   // マウント時点のログ長。これ以降に追加されたエントリだけを演出対象にする
@@ -65,6 +68,7 @@ export default function Play({ session, setSession, onExit }) {
           log: newLog,
           updatedAt: Date.now(),
         };
+        if (motionAllowed()) setNarrating(true);
         setSession(updated);
         const saved = await saveSession(updated);
         if (!saved) {
@@ -97,7 +101,7 @@ export default function Play({ session, setSession, onExit }) {
   }, [authLoading]);
 
   async function submitFree() {
-    if (!input.trim() || busy) return;
+    if (!input.trim() || busy || narrating) return;
     const text = input.trim();
     setInput('');
     const ok = await runTurn(text, text);
@@ -105,7 +109,7 @@ export default function Play({ session, setSession, onExit }) {
   }
 
   function submitChoice(choice) {
-    if (busy) return;
+    if (busy || narrating) return;
     runTurn(choice, choice);
   }
 
@@ -163,18 +167,13 @@ export default function Play({ session, setSession, onExit }) {
           ) : (
             <Card key={i}>
               <Stamp roll={entry.roll} animate={i >= initialLogLenRef.current} />
-              <div
-                style={{
-                  fontFamily: F_BODY,
-                  fontSize: 15,
-                  lineHeight: 1.8,
-                  color: COLORS.inkSoft,
-                  whiteSpace: 'pre-wrap',
-                }}
-              >
-                {entry.text}
-              </div>
-              {i === session.log.length - 1 && entry.choices?.length > 0 && (
+              <GmNarrative
+                text={entry.text}
+                animate={i >= initialLogLenRef.current && i === session.log.length - 1 && narrating}
+                speedMs={TYPE_SPEED[session.state.tension_level] ?? TYPE_SPEED.medium}
+                onDone={i === session.log.length - 1 ? handleNarrationDone : undefined}
+              />
+              {i === session.log.length - 1 && !narrating && entry.choices?.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                   {entry.choices.map((c, ci) => (
                     <Button key={ci} variant="ghost" onClick={() => submitChoice(c)} disabled={busy}>
@@ -216,13 +215,39 @@ export default function Play({ session, setSession, onExit }) {
             }}
             placeholder="PCの行動を自由に書く…"
             style={{ ...inputStyle, flex: 1 }}
-            disabled={busy}
+            disabled={busy || narrating}
           />
-          <Button variant="brass" onClick={submitFree} disabled={busy || !input.trim()}>
+          <Button variant="brass" onClick={submitFree} disabled={busy || narrating || !input.trim()}>
             送る
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// テンション別のタイプ速度(ms/字)。highは畳み掛け、lowはゆったり。
+const TYPE_SPEED = { high: 15, medium: 25, low: 35 };
+
+// GMの地の文。animate中は一文字ずつ表示し、クリックでスキップできる。
+function GmNarrative({ text, animate, speedMs, onDone }) {
+  const { shown, done, skip } = useTypewriter(text, { speedMs, enabled: animate });
+  useEffect(() => {
+    if (done) onDone?.();
+  }, [done, onDone]);
+  return (
+    <div
+      onClick={done ? undefined : skip}
+      style={{
+        fontFamily: F_BODY,
+        fontSize: 15,
+        lineHeight: 1.8,
+        color: COLORS.inkSoft,
+        whiteSpace: 'pre-wrap',
+        cursor: done ? undefined : 'pointer',
+      }}
+    >
+      {shown}
     </div>
   );
 }

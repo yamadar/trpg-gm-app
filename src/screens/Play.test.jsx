@@ -263,6 +263,18 @@ describe('Play', () => {
     delete window.matchMedia;
   });
 
+  it('motion許可環境では地の文がタイプ表示され、完了後にchoicesが表示される', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }); // motion許可
+    try {
+      renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+      // タイプ完了後に全文とchoicesが表示される(リアルタイマーで進行を待つ)
+      await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument(), { timeout: 3000 });
+      await waitFor(() => expect(screen.getByText('進む')).toBeInTheDocument(), { timeout: 3000 });
+    } finally {
+      delete window.matchMedia;
+    }
+  });
+
   it('refuses to run a turn when logged out', async () => {
     // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
     const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });
