@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createFsDataStore } from './dataStore.js';
 import { createFsTextStore } from './textStore.js';
 import { saveWorld, getWorld, listWorlds, deleteWorld } from './worldLibrary.js';
+import { worldMetaKey } from './paths.js';
 
 let dir;
 let dataStore;
@@ -72,5 +73,26 @@ describe('World library functions', () => {
     await saveWorld(dataStore, textStore, 'usr_1', { id: 'w1', title: 'A', raw: 'a' });
     expect(await getWorld(dataStore, textStore, 'usr_2', 'w1')).toBeNull();
     expect(await listWorlds(dataStore, 'usr_2')).toEqual([]);
+  });
+
+  it('round-trips moods and backfills [] for legacy records', async () => {
+    await saveWorld(dataStore, textStore, 'usr_1', { id: 'w1', title: 'T', raw: '#', moods: ['ホラー', '冒険'] });
+    expect((await getWorld(dataStore, textStore, 'usr_1', 'w1')).moods).toEqual(['ホラー', '冒険']);
+
+    // legacy record: meta persisted before moods existed (no moods key at all)
+    const meta = await dataStore.get(worldMetaKey('usr_1', 'w1'));
+    delete meta.moods;
+    await dataStore.set(worldMetaKey('usr_1', 'w1'), meta);
+
+    expect((await getWorld(dataStore, textStore, 'usr_1', 'w1')).moods).toEqual([]);
+    expect((await listWorlds(dataStore, 'usr_1'))[0].moods).toEqual([]);
+  });
+
+  it('defaults moods to [] when not specified or not an array', async () => {
+    await saveWorld(dataStore, textStore, 'usr_1', { id: 'w1', title: 'T', raw: '#' });
+    expect((await getWorld(dataStore, textStore, 'usr_1', 'w1')).moods).toEqual([]);
+
+    await saveWorld(dataStore, textStore, 'usr_1', { id: 'w2', title: 'T', raw: '#', moods: 'ホラー' });
+    expect((await getWorld(dataStore, textStore, 'usr_1', 'w2')).moods).toEqual([]);
   });
 });

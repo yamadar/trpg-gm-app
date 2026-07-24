@@ -3,6 +3,7 @@ import { saveScenario, getScenario, listScenarios, deleteScenario } from '../sto
 import { unpublishScenario } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
+import { isValidMoods } from '../storage/moods.js';
 
 export function createScenariosRouter({ dataStore, textStore }) {
   const router = Router();
@@ -27,12 +28,17 @@ export function createScenariosRouter({ dataStore, textStore }) {
       res.status(400).json({ error: 'title and raw are required' });
       return;
     }
+    if ('moods' in req.body && !isValidMoods(req.body.moods)) {
+      res.status(400).json({ error: 'moods must be an array of known mood labels' });
+      return;
+    }
     const scenario = await saveScenario(dataStore, textStore, req.userId, {
       worldId: req.params.worldId,
       id: req.params.id,
       title: req.body.title,
       raw: req.body.raw,
       recommendedRuleset: req.body.recommendedRuleset,
+      moods: req.body.moods,
     });
     res.json(scenario);
   }));

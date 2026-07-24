@@ -71,6 +71,20 @@ describe('worlds routes', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects unknown moods on PUT with 400 and accepts valid ones', async () => {
+    const bad = await request(app).put('/api/worlds/w1').send({ title: 'T', raw: '#', moods: ['horror'] });
+    expect(bad.status).toBe(400);
+    expect(bad.body).toEqual({ error: 'moods must be an array of known mood labels' });
+
+    const good = await request(app).put('/api/worlds/w1').send({ title: 'T', raw: '#', moods: ['ホラー'] });
+    expect(good.status).toBe(200);
+    expect(good.body.moods).toEqual(['ホラー']);
+
+    const omitted = await request(app).put('/api/worlds/w2').send({ title: 'T', raw: '#' });
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.moods).toEqual([]);
+  });
+
   it('unpublishes a public world when it is deleted (cascade)', async () => {
     await request(app).put('/api/worlds/w1').send({ title: 'A', raw: 'a' });
     const owner = { id: 'usr_test', displayName: 'テストユーザー' };

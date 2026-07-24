@@ -68,6 +68,26 @@ describe('scenarios routes', () => {
     expect(res.body.recommendedRuleset).toBe('coc7e');
   });
 
+  it('rejects unknown moods on PUT with 400 and accepts valid ones', async () => {
+    const bad = await request(app)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: 'T', raw: '#', moods: ['horror'] });
+    expect(bad.status).toBe(400);
+    expect(bad.body).toEqual({ error: 'moods must be an array of known mood labels' });
+
+    const good = await request(app)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: 'T', raw: '#', moods: ['ミステリー'] });
+    expect(good.status).toBe(200);
+    expect(good.body.moods).toEqual(['ミステリー']);
+
+    const omitted = await request(app)
+      .put('/api/worlds/w1/scenarios/sc2')
+      .send({ title: 'T', raw: '#' });
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.moods).toEqual([]);
+  });
+
   it('unpublishes a public scenario when it is deleted (cascade)', async () => {
     await request(app).put('/api/worlds/w1/scenarios/sc1').send({ title: '失踪事件', raw: '## 概要' });
     const owner = { id: 'usr_test', displayName: 'テストユーザー' };

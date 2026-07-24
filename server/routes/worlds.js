@@ -3,6 +3,7 @@ import { saveWorld, getWorld, listWorlds, deleteWorld } from '../storage/worldLi
 import { unpublishWorldCascade } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
+import { isValidMoods } from '../storage/moods.js';
 
 export function createWorldsRouter({ dataStore, textStore }) {
   const router = Router();
@@ -26,10 +27,15 @@ export function createWorldsRouter({ dataStore, textStore }) {
       res.status(400).json({ error: 'title and raw are required' });
       return;
     }
+    if ('moods' in req.body && !isValidMoods(req.body.moods)) {
+      res.status(400).json({ error: 'moods must be an array of known mood labels' });
+      return;
+    }
     const world = await saveWorld(dataStore, textStore, req.userId, {
       id: req.params.id,
       title: req.body.title,
       raw: req.body.raw,
+      moods: req.body.moods,
     });
     res.json(world);
   }));
