@@ -1,9 +1,20 @@
 import { Router } from 'express';
-import { sessionKey, sessionNovelDocPath, sessionNovelMetaKey, sessionListPrefix } from '../storage/paths.js';
+import {
+  sessionKey,
+  sessionNovelDocPath,
+  sessionNovelMetaKey,
+  sessionListPrefix,
+  sessionImagePath,
+} from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
+import { buildTranscriptWithMarkers, stripImageMarkers } from '../novelMarkers.js';
+import { buildIllustratedMarkdown } from '../illustratedNovel.js';
 
 const NOVELIZE_TIMEOUT_MS = 120000;
+
+const MARKER_INSTRUCTION =
+  '\nトランスクリプト中の〈挿絵N〉は対応する場面の挿絵挿入位置である。小説本文の対応する場面の切れ目に、各マーカーを一度だけ行独立でそのまま残すこと。';
 
 function extractText(content) {
   return (content || [])
@@ -12,17 +23,13 @@ function extractText(content) {
     .join('\n');
 }
 
-function logToTranscript(log) {
-  return (log || []).map((entry) => `${entry.role === 'player' ? 'PL' : 'GM'}: ${entry.text}`).join('\n');
-}
-
 // pov: 'third'(既定)または 'first'。リクエストボディの pov で切り替え可能。
 function buildNovelizeSystemPrompt(pov) {
   const voice = pov === 'first' ? 'PC視点の一人称' : '三人称';
   return `以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを${voice}の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。`;
 }
 
-export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl = fetch, usage }) {
+export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey, fetchImpl = fetch, usage }) {
   const router = Router();
   router.param('id', idParamGuard);
 
@@ -68,7 +75,7 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
         return;
       }
     }
-    const transcript = logToTranscript(session.log);
+    const { transcript, imageIds } = buildTranscriptWithMarkers(session.log);
     try {
       const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -81,7 +88,9 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
           model: 'claude-sonnet-5',
           max_tokens: 12000,
           thinking: { type: 'disabled' },
-          system: buildNovelizeSystemPrompt(req.body?.pov === 'first' ? 'first' : 'third'),
+          system:
+            buildNovelizeSystemPrompt(req.body?.pov === 'first' ? 'first' : 'third') +
+            (imageIds.length > 0 ? MARKER_INSTRUCTION : ''),
           messages: [{ role: 'user', content: transcript }],
         }),
         signal: AbortSignal.timeout(NOVELIZE_TIMEOUT_MS),
@@ -105,6 +114,7 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
       await dataStore.set(sessionNovelMetaKey(req.userId, req.params.id), {
         turnCount: session.state?.turn_count ?? null,
         updatedAt: Date.now(),
+        imageIds,
       });
       res.json({ ok: true });
     } catch (e) {
@@ -122,7 +132,22 @@ export function createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl =
     const session = await dataStore.get(sessionKey(req.userId, req.params.id));
     const currentTurn = session?.state?.turn_count ?? null;
     const stale = meta && meta.turnCount != null && currentTurn != null ? meta.turnCount !== currentTurn : false;
-    res.json({ text, stale });
+    res.json({ text: stripImageMarkers(text), stale });
+  }));
+
+  router.get('/sessions/:id/novel/illustrated', asyncHandler(async (req, res) => {
+    const text = await textStore.read(sessionNovelDocPath(req.userId, req.params.id));
+    if (text === null) {
+      res.status(404).json({ error: 'novel not found' });
+      return;
+    }
+    const meta = await dataStore.get(sessionNovelMetaKey(req.userId, req.params.id));
+    const imageIds = Array.isArray(meta?.imageIds) ? meta.imageIds : [];
+    const images = new Map();
+    for (const imageId of imageIds) {
+      images.set(imageId, await imageStore.read(sessionImagePath(req.userId, req.params.id, imageId)));
+    }
+    res.json({ markdown: buildIllustratedMarkdown({ novelText: text, imageIds, images }) });
   }));
 
   return router;

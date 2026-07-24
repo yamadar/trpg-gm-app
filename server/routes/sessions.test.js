@@ -8,10 +8,13 @@ import request from 'supertest';
 import { createSessionsRouter } from './sessions.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
+import { createFsImageStore } from '../storage/imageStore.js';
+import { sessionImagePath } from '../storage/paths.js';
 
 let dir;
 let dataStore;
 let textStore;
+let imageStore;
 let app;
 
 function buildApp(opts = {}) {
@@ -28,13 +31,14 @@ function buildApp(opts = {}) {
     req.userId = 'usr_test';
     next();
   });
-  app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl, usage }));
+  app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, fetchImpl, usage }));
 }
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-route-test-'));
   dataStore = createFsDataStore(dir);
   textStore = createFsTextStore(dir);
+  imageStore = createFsImageStore(dir);
   buildApp();
 });
 
@@ -104,6 +108,67 @@ describe('sessions routes', () => {
     const getRes = await request(app).get('/api/sessions/s1/novel');
     expect(getRes.status).toBe(200);
     expect(getRes.body).toEqual({ text: '小説化された本文。', stale: false });
+  });
+
+  it('挿絵付きセッションのnovelizeはマーカー入りnovel.mdとメタimageIdsを保存する', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: '小説本文\n〈挿絵1〉\n続き' }], stop_reason: 'end_turn' }),
+    });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({
+      title: 'T',
+      state: { turn_count: 1 },
+      log: [{ role: 'gm', text: '森', image: { imageId: 'img_a' } }],
+    });
+    const res = await request(app).post('/api/sessions/s1/novelize').send({});
+    expect(res.status).toBe(200);
+    // upstreamへ渡したトランスクリプトにマーカーが含まれ、systemに保持指示がある
+    const sentBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(sentBody.messages[0].content).toContain('〈挿絵1〉');
+    expect(sentBody.system).toContain('挿絵挿入位置');
+    // novel.mdはマーカー入り、メタにimageIds
+    const saved = await textStore.read('users/usr_test/sessions/s1/novel.md');
+    expect(saved).toContain('〈挿絵1〉');
+    const meta = await dataStore.get('users/usr_test/sessions/s1/novel');
+    expect(meta.imageIds).toEqual(['img_a']);
+  });
+
+  it('挿絵なしセッションのnovelizeはシステムプロンプトにマーカー指示を含めない', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }),
+    });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s2').send({ title: 'T', state: {}, log: [{ role: 'gm', text: 'x' }] });
+    await request(app).post('/api/sessions/s2/novelize').send({});
+    const sentBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(sentBody.system).not.toContain('挿絵挿入位置');
+  });
+
+  it('GET /novel はマーカーを除去したプレーン本文を返す', async () => {
+    await request(app).put('/api/sessions/s3').send({ title: 'T', state: {}, log: [] });
+    await textStore.write('users/usr_test/sessions/s3/novel.md', '前\n〈挿絵1〉\n後');
+    const res = await request(app).get('/api/sessions/s3/novel');
+    expect(res.status).toBe(200);
+    expect(res.body.text).toBe('前\n後');
+  });
+
+  it('GET /novel/illustrated は挿絵入りMarkdownを返す', async () => {
+    await request(app).put('/api/sessions/s4').send({ title: 'T', state: {}, log: [] });
+    await textStore.write('users/usr_test/sessions/s4/novel.md', '前\n〈挿絵1〉\n後');
+    await dataStore.set('users/usr_test/sessions/s4/novel', { turnCount: 0, updatedAt: 1, imageIds: ['img_a'] });
+    await imageStore.write(sessionImagePath('usr_test', 's4', 'img_a'), Buffer.from([1, 2]));
+    const res = await request(app).get('/api/sessions/s4/novel/illustrated');
+    expect(res.status).toBe(200);
+    expect(res.body.markdown).toContain('![挿絵1](data:image/png;base64,');
+    expect(res.body.markdown).not.toContain('〈挿絵1〉');
+  });
+
+  it('GET /novel/illustrated は小説未生成なら404', async () => {
+    await request(app).put('/api/sessions/s5').send({ title: 'T', state: {}, log: [] });
+    const res = await request(app).get('/api/sessions/s5/novel/illustrated');
+    expect(res.status).toBe(404);
   });
 
   it('marks the novel stale after the session advances past the novelized turn', async () => {

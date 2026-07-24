@@ -94,7 +94,7 @@ export function createApp({
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
-  app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl, usage }));
+  app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, fetchImpl, usage }));
   app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey: apiKey, geminiApiKey, geminiModel, fetchImpl, usage }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
