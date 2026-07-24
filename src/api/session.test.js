@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { summarizeWorld, generateScenario, takeTurn, recallMemory } from './session.js';
+import { summarizeWorld, generateScenario, takeTurn, recallMemory, advanceCampaignPc } from './session.js';
 import * as client from './client.js';
 
 function makeSession(overrides = {}) {
@@ -145,5 +145,29 @@ describe('recallMemory', () => {
   it('空レスポンスはフォールバック文言を返す', async () => {
     vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
     expect(await recallMemory(makeSession())).toBe('(まだ特に思い出すことはない)');
+  });
+});
+
+describe('advanceCampaignPc', () => {
+  it('更新版PCシートとxpを返し、systemに持ち越し指示・userに元シート/履歴/フラグを含める', async () => {
+    const spy = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValue({ content: [{ type: 'text', text: '  PC名: カイ(熟練の猟師)\n持ち物: 銀の矢  ' }] });
+    const session = makeSession({
+      pc: { raw: 'PC名: カイ', goal: '村を守る', bonds: '村長は恩人' },
+      state: { history_summary: '廃坑の小鬼を退けた', flags: { silver_arrow_found: true }, recent_log: [], xp: 12 },
+    });
+    const out = await advanceCampaignPc(session);
+    expect(out).toEqual({ pcRaw: 'PC名: カイ(熟練の猟師)\n持ち物: 銀の矢', xp: 12 });
+    const body = spy.mock.calls[0][0];
+    expect(body.system).toContain('次の冒険');
+    expect(body.messages[0].content).toContain('PC名: カイ');
+    expect(body.messages[0].content).toContain('廃坑の小鬼を退けた');
+    expect(body.messages[0].content).toContain('silver_arrow_found');
+  });
+  it('空レスポンスは元のpc.rawへフォールバックする', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
+    const out = await advanceCampaignPc(makeSession({ pc: { raw: '元シート' }, state: { xp: 5, flags: {}, recent_log: [] } }));
+    expect(out).toEqual({ pcRaw: '元シート', xp: 5 });
   });
 });

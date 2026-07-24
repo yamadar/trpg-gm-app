@@ -143,3 +143,34 @@ export async function recallMemory(session) {
   });
   return extractText(data.content).trim() || '(まだ特に思い出すことはない)';
 }
+
+// キャンペーン章末の引き継ぎ。既存PCシートへ冒険の成果を織り込んだ更新版と、持ち越しxpを返す。
+export async function advanceCampaignPc(session) {
+  const flags = session.state?.flags || {};
+  const flagsText =
+    Object.entries(flags)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ') || '(なし)';
+  const recentLog =
+    (session.state?.recent_log || [])
+      .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
+      .join('\n') || '(まだなし)';
+
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 1500,
+    thinking: { type: 'disabled' },
+    system:
+      'あなたはTRPGのGM。1つの冒険を終えたPCの、次の冒険へ持ち越す更新版キャラクターシートを書け。元シートの体裁(PC名・能力・持ち物・goal・bonds等)を保ちつつ、この冒険で得た物・能力や経験の成長・出来事・新たな因縁や関係の変化を反映すること。ゲーム的表現(フラグのキー名・数値・選択肢)や未開示の秘密・メタ情報は書かない。説明やコードブロック記号は付けず、更新版シート本文のみを出力せよ。',
+    messages: [
+      {
+        role: 'user',
+        content: `# 元のPCシート\n${session.pc?.raw || '(未設定)'}\n\n# この冒険の要約\n${
+          session.state?.history_summary || '(なし)'
+        }\n\n# 冒険中のフラグ(自然な記述へ反映する材料)\n${flagsText}\n\n# 直近のログ\n${recentLog}`,
+      },
+    ],
+  });
+  const pcRaw = extractText(data.content).trim() || session.pc?.raw || '';
+  return { pcRaw, xp: session.state?.xp || 0 };
+}
