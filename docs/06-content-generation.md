@@ -43,7 +43,7 @@ Google Gemini(既定 `gemini-2.5-flash-image`、`server/imageProvider.js`)でPla
 - **保存・配信**: 画像バイトは `server/storage/imageStore.js`(バイナリストア)がファイル保存し、`GET /api/sessions/:id/images/:imageId` で `image/png` 配信。セッションJSONには `log[i].image.imageId` 参照のみを持たせ、クライアントが永続化する(セッションはクライアントが真実源)。
 - **設定・制限**: env `GEMINI_API_KEY`(未設定なら `GET /api/config` が `imageGen:false` を返しUIごと無効化)、`GEMINI_IMAGE_MODEL`、日次上限 `LIMIT_IMAGES_PER_DAY`(既定30、`usage` 機構の `images` 種別。挿絵1回=解析1+画像1の計2 upstream呼び出しを1ユニットとして計上)。
 - **挿絵付き小説化(サブプロジェクト2、実装済み 2026-07-24)**: novelize時に挿絵を持つGMエントリの位置へ `〈挿絵N〉` マーカーを埋め込み(`server/novelMarkers.js`)、モデルに「対応場面の切れ目に行独立で残せ」と指示。`GET /api/sessions/:id/novel/illustrated` がマーカーをbase64 data URIの画像に置換した自己完結Markdownを返す(`server/illustratedNovel.js`。本文に現れなかった画像は末尾「## 挿絵」節へ救済)。プレーン `GET /novel` と公開小説はマーカー除去済みを返す/保存する。Home画面は挿絵ありセッションのみ「挿絵付き」ボタンを表示。
-- **未実装(後続サブプロジェクト)**: キャラポートレート生成+参照画像による強い一貫性(3)。見た目レジストリ項目に `imageId` を足すだけで参照画像方式へ拡張できる設計。
+- **キャラポートレート+参照画像一貫性(サブプロジェクト3、実装済み 2026-07-24)**: シーン解析で見つかった初登場キャラのポートレート(バストアップ・無地背景、`server/imagePrompt.js` の `buildPortraitPrompt`)を自動生成し、見た目レジストリ項目に `imageId` を保存する。以降のシーン挿絵生成では、登場キャラのポートレートを**参照画像(最大3枚)**としてGeminiへ渡し(`server/imageProvider.js` の `referenceImages`→`inlineData`)、プロンプトに「参照画像の人物の外見を厳密に維持」と付記して外見を強く一貫させる。ポートレートの生成失敗・日次上限超過は非致命で、テキストのみの一貫性へフォールバックする。1.1(場面挿絵の生成)は全サブプロジェクト完了。ライブラリCharacterタブでのポートレート表示は未実装の将来候補。
 
 ## 11. シナリオ自動生成モード
 

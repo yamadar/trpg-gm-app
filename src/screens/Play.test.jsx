@@ -386,6 +386,23 @@ describe('Play', () => {
     });
   });
 
+  it('生成結果のnewAppearancesのimageIdをレジストリへ保持して保存する', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockResolvedValueOnce({
+      imageId: 'img_1',
+      newAppearances: [{ name: '村長', description: '白髪の老人', imageId: 'img_port1' }],
+    });
+    const saveSpy = vi.spyOn(storage, 'saveSession');
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: 'ログ' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('この場面を描く')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('この場面を描く'));
+    await waitFor(() => {
+      const saved = saveSpy.mock.calls.at(-1)?.[0];
+      expect(saved?.appearances?.['村長']).toEqual({ name: '村長', description: '白髪の老人', imageId: 'img_port1' });
+    });
+  });
+
   it('refuses to run a turn when logged out', async () => {
     // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
     const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });

@@ -49,7 +49,8 @@ export default function Play({ session, setSession, onExit }) {
       try {
         const { imageId, newAppearances } = await generateSceneImage(baseSession.id, i);
         const appearances = { ...(baseSession.appearances || {}) };
-        for (const a of newAppearances || []) appearances[a.name] = { name: a.name, description: a.description };
+        for (const a of newAppearances || [])
+          appearances[a.name] = { name: a.name, description: a.description, ...(a.imageId ? { imageId: a.imageId } : {}) };
         const updated = {
           ...baseSession,
           log: baseSession.log.map((e, idx) => (idx === i ? { ...e, image: { imageId } } : e)),
