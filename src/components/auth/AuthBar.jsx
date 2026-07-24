@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_MONO, F_BODY, F_DISPLAY, inputStyle } from '../../theme.js';
 import Button from '../ui/Button.jsx';
 import Field from '../ui/Field.jsx';
@@ -24,6 +24,16 @@ export default function AuthBar() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDocMouseDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [menuOpen]);
 
   if (loading) return null;
 
@@ -42,93 +52,95 @@ export default function AuthBar() {
 
   return (
     <div style={{ ...wrapStyle, textAlign: 'right' }}>
-      <button
-        onClick={() => setMenuOpen((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          fontFamily: F_MONO,
-          fontSize: 13,
-          color: COLORS.ink,
-        }}
-      >
-        {user.avatarUrl ? (
-          <img
-            src={user.avatarUrl}
-            alt=""
-            style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
-          />
-        ) : (
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              background: COLORS.brass,
-              color: COLORS.paper,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: F_DISPLAY,
-              fontSize: 13,
-            }}
-          >
-            {(user.displayName || '?').slice(0, 1)}
-          </div>
-        )}
-        <span>{user.displayName}</span>
-      </button>
-      {menuOpen && (
-        <div
+      <div ref={menuRef} style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
           style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: 8,
-            background: COLORS.paper,
-            border: `1px solid ${COLORS.line}`,
-            borderRadius: 6,
-            padding: 8,
-            minWidth: 160,
             display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            textAlign: 'left',
+            alignItems: 'center',
+            gap: 8,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            fontFamily: F_MONO,
+            fontSize: 13,
+            color: COLORS.ink,
           }}
         >
-          <button
-            style={menuItemStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              navigateToUser(user.id);
+          {user.avatarUrl ? (
+            <img
+              src={user.avatarUrl}
+              alt=""
+              style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                background: COLORS.brass,
+                color: COLORS.paper,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: F_DISPLAY,
+                fontSize: 13,
+              }}
+            >
+              {(user.displayName || '?').slice(0, 1)}
+            </div>
+          )}
+          <span>{user.displayName}</span>
+        </button>
+        {menuOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: 8,
+              background: COLORS.paper,
+              border: `1px solid ${COLORS.line}`,
+              borderRadius: 6,
+              padding: 8,
+              minWidth: 160,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              textAlign: 'left',
             }}
           >
-            自分のページ
-          </button>
-          <button
-            style={menuItemStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              setEditOpen(true);
-            }}
-          >
-            プロフィール編集
-          </button>
-          <button
-            style={menuItemStyle}
-            onClick={() => {
-              setMenuOpen(false);
-              logout();
-            }}
-          >
-            ログアウト
-          </button>
-        </div>
-      )}
+            <button
+              style={menuItemStyle}
+              onClick={() => {
+                setMenuOpen(false);
+                navigateToUser(user.id);
+              }}
+            >
+              自分のページ
+            </button>
+            <button
+              style={menuItemStyle}
+              onClick={() => {
+                setMenuOpen(false);
+                setEditOpen(true);
+              }}
+            >
+              プロフィール編集
+            </button>
+            <button
+              style={menuItemStyle}
+              onClick={() => {
+                setMenuOpen(false);
+                logout();
+              }}
+            >
+              ログアウト
+            </button>
+          </div>
+        )}
+      </div>
       {editOpen && (
         <ProfileEditModal
           user={user}

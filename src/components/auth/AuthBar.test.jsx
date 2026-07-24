@@ -203,4 +203,28 @@ describe('AuthBar', () => {
     fireEvent.click(screen.getByText('キャンセル'));
     expect(screen.queryByText('保存')).toBeNull();
   });
+
+  it('closes the menu when clicking outside', () => {
+    renderWithAuth(<AuthBar />); // 既定ログイン
+    fireEvent.click(screen.getByText('テスト')); // メニューを開く(表示名トグル)
+    expect(screen.getByText('ログアウト')).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText('ログアウト')).toBeNull();
+  });
+
+  it('still opens and closes the menu via the toggle button itself (unaffected by the outside-click listener)', () => {
+    renderWithAuth(<AuthBar />);
+    const toggle = screen.getByText('テスト');
+
+    // A real click is preceded by a mousedown on the same target; fire both
+    // to prove the document mousedown listener doesn't fight the toggle
+    // (e.g. closing on mousedown and having the click re-open it).
+    fireEvent.mouseDown(toggle);
+    fireEvent.click(toggle);
+    expect(screen.getByText('ログアウト')).toBeInTheDocument();
+
+    fireEvent.mouseDown(toggle);
+    fireEvent.click(toggle);
+    expect(screen.queryByText('ログアウト')).toBeNull();
+  });
 });
