@@ -119,6 +119,13 @@ export default function Play({ session, setSession, onExit }) {
           setSaveWarning('');
         }
         if (user) putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
+
+        const sceneChanged =
+          !!norm.stateUpdate.current_scene && norm.stateUpdate.current_scene !== session.state.current_scene;
+        if (imageGen && updated.autoIllustrate && sceneChanged) {
+          const gmIndex = updated.log.length - 1;
+          illustrate(updated, gmIndex);
+        }
         return true;
       } catch (e) {
         console.error(e);
@@ -128,7 +135,7 @@ export default function Play({ session, setSession, onExit }) {
         setBusy(false);
       }
     },
-    [session, setSession, user]
+    [session, setSession, user, imageGen, illustrate]
   );
 
   useEffect(() => {
@@ -182,9 +189,36 @@ export default function Play({ session, setSession, onExit }) {
             {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
           </div>
         </div>
-        <Button variant="ghost" onClick={onExit}>
-          ホームへ
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          {imageGen && (
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontFamily: F_MONO,
+                fontSize: 11,
+                color: COLORS.faint,
+                marginRight: 12,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!session.autoIllustrate}
+                onChange={(e) => {
+                  const updated = { ...session, autoIllustrate: e.target.checked, updatedAt: Date.now() };
+                  setSession(updated);
+                  saveSession(updated);
+                  putSessionToServer(updated).catch((err) => console.error('session server sync failed', err));
+                }}
+              />
+              挿絵を自動生成
+            </label>
+          )}
+          <Button variant="ghost" onClick={onExit}>
+            ホームへ
+          </Button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

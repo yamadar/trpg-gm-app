@@ -61,6 +61,9 @@ beforeEach(() => {
   // out by default so it doesn't inflate fetch-call-count assertions in unrelated tests.
   // The dedicated sync test below overrides this with its own mockRejectedValue.
   vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+  // 挿絵クライアントのモックはテスト間で呼び出し履歴が残るため毎回リセットし、既定を復元する。
+  sceneImageClient.getConfig.mockReset().mockResolvedValue({ imageGen: false });
+  sceneImageClient.generateSceneImage.mockReset();
 });
 
 describe('Play', () => {
@@ -348,6 +351,39 @@ describe('Play', () => {
     fireEvent.click(screen.getByText('この場面を描く'));
     await waitFor(() => expect(screen.getByText(/挿絵の生成に失敗/)).toBeInTheDocument());
     expect(document.querySelector('img')).toBeFalsy();
+  });
+
+  it('autoIllustrate ON かつシーン変化ターンで新GMエントリの生成を自動発火する', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockResolvedValue({ imageId: 'img_a', newAppearances: [] });
+    const session = makeSession({ id: 's1', autoIllustrate: true, log: [{ role: 'gm', text: '最初の場面' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(sceneImageClient.getConfig).toHaveBeenCalled());
+    // 送信ターンのGM応答: シーンを「冒頭」から「森」へ変える
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: JSON.stringify({ narrative: '森へ入った', state_update: { current_scene: '森' }, choices: [] }) }],
+      }),
+    });
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '森へ' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(screen.getByText('森へ入った')).toBeInTheDocument());
+    await waitFor(() => expect(sceneImageClient.generateSceneImage).toHaveBeenCalledWith('s1', expect.any(Number)));
+  });
+
+  it('自動トグルの切り替えをsessionへ保存する', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    const saveSpy = vi.spyOn(storage, 'saveSession');
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: 'ログ' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByLabelText('挿絵を自動生成')).toBeInTheDocument());
+    fireEvent.click(screen.getByLabelText('挿絵を自動生成'));
+    await waitFor(() => {
+      const lastCall = saveSpy.mock.calls.at(-1);
+      expect(lastCall?.[0]?.autoIllustrate).toBe(true);
+    });
   });
 
   it('refuses to run a turn when logged out', async () => {
