@@ -124,6 +124,133 @@ describe('takeTurn', () => {
     const secondCallMessages = callClaudeMock.mock.calls[1][0].messages;
     expect(secondCallMessages.at(-1).content[0].type).toBe('tool_result');
   });
+
+  it('uses the coc7e adapter formula for coc7e sessions', async () => {
+    const toolUseResponse = {
+      content: [
+        { type: 'tool_use', id: 'tool_1', name: 'roll_check', input: { check_label: '調査', success_percent: 60 } },
+      ],
+    };
+    const finalResponse = {
+      content: [{ type: 'text', text: '{"narrative": "見つけた。", "state_update": {}, "choices": []}' }],
+    };
+    vi.spyOn(client, 'callClaude').mockResolvedValueOnce(toolUseResponse).mockResolvedValueOnce(finalResponse);
+    vi.spyOn(Math, 'random').mockReturnValue(0.11); // roll = 12 -> coc7eではextreme(<=ceil(60/5))
+
+    const session = makeSession({ ruleset: { id: 'coc7e', formula: 'coc7e' } });
+    const { roll } = await takeTurn(session, '調べる');
+    expect(roll.degree).toBe('extreme');
+  });
+
+  it('applies a sanity side effect: computes resourceChange, informs the AI, and does not mutate the session', async () => {
+    const toolUseResponse = {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool_1',
+          name: 'roll_check',
+          input: { check_label: '正気度チェック', success_percent: 50, check_kind: 'sanity' },
+        },
+      ],
+    };
+    const finalResponse = {
+      content: [{ type: 'text', text: '{"narrative": "膝が笑う。", "state_update": {}, "choices": []}' }],
+    };
+    const callClaudeMock = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse);
+    // roll = 80 -> fail(p=50)。副作用の1d6は rng()=80 -> 1+((80-1)%6)=1+1=2 -> delta -2
+    vi.spyOn(Math, 'random').mockReturnValue(0.79);
+
+    const session = makeSession({
+      ruleset: { id: 'coc7e', formula: 'coc7e' },
+      state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], resources: { san: { value: 60, max: 99 } } },
+    });
+    const { roll, resourceChange } = await takeTurn(session, '死体を見る');
+
+    expect(resourceChange).toEqual({ key: 'san', label: '正気度', delta: -2, before: 60, after: 58 });
+    expect(roll.resourceChange).toEqual(resourceChange);
+    expect(session.state.resources.san.value).toBe(60); // 非破壊
+
+    const toolResult = callClaudeMock.mock.calls[1][0].messages.at(-1).content[0];
+    const payload = JSON.parse(toolResult.content);
+    expect(payload.san_loss).toBe(2);
+    expect(payload.san_now).toBe(58);
+  });
+
+  it('adds a madness note to the tool_result when sanity reaches 0', async () => {
+    const toolUseResponse = {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool_1',
+          name: 'roll_check',
+          input: { check_label: '正気度チェック', success_percent: 50, check_kind: 'sanity' },
+        },
+      ],
+    };
+    const finalResponse = {
+      content: [{ type: 'text', text: '{"narrative": "闇。", "state_update": {}, "choices": []}' }],
+    };
+    const callClaudeMock = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse);
+    vi.spyOn(Math, 'random').mockReturnValue(0.79); // fail -> -2
+
+    const session = makeSession({
+      ruleset: { id: 'coc7e', formula: 'coc7e' },
+      state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], resources: { san: { value: 1, max: 99 } } },
+    });
+    const { resourceChange } = await takeTurn(session, '直視する');
+
+    expect(resourceChange.after).toBe(0);
+    expect(resourceChange.delta).toBe(-1); // clamp後の実効値
+    const payload = JSON.parse(callClaudeMock.mock.calls[1][0].messages.at(-1).content[0].content);
+    expect(payload.note).toContain('正気');
+  });
+
+  it('ignores check_kind for adapters without side effects and returns a null resourceChange', async () => {
+    const toolUseResponse = {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'tool_1',
+          name: 'roll_check',
+          input: { check_label: 'x', success_percent: 50, check_kind: 'sanity' },
+        },
+      ],
+    };
+    const finalResponse = {
+      content: [{ type: 'text', text: '{"narrative": "何ともない。", "state_update": {}, "choices": []}' }],
+    };
+    vi.spyOn(client, 'callClaude').mockResolvedValueOnce(toolUseResponse).mockResolvedValueOnce(finalResponse);
+    vi.spyOn(Math, 'random').mockReturnValue(0.79);
+
+    const { resourceChange } = await takeTurn(makeSession(), '見る');
+    expect(resourceChange).toBeNull();
+  });
+
+  it('includes the gurps margin in the tool_result payload', async () => {
+    const toolUseResponse = {
+      content: [
+        { type: 'tool_use', id: 'tool_1', name: 'roll_check', input: { check_label: '狙撃', success_percent: 60 } },
+      ],
+    };
+    const finalResponse = {
+      content: [{ type: 'text', text: '{"narrative": "命中。", "state_update": {}, "choices": []}' }],
+    };
+    const callClaudeMock = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse);
+    vi.spyOn(Math, 'random').mockReturnValue(0.39); // roll = 40 -> margin 20
+
+    await takeTurn(makeSession({ ruleset: { id: 'gurps', formula: 'gurps' } }), '撃つ');
+    const payload = JSON.parse(callClaudeMock.mock.calls[1][0].messages.at(-1).content[0].content);
+    expect(payload.margin).toBe(20);
+  });
 });
 
 describe('recallMemory', () => {

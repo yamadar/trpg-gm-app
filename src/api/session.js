@@ -1,6 +1,5 @@
 import { callClaude, extractText, extractToolUse, parseJsonLoose } from './client.js';
-import { ROLL_TOOL, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
-import { evaluateRoll } from '../engine/dice.js';
+import { buildRollTool, resolveAdapter, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -62,6 +61,7 @@ function normalizeFlags(result) {
 }
 
 export async function takeTurn(session, playerText) {
+  const adapter = resolveAdapter(session);
   const system = buildSystemBlocks(session);
   let messages = [{ role: 'user', content: buildTurnUserContent(session, playerText) }];
   const base = {
@@ -69,17 +69,38 @@ export async function takeTurn(session, playerText) {
     max_tokens: 2000,
     thinking: { type: 'disabled' },
     system,
-    tools: [ROLL_TOOL],
+    tools: [buildRollTool(adapter)],
     output_config: { format: TURN_OUTPUT_FORMAT },
   };
 
   let data = await callClaude({ ...base, messages });
   let roll = null;
+  let resourceChange = null;
 
   const toolUse = extractToolUse(data.content);
   if (toolUse && toolUse.name === 'roll_check') {
-    roll = evaluateRoll(toolUse.input.success_percent);
+    roll = adapter.evaluate(toolUse.input.success_percent);
     roll.check_label = toolUse.input.check_label;
+
+    // 副作用(SAN減少等)。発火はAIのcheck_kind指定、減少量はアダプタが決定論的に解決する。
+    // sessionは破壊的変更せず、clamp後の実効deltaをresourceChangeとして呼び出し元へ返す。
+    const eff = adapter.sideEffect(toolUse.input.check_kind || 'normal', roll.degree);
+    const res = eff ? session.state.resources?.[eff.key] : null;
+    if (eff && res) {
+      const def = adapter.resourceDefs.find((d) => d.key === eff.key);
+      const before = res.value;
+      const after = Math.max(0, Math.min(res.max, before + eff.delta));
+      resourceChange = { key: eff.key, label: def?.label || eff.key, delta: after - before, before, after };
+      roll.resourceChange = resourceChange;
+    }
+
+    const payload = { roll: roll.roll, success: roll.success, degree: roll.degree };
+    if (typeof roll.margin === 'number') payload.margin = roll.margin;
+    if (resourceChange) {
+      payload.san_loss = -resourceChange.delta;
+      payload.san_now = resourceChange.after;
+      if (resourceChange.after === 0) payload.note = '正気を完全に失った。狂気に呑まれる描写をせよ。';
+    }
 
     messages = [
       ...messages,
@@ -90,11 +111,7 @@ export async function takeTurn(session, playerText) {
           {
             type: 'tool_result',
             tool_use_id: toolUse.id,
-            content: JSON.stringify({
-              roll: roll.roll,
-              success: roll.success,
-              degree: roll.degree,
-            }),
+            content: JSON.stringify(payload),
           },
         ],
       },
@@ -104,7 +121,7 @@ export async function takeTurn(session, playerText) {
 
   const text = extractText(data.content);
   const result = normalizeFlags(parseJsonLoose(text));
-  return { result, roll };
+  return { result, roll, resourceChange };
 }
 
 // PC視点のオンデマンド回想。生フラグはLLMへの入力に留め、プレイヤーには自然な日本語のみ返す。
