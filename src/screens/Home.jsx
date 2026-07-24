@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
-import { novelizeSession, getNovel, getIllustratedNovel } from '../api/sessionSyncClient.js';
+import { novelizeSession, getNovel, getIllustratedNovel, putSessionToServer } from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
+import { advanceCampaignPc } from '../api/session.js';
+import { getCampaign, putCampaign } from '../api/campaignClient.js';
+import { saveSession } from '../storage/index.js';
+import { makeId } from '../utils/makeId.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 function lastLineOf(session) {
@@ -18,12 +22,13 @@ export function sanitizeFilename(title) {
   return trimmed.length > 0 ? cleaned : 'session';
 }
 
-export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery }) {
+export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
   const { user } = useAuth();
   const [novelizing, setNovelizing] = useState({});
   const [novelizeError, setNovelizeError] = useState({});
   const [publishedNovelIds, setPublishedNovelIds] = useState({});
   const [publishBusy, setPublishBusy] = useState({});
+  const [advancing, setAdvancing] = useState({});
 
   useEffect(() => {
     if (!user) {
@@ -136,6 +141,55 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       setNovelizeError((prev) => ({ ...prev, [session.id]: '挿絵付き小説化に失敗した: ' + err.message }));
     } finally {
       setNovelizing((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+    }
+  }
+
+  async function handleNextChapter(e, session) {
+    e.stopPropagation();
+    setAdvancing((prev) => ({ ...prev, [session.id]: true }));
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      const { pcRaw, xp } = await advanceCampaignPc(session);
+      let campaignId = session.campaignId;
+      let campaign = campaignId ? await getCampaign(session.worldId, campaignId).catch(() => null) : null;
+      const chapter = { sessionId: session.id, title: session.title, endedAt: Date.now() };
+      if (campaign) {
+        campaign = {
+          ...campaign,
+          carriedPc: { raw: pcRaw, xp },
+          chapters: [...(campaign.chapters || []), chapter],
+        };
+      } else {
+        campaignId = makeId('cp');
+        campaign = { id: campaignId, worldId: session.worldId, title: session.title, carriedPc: { raw: pcRaw, xp }, chapters: [chapter] };
+      }
+      await putCampaign(session.worldId, campaignId, {
+        title: campaign.title,
+        carriedPc: campaign.carriedPc,
+        chapters: campaign.chapters,
+      });
+      if (!session.campaignId) {
+        const tagged = { ...session, campaignId };
+        await saveSession(tagged);
+        putSessionToServer(tagged).catch((err) => console.error('session server sync failed', err));
+      }
+      onNextChapter?.({
+        worldId: session.worldId,
+        world: session.world,
+        moods: session.moods || [],
+        pcRaw,
+        xp,
+        rulesetId: session.rulesetId,
+        campaignId,
+      });
+    } catch (err) {
+      setNovelizeError((prev) => ({ ...prev, [session.id]: '次章の準備に失敗した: ' + err.message }));
+    } finally {
+      setAdvancing((prev) => {
         const next = { ...prev };
         delete next[session.id];
         return next;
@@ -298,6 +352,16 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
                           style={{ fontSize: 11, padding: '4px 8px' }}
                         >
                           挿絵付き
+                        </Button>
+                      )}
+                      {s.worldId && (
+                        <Button
+                          variant="ghost"
+                          onClick={(e) => handleNextChapter(e, s)}
+                          disabled={!!advancing[s.id] || !user}
+                          style={{ fontSize: 11, padding: '4px 8px' }}
+                        >
+                          {advancing[s.id] ? '準備中…' : '次の章へ'}
                         </Button>
                       )}
                       {user &&

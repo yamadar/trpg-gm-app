@@ -30,6 +30,7 @@ function AppInner() {
   const [storageOk, setStorageOk] = useState(true);
   const [authError, setAuthError] = useState(false);
   const [uploadingSessions, setUploadingSessions] = useState(false);
+  const [campaignContext, setCampaignContext] = useState(null);
   const takeover = useSessionTakeover();
   const { userId: routeUserId } = useHashRoute();
 
@@ -134,9 +135,25 @@ function AppInner() {
             onContinue={handleContinue}
             onOpenLibrary={() => setView('library')}
             onOpenGallery={() => setView('gallery')}
+            onNextChapter={(ctx) => {
+              setCampaignContext(ctx);
+              setView('setup');
+            }}
           />
         ))}
-      {view === 'setup' && <Setup onStart={handleStart} onCancel={() => setView('home')} />}
+      {view === 'setup' && (
+        <Setup
+          onStart={(s) => {
+            setCampaignContext(null);
+            handleStart(s);
+          }}
+          onCancel={() => {
+            setCampaignContext(null);
+            setView('home');
+          }}
+          campaignContext={campaignContext}
+        />
+      )}
       {view === 'library' && <Library onClose={() => setView('home')} />}
       {view === 'gallery' && <Gallery onClose={() => setView('home')} />}
       {view === 'play' && session && (

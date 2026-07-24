@@ -3,6 +3,8 @@ import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Home, { sanitizeFilename } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as shareClient from '../api/shareClient.js';
+import * as sessionApi from '../api/session.js';
+import * as campaignClient from '../api/campaignClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 beforeEach(() => {
@@ -269,6 +271,46 @@ describe('Home', () => {
       expect(screen.queryByText('公開中')).not.toBeInTheDocument();
       expect(screen.queryByText('公開解除')).not.toBeInTheDocument();
       expect(publishedSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('次の章へ(キャンペーン)', () => {
+    it('worldIdの無いセッションには「次の章へ」を出さない', () => {
+      const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'x' }] }];
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+      expect(screen.queryByText('次の章へ')).not.toBeInTheDocument();
+    });
+
+    it('worldIdありで「次の章へ」を押すと引き継ぎPCを生成しCampaignを保存してonNextChapterを呼ぶ', async () => {
+      vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '成長版シート', xp: 7 });
+      const putCampaignSpy = vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({ id: 'cp_x' });
+      vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+      const onNextChapter = vi.fn();
+      const sessions = [
+        {
+          id: 's1',
+          title: 'A',
+          updatedAt: 1,
+          worldId: 'w1',
+          world: { raw: 'r', summary: 'sum' },
+          rulesetId: 'simple',
+          moods: [],
+          pc: { raw: '元' },
+          state: { xp: 7, flags: {}, recent_log: [] },
+          log: [{ role: 'gm', text: 'x' }],
+        },
+      ];
+      renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onNextChapter={onNextChapter} />
+      );
+      fireEvent.click(screen.getByText('次の章へ'));
+      await waitFor(() => expect(putCampaignSpy).toHaveBeenCalled());
+      await waitFor(() => expect(onNextChapter).toHaveBeenCalled());
+      const ctx = onNextChapter.mock.calls[0][0];
+      expect(ctx.worldId).toBe('w1');
+      expect(ctx.pcRaw).toBe('成長版シート');
+      expect(ctx.xp).toBe(7);
+      expect(ctx.campaignId).toBeTruthy();
     });
   });
 });
