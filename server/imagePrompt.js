@@ -1,0 +1,29 @@
+const BASE_STYLE = 'atmospheric digital illustration, detailed, cinematic lighting, no text, no speech bubbles';
+
+// キーは src/constants/moods.js / server/storage/moods.js の MOODS(固定8種)と対応。
+const MOOD_STYLE = {
+  ホラー: 'dark, ominous, unsettling horror mood',
+  冒険: 'epic adventurous fantasy',
+  ミステリー: 'moody noir, muted tones',
+  日常: 'warm slice-of-life',
+  SF: 'sci-fi, cool tones, futuristic',
+  ファンタジー: 'high fantasy, painterly',
+  コメディ: 'bright cheerful',
+  シリアス: 'somber, desaturated',
+};
+
+const NARRATIVE_MAX = 400;
+
+export function buildImagePrompt({ narrative = '', moods = [], appearances = [] }) {
+  const moodKey = Array.isArray(moods) ? moods.find((m) => MOOD_STYLE[m]) : undefined;
+  const style = moodKey ? MOOD_STYLE[moodKey] : 'neutral tone';
+  const scene = String(narrative || '').slice(0, NARRATIVE_MAX).trim();
+  const cast = (appearances || [])
+    .filter((a) => a && a.name && a.description)
+    .map((a) => `${a.name}=${a.description}`)
+    .join(', ');
+  const lines = [`${BASE_STYLE}, ${style}.`];
+  if (cast) lines.push(`登場人物: ${cast}`);
+  if (scene) lines.push(`場面: ${scene}`);
+  return lines.join('\n');
+}
