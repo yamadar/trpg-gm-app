@@ -12,8 +12,11 @@ import { createRulesetsRouter } from './routes/rulesets.js';
 import { createPublicContentRouter } from './routes/publicContent.js';
 import { createPublishRouter } from './routes/publish.js';
 import { createImportsRouter } from './routes/imports.js';
+import { createConfigRouter } from './routes/config.js';
+import { createSceneImagesRouter } from './routes/sceneImages.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
+import { createFsImageStore } from './storage/imageStore.js';
 import { createProviders } from './auth/providers.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createRequireAuth, createOriginCheck } from './auth/middleware.js';
@@ -59,6 +62,9 @@ export function createApp({
 
   const dataStore = createFsDataStore(dataDir);
   const textStore = createFsTextStore(dataDir);
+  const imageStore = createFsImageStore(dataDir);
+  const geminiApiKey = env.GEMINI_API_KEY;
+  const geminiModel = env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
   app.locals.dataStore = dataStore;
   app.locals.textStore = textStore;
 
@@ -68,6 +74,7 @@ export function createApp({
     limits: {
       messages: parseLimit(env.LIMIT_MESSAGES_PER_DAY, 200),
       novelize: parseLimit(env.LIMIT_NOVELIZE_PER_DAY, 10),
+      images: parseLimit(env.LIMIT_IMAGES_PER_DAY, 30),
     },
   });
 
@@ -83,10 +90,12 @@ export function createApp({
   app.use(createOriginCheck({ baseUrl }));
   app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
   app.use('/api', createPublicContentRouter({ dataStore, textStore })); // 公開ギャラリーは認証不要
+  app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiApiKey })); // 機能検出は認証不要
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
   app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey, fetchImpl, usage }));
+  app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey: apiKey, geminiApiKey, geminiModel, fetchImpl, usage }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
   app.use('/api', createScenariosRouter({ dataStore, textStore }));
