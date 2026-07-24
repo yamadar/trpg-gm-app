@@ -24,6 +24,10 @@ export default function Play({ session, setSession, onExit }) {
   const [imageError, setImageError] = useState(null); // { index, message } | null
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
+  // 常に最新のセッションを指すref。非同期処理(挿絵生成・ターン)の完了時に
+  // 捕捉した古いセッションで上書きして進行を巻き戻さないよう、完了時点の最新を読む。
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const mood = moodTheme(session.moods);
   // マウント時点のログ長。これ以降に追加されたエントリだけを演出対象にする
   // (セッション再開時に履歴全体が演出され直すのを防ぐ)。
@@ -48,12 +52,14 @@ export default function Play({ session, setSession, onExit }) {
       setImageError(null);
       try {
         const { imageId, newAppearances } = await generateSceneImage(baseSession.id, i);
-        const appearances = { ...(baseSession.appearances || {}) };
+        // 生成中に進んだターンを巻き戻さないよう、完了時点の最新セッションへ適用する。
+        const current = sessionRef.current;
+        const appearances = { ...(current.appearances || {}) };
         for (const a of newAppearances || [])
           appearances[a.name] = { name: a.name, description: a.description, ...(a.imageId ? { imageId: a.imageId } : {}) };
         const updated = {
-          ...baseSession,
-          log: baseSession.log.map((e, idx) => (idx === i ? { ...e, image: { imageId } } : e)),
+          ...current,
+          log: current.log.map((e, idx) => (idx === i ? { ...e, image: { imageId } } : e)),
           appearances,
           updatedAt: Date.now(),
         };
@@ -85,7 +91,10 @@ export default function Play({ session, setSession, onExit }) {
           ? { ...session.state.flags, ...norm.stateUpdate.flags }
           : session.state.flags;
         const newXp = (Number.isFinite(session.state.xp) ? session.state.xp : 0) + norm.stateUpdate.xpGain;
-        const newLog = [...session.log];
+        // 応答待ちの間に挿絵生成が完了して既存エントリへ画像が付いた場合でも失わないよう、
+        // ログと素の基底は最新セッションから取る(状態計算はターン開始時のsessionを使う)。
+        const latest = sessionRef.current;
+        const newLog = [...latest.log];
         if (displayText) newLog.push({ role: 'player', text: displayText });
         newLog.push({ role: 'gm', text: norm.narrative, choices: norm.choices, roll });
 
@@ -95,7 +104,7 @@ export default function Play({ session, setSession, onExit }) {
         while (recent.length > 12) recent.shift(); // 簡易履歴管理。Phase2で要約圧縮に置き換え予定
 
         const updated = {
-          ...session,
+          ...latest,
           state: {
             ...session.state,
             current_scene: norm.stateUpdate.current_scene ?? session.state.current_scene,

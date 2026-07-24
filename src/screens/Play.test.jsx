@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent, act } from '@testing-library/react';
 import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
@@ -401,6 +401,39 @@ describe('Play', () => {
       const saved = saveSpy.mock.calls.at(-1)?.[0];
       expect(saved?.appearances?.['村長']).toEqual({ name: '村長', description: '白髪の老人', imageId: 'img_port1' });
     });
+  });
+
+  it('挿絵生成中にターンが進んでも、画像適用でターンを巻き戻さない', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    let resolveImg;
+    sceneImageClient.generateSceneImage.mockReturnValueOnce(
+      new Promise((res) => {
+        resolveImg = res;
+      })
+    );
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: '最初の場面' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('この場面を描く')).toBeInTheDocument());
+    // 挿絵生成を開始(未解決のまま保留)
+    fireEvent.click(screen.getByText('この場面を描く'));
+    // 生成中にターンを進める(新しいGMエントリを追加)
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: JSON.stringify({ narrative: '新しい場面', state_update: {}, choices: [] }) }],
+      }),
+    });
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '前進' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(screen.getByText('新しい場面')).toBeInTheDocument());
+    // 画像生成を完了させる
+    await act(async () => {
+      resolveImg({ imageId: 'img_1', newAppearances: [] });
+    });
+    // 進んだターン(新しい場面)が残り、かつ最初の場面に画像が付く
+    await waitFor(() => expect(document.querySelector('img[src*="img_1"]')).toBeTruthy());
+    expect(screen.getByText('新しい場面')).toBeInTheDocument();
   });
 
   it('refuses to run a turn when logged out', async () => {
