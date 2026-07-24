@@ -106,3 +106,40 @@ export async function takeTurn(session, playerText) {
   const result = normalizeFlags(parseJsonLoose(text));
   return { result, roll };
 }
+
+// PC視点のオンデマンド回想。生フラグはLLMへの入力に留め、プレイヤーには自然な日本語のみ返す。
+export async function recallMemory(session) {
+  const flags = session.state?.flags || {};
+  const flagsText =
+    Object.entries(flags)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ') || '(なし)';
+  const recentLog =
+    (session.state?.recent_log || [])
+      .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
+      .join('\n') || '(まだなし)';
+  const pcLine = [
+    session.pc?.raw,
+    session.pc?.goal && `goal: ${session.pc.goal}`,
+    session.pc?.bonds && `bonds: ${session.pc.bonds}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const data = await callClaude({
+    model: MODEL,
+    max_tokens: 600,
+    thinking: { type: 'disabled' },
+    system:
+      'あなたはTRPGのGM。PCがこれまでに知り得たこと・手に入れたものを、PC視点で簡潔に思い返す短い地の文(200字程度)を書け。ゲーム的表現(フラグのキー名・数値・選択肢)はそのまま出さず、自然な日本語に翻訳すること。未開示の秘密やメタ情報は書かない。まだ何も無ければその旨を一言。説明やコードブロック記号は付けず、回想の地の文のみを出力せよ。',
+    messages: [
+      {
+        role: 'user',
+        content: `# PC\n${pcLine || '(未設定)'}\n\n# 物語要約\n${
+          session.state?.history_summary || '(まだなし)'
+        }\n\n# 既知フラグ(自然な日本語へ翻訳する材料)\n${flagsText}\n\n# 直近のログ\n${recentLog}`,
+      },
+    ],
+  });
+  return extractText(data.content).trim() || '(まだ特に思い出すことはない)';
+}

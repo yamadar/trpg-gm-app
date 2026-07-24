@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { summarizeWorld, generateScenario, takeTurn } from './session.js';
+import { summarizeWorld, generateScenario, takeTurn, recallMemory } from './session.js';
 import * as client from './client.js';
 
 function makeSession(overrides = {}) {
@@ -123,5 +123,27 @@ describe('takeTurn', () => {
     expect(callClaudeMock).toHaveBeenCalledTimes(2);
     const secondCallMessages = callClaudeMock.mock.calls[1][0].messages;
     expect(secondCallMessages.at(-1).content[0].type).toBe('tool_result');
+  });
+});
+
+describe('recallMemory', () => {
+  it('/api/messages経由で回想を生成し、systemに翻訳指示・userにhistory/flagsを含める', async () => {
+    const spy = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValue({ content: [{ type: 'text', text: '  カイは村長の依頼を思い返した。  ' }] });
+    const session = makeSession({
+      pc: { raw: 'PC名: カイ', goal: '村を守る', bonds: '村長は恩人' },
+      state: { history_summary: '廃坑を調査中', flags: { goblins_present: true }, recent_log: [] },
+    });
+    const out = await recallMemory(session);
+    expect(out).toBe('カイは村長の依頼を思い返した。');
+    const body = spy.mock.calls[0][0];
+    expect(body.system).toContain('翻訳');
+    expect(body.messages[0].content).toContain('廃坑を調査中');
+    expect(body.messages[0].content).toContain('goblins_present');
+  });
+  it('空レスポンスはフォールバック文言を返す', async () => {
+    vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
+    expect(await recallMemory(makeSession())).toBe('(まだ特に思い出すことはない)');
   });
 });
