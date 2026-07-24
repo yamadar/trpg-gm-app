@@ -34,6 +34,16 @@ export const inputStyle = {
   boxSizing: 'border-box',
 };
 
+// アニメーション可否。matchMediaが使えない環境(テスト等)やreduced-motion設定時は
+// falseを返し、呼び出し側は従来どおりの即時表示(静的表示)に倒す。
+export function motionAllowed() {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
 export function useGoogleFonts() {
   useEffect(() => {
     if (document.getElementById('trpg-fonts')) return;
