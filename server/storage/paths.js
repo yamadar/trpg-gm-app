@@ -14,6 +14,14 @@ export function sessionNovelMetaKey(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/novel`;
 }
 
+export function sessionImageDir(userId, sessionId) {
+  return `users/${userId}/sessions/${sessionId}/images`;
+}
+
+export function sessionImagePath(userId, sessionId, imageId) {
+  return `users/${userId}/sessions/${sessionId}/images/${imageId}.png`;
+}
+
 export function worldListPrefix(userId) {
   return `users/${userId}/worlds`;
 }

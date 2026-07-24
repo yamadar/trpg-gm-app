@@ -38,6 +38,8 @@ import {
   publishScenarioListPrefix,
   publishNovelMapKey,
   publishNovelListPrefix,
+  sessionImageDir,
+  sessionImagePath,
 } from './paths.js';
 
 describe('storage paths', () => {
@@ -52,6 +54,11 @@ describe('storage paths', () => {
   it('builds session novel paths', () => {
     expect(sessionNovelDocPath('usr_1', 's1')).toBe('users/usr_1/sessions/s1/novel.md');
     expect(sessionNovelMetaKey('usr_1', 's1')).toBe('users/usr_1/sessions/s1/novel');
+  });
+
+  it('builds the session image dir and file path', () => {
+    expect(sessionImageDir('usr_1', 's1')).toBe('users/usr_1/sessions/s1/images');
+    expect(sessionImagePath('usr_1', 's1', 'img_1')).toBe('users/usr_1/sessions/s1/images/img_1.png');
   });
 
   it('builds a world list prefix', () => {
