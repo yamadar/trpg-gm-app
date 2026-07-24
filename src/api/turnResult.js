@@ -1,4 +1,5 @@
 const NARRATIVE_FALLBACK = '(描写を取得できませんでした)';
+const TENSION_LEVELS = ['low', 'medium', 'high'];
 
 function isPlainObject(v) {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -19,5 +20,11 @@ export function normalizeTurnResult(result) {
   const rawXp = Number(su.xp_gained);
   const xpGain = Number.isFinite(rawXp) ? Math.max(0, rawXp) : 0;
 
-  return { narrative, choices, stateUpdate: { current_scene, flags, history_summary, xpGain } };
+  const tension_level = TENSION_LEVELS.includes(su.tension_level) ? su.tension_level : null;
+
+  return {
+    narrative,
+    choices,
+    stateUpdate: { current_scene, flags, history_summary, xpGain, tension_level },
+  };
 }

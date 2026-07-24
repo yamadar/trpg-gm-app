@@ -10,7 +10,13 @@ describe('normalizeTurnResult', () => {
     });
     expect(out.narrative).toBe('物語');
     expect(out.choices).toEqual(['A', 'B']);
-    expect(out.stateUpdate).toEqual({ current_scene: '森', flags: { met: true }, history_summary: '要約', xpGain: 5 });
+    expect(out.stateUpdate).toEqual({
+      current_scene: '森',
+      flags: { met: true },
+      history_summary: '要約',
+      xpGain: 5,
+      tension_level: null,
+    });
   });
 
   it('replaces a non-string narrative with a safe placeholder', () => {
@@ -47,6 +53,15 @@ describe('normalizeTurnResult', () => {
     expect(normalizeTurnResult({ state_update: { xp_gained: 'abc' } }).stateUpdate.xpGain).toBe(0);
     expect(normalizeTurnResult({ state_update: {} }).stateUpdate.xpGain).toBe(0);
     expect(normalizeTurnResult({}).stateUpdate.xpGain).toBe(0);
+  });
+
+  it('tension_levelは既知の値のみ通し、不正・欠落はnull(前値保持)にする', () => {
+    expect(normalizeTurnResult({ state_update: { tension_level: 'high' } }).stateUpdate.tension_level).toBe('high');
+    expect(normalizeTurnResult({ state_update: { tension_level: 'low' } }).stateUpdate.tension_level).toBe('low');
+    expect(normalizeTurnResult({ state_update: { tension_level: 'medium' } }).stateUpdate.tension_level).toBe('medium');
+    expect(normalizeTurnResult({ state_update: { tension_level: '爆発' } }).stateUpdate.tension_level).toBeNull();
+    expect(normalizeTurnResult({ state_update: {} }).stateUpdate.tension_level).toBeNull();
+    expect(normalizeTurnResult({}).stateUpdate.tension_level).toBeNull();
   });
 
   it('never throws on a null or non-object result', () => {
