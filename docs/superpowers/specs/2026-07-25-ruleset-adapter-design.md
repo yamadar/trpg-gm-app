@@ -40,10 +40,9 @@
 `p` = クランプ済み success_percent(整数・[1,99]、NaN→50)、`roll` = rollD100()。**注意**: 現 `rollD100` は 1–100 を返す(`Math.floor(random*100)+1`)。fumble 判定 `roll ≥ 96` と `roll == 100` はこれに依存するため踏襲する。degree の評価順(coc7e/dnd5e/gurps)は上から順に最初にマッチしたものを採用し、`critical` を成功しきい値 `p` より優先する(成功率非依存の会心)。
 
 ### simple(現行踏襲)
-- `critical`: roll ≤ max(1, round(p·0.05))
-- `fumble`: roll ≥ 96
-- `success`: roll ≤ p(上記 critical を除く)
-- `fail`: それ以外
+現行 `evaluateRoll` と同一。**成功判定が先**(p ≥ 96 なら roll 96–99 も成功。fumble は失敗側でのみ発生):
+1. roll ≤ p のとき: `critical`(roll ≤ max(1, round(p·0.05)))/ それ以外は `success`
+2. roll > p のとき: `fumble`(roll ≥ 96)/ それ以外は `fail`
 
 ### coc7e
 評価順(先にマッチしたものを採用):
@@ -55,11 +54,13 @@
 6. `fail`: それ以外
 
 ### dnd5e
-成功率非依存の固定会心/致命(d20 的)。評価順:
+成功率非依存の固定会心/致命(d20 のナチュラル20/1相当)。評価順:
 1. `critical`: roll ≤ 5
 2. `fumble`: roll ≥ 96
 3. `success`: roll ≤ p
 4. `fail`: それ以外
+
+**注**: simple と異なり fumble が成功判定より先(p=99 でも roll 96–100 は致命的失敗)。これは「どんな達人でも5%は転ぶ」という d20 的な意図であり、simple との差は意図的。gurps も同順。
 
 ### gurps
 1. `critical`: roll ≤ 5
@@ -90,23 +91,24 @@
 - 上記以外(他アダプタ、または kind が対応外)は null。
 
 ### エンジン適用(session.js)
-`takeTurn` 内、`roll_check` 受領後:
+`takeTurn` 内、`roll_check` 受領後。**takeTurn は引数の session を破壊的変更しない**(計算のみ行い、状態への反映は Play.jsx が担う):
 1. `adapter.evaluate(input.success_percent)` で roll を得る。
-2. `input.check_kind`(既定 `'normal'`)が副作用対象なら `adapter.sideEffect(check_kind, roll.degree, rng)` を算出。
-3. 非 null なら `session.state.resources[key].value` を `clamp(value + delta, 0, max)` で更新し、`resourceChange = { key, label, delta, before, after }` を保持。`roll.resourceChange = resourceChange` も付与しログに残す。
+2. `input.check_kind`(既定 `'normal'`)について `adapter.sideEffect(check_kind, roll.degree, rng)` を算出。
+3. 非 null なら `session.state.resources[key]` の現在値から `after = clamp(before + delta, 0, max)` を計算し、`resourceChange = { key, label, delta, before, after }` を作る(delta は clamp 後の実効値 `after - before` に補正)。`roll.resourceChange = resourceChange` も付与しログに残す。
 4. tool_result へ `{ roll, success, degree }` に加え、副作用があれば `san_loss`(= −delta)/ `san_now`(= after)を含めてAIへ返す(地の文に反映させる)。
 5. `after === 0` のとき tool_result に「正気を完全に失った。狂気の描写を」の旨を添える。
-- 副作用適用後の `state.resources` を `updated.state.resources` として保存(Play.jsx の状態合成に組み込む)。
+6. 戻り値は `{ result, roll, resourceChange }`(resourceChange は null 可)。Play.jsx の `runTurn` が `resourceChange` を新しい `state.resources` に合成して保存する。
 
 ## コンポーネント
 
 ### 1. `src/engine/dice.js`(変更)
 - `rollD100()` は現状維持(1–100)。
-- `evaluateRoll(successPercent)` は削除せず**維持**するが、実体は simple アダプタへ移す方針。互換のため `evaluateRoll` は `getAdapter('simple').evaluate(successPercent)` に委譲する薄いラッパにする(既存 `dice.test.js` と、万一の外部参照を壊さない)。`success_percent` の正規化(整数化・[1,99]・NaN→50)は共通ヘルパ `normalizePercent` として dice.js に置き、各アダプタが使う。
+- `evaluateRoll(successPercent, rng = rollD100)` は**実装ごと dice.js に残す**(rng 注入引数のみ追加)。simple アダプタ側が `evaluateRoll` を呼んで委譲する。**依存方向は rulesetAdapters → dice の一方向**とし、循環 import を作らない(dice.js は rulesetAdapters.js を import しない)。
+- `success_percent` の正規化(整数化・[1,99]・NaN→50)は共通ヘルパ `normalizePercent` として dice.js に置き、`evaluateRoll` と各アダプタが使う。
 
 ### 2. `src/engine/rulesetAdapters.js`(新規・純粋)
 - 各アダプタオブジェクト `{ id, degrees, evaluate, resourceDefs, sideEffect, promptText }` を定義。
-- `evaluate(successPercent, rng = rollD100)`: `normalizePercent` でクランプ後 `rng()` で roll を得て degree を算出。**rng を注入可能**にして単体テストで境界を固定する。
+- `evaluate(successPercent, rng = rollD100)`: `normalizePercent` でクランプ後 `rng()` で roll を得て degree を算出。simple の evaluate は dice.js の `evaluateRoll` へ委譲。**rng を注入可能**にして単体テストで境界を固定する。
 - `promptText`: そのルールの判定式の意味(degree の解釈・SAN の扱い)をAIへ説明する短文。
 - `getAdapter(formula)`: 未知/未指定は `simple`。
 - React/通信を import しない(dice.js のみ依存)。
