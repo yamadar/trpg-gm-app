@@ -227,6 +227,26 @@ describe('Play', () => {
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
   });
 
+  it('GM応答のtension_levelをsession.stateへ保存する', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ narrative: '進行', state_update: { tension_level: 'high' }, choices: [] }),
+          },
+        ],
+      }),
+    });
+    const saveSpy = vi.spyOn(storage, 'saveSession');
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('進行')).toBeInTheDocument());
+    await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+    const saved = saveSpy.mock.calls.at(-1)[0];
+    expect(saved.state.tension_level).toBe('high');
+  });
+
   it('再開時の既存ログのロールは演出無しで即時表示される(判定中「…」を出さない)', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: false }); // motion許可環境でも
     const session = makeSession({

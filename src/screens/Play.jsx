@@ -60,6 +60,7 @@ export default function Play({ session, setSession, onExit }) {
             recent_log: recent,
             turn_count: (Number.isFinite(session.state.turn_count) ? session.state.turn_count : 0) + 1,
             xp: newXp,
+            tension_level: norm.stateUpdate.tension_level ?? session.state.tension_level ?? 'medium',
           },
           log: newLog,
           updatedAt: Date.now(),

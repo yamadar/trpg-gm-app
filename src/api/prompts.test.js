@@ -45,6 +45,12 @@ describe('TURN_OUTPUT_FORMAT', () => {
     expect(flags.type).toBe('array');
     expect(flags.items.required).toEqual(['key', 'value']);
   });
+
+  it('state_updateにtension_level(enum, required)がある', () => {
+    const su = TURN_OUTPUT_FORMAT.schema.properties.state_update;
+    expect(su.properties.tension_level.enum).toEqual(['low', 'medium', 'high']);
+    expect(su.required).toContain('tension_level');
+  });
 });
 
 describe('buildSystemBlocks', () => {
@@ -113,6 +119,10 @@ describe('buildSystemBlocks', () => {
     expect(staticText(makeSession())).toContain('経験値');
   });
 
+  it('システムプロンプトにtension_levelの出力指示が含まれる', () => {
+    expect(staticText(makeSession())).toContain('tension_level');
+  });
+
   it('instructs the GM on roll flow, player agency, and secret-info guarding', () => {
     const text = staticText(makeSession());
     expect(text).toContain('判定は1ターンに最大1回');
@@ -130,6 +140,13 @@ describe('buildTurnUserContent', () => {
     expect(content).toContain('物語要約: これまでのあらすじ');
     expect(content).toContain('PL: 波止場を調べる');
     expect(content).toContain('# プレイヤーの行動\n周囲を警戒する');
+  });
+
+  it('現在のテンションを含める(未設定はmedium)', () => {
+    expect(buildTurnUserContent(makeSession(), '進む')).toContain('テンション: medium');
+    const s = makeSession();
+    s.state.tension_level = 'high';
+    expect(buildTurnUserContent(s, '進む')).toContain('テンション: high');
   });
 
   it('falls back to placeholders when state is empty', () => {
