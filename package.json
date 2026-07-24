@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n client,server -c blue,green \"vite\" \"node --watch server/index.js\"",
+    "dev": "concurrently -n client,server -c blue,green \"vite\" \"PORT=8787 node --watch server/index.js\"",
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
