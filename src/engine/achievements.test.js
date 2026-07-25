@@ -1,0 +1,134 @@
+import { describe, it, expect } from 'vitest';
+import { evaluateAchievements } from './achievements.js';
+
+function ending(overrides = {}) {
+  return {
+    sessionId: 's1',
+    endedAt: 1000,
+    worldId: null,
+    stats: { total: 20, byDegree: { fumble: 1, fail: 5, success: 13, critical: 1 }, resources: {} },
+    ...overrides,
+  };
+}
+
+function find(list, id) {
+  return list.find((a) => a.id === id);
+}
+
+describe('evaluateAchievements', () => {
+  it('returns the whole catalogue unearned for an empty collection', () => {
+    const result = evaluateAchievements([]);
+    expect(result.length).toBe(8);
+    expect(result.every((a) => a.earned === false)).toBe(true);
+    expect(result.every((a) => a.earnedAt === null && a.sessionId === null)).toBe(true);
+    expect(result.every((a) => typeof a.label === 'string' && typeof a.description === 'string')).toBe(true);
+  });
+
+  it('tolerates a null collection', () => {
+    expect(evaluateAchievements(null).length).toBe(8);
+  });
+
+  it('earns 初めての結末 on the first ending', () => {
+    const result = evaluateAchievements([ending({ sessionId: 'a', endedAt: 5 })]);
+    expect(find(result, 'first-ending')).toMatchObject({ earned: true, earnedAt: 5, sessionId: 'a' });
+  });
+
+  it('earns 三つの結末 only at the third ending, crediting that ending', () => {
+    const two = [ending({ sessionId: 'a', endedAt: 1 }), ending({ sessionId: 'b', endedAt: 2 })];
+    expect(find(evaluateAchievements(two), 'three-endings').earned).toBe(false);
+
+    const three = [...two, ending({ sessionId: 'c', endedAt: 3 })];
+    expect(find(evaluateAchievements(three), 'three-endings')).toMatchObject({
+      earned: true,
+      earnedAt: 3,
+      sessionId: 'c',
+    });
+  });
+
+  it('credits the earliest qualifying ending regardless of input order', () => {
+    const result = evaluateAchievements([
+      ending({ sessionId: 'late', endedAt: 900 }),
+      ending({ sessionId: 'early', endedAt: 100 }),
+    ]);
+    expect(find(result, 'first-ending')).toMatchObject({ earnedAt: 100, sessionId: 'early' });
+  });
+
+  it('earns 一つの世界の三つの結末 only when three endings share a world', () => {
+    const mixed = [
+      ending({ sessionId: 'a', endedAt: 1, worldId: 'w1' }),
+      ending({ sessionId: 'b', endedAt: 2, worldId: 'w1' }),
+      ending({ sessionId: 'c', endedAt: 3, worldId: 'w2' }),
+    ];
+    expect(find(evaluateAchievements(mixed), 'world-trilogy').earned).toBe(false);
+
+    const sameWorld = [...mixed, ending({ sessionId: 'd', endedAt: 4, worldId: 'w1' })];
+    expect(find(evaluateAchievements(sameWorld), 'world-trilogy')).toMatchObject({ earned: true, sessionId: 'd' });
+  });
+
+  it('does not group endings that have no world', () => {
+    const noWorld = [
+      ending({ sessionId: 'a', endedAt: 1, worldId: null }),
+      ending({ sessionId: 'b', endedAt: 2, worldId: null }),
+      ending({ sessionId: 'c', endedAt: 3, worldId: null }),
+    ];
+    expect(find(evaluateAchievements(noWorld), 'world-trilogy').earned).toBe(false);
+  });
+
+  it('earns 無傷の旅路 only when the ending had rolls and no fumble', () => {
+    const clean = ending({ stats: { total: 5, byDegree: { fumble: 0, fail: 2, success: 3, critical: 0 }, resources: {} } });
+    expect(find(evaluateAchievements([clean]), 'flawless').earned).toBe(true);
+
+    const fumbled = ending({ stats: { total: 5, byDegree: { fumble: 1, fail: 1, success: 3, critical: 0 }, resources: {} } });
+    expect(find(evaluateAchievements([fumbled]), 'flawless').earned).toBe(false);
+
+    const noRolls = ending({ stats: { total: 0, byDegree: { fumble: 0, fail: 0, success: 0, critical: 0 }, resources: {} } });
+    expect(find(evaluateAchievements([noRolls]), 'flawless').earned).toBe(false);
+  });
+
+  it('earns 豪運 at three criticals, not two', () => {
+    const two = ending({ stats: { total: 9, byDegree: { fumble: 0, fail: 4, success: 3, critical: 2 }, resources: {} } });
+    expect(find(evaluateAchievements([two]), 'lucky').earned).toBe(false);
+
+    const three = ending({ stats: { total: 9, byDegree: { fumble: 0, fail: 3, success: 3, critical: 3 }, resources: {} } });
+    expect(find(evaluateAchievements([three]), 'lucky').earned).toBe(true);
+  });
+
+  it('earns 厄日 at three fumbles, not two', () => {
+    const two = ending({ stats: { total: 9, byDegree: { fumble: 2, fail: 4, success: 3, critical: 0 }, resources: {} } });
+    expect(find(evaluateAchievements([two]), 'cursed').earned).toBe(false);
+
+    const three = ending({ stats: { total: 9, byDegree: { fumble: 3, fail: 3, success: 3, critical: 0 }, resources: {} } });
+    expect(find(evaluateAchievements([three]), 'cursed').earned).toBe(true);
+  });
+
+  it('earns 瀬戸際の生還 at sanity 10, not 11', () => {
+    const eleven = ending({ stats: { total: 5, byDegree: {}, resources: { san: { label: '正気度', value: 11, max: 99 } } } });
+    expect(find(evaluateAchievements([eleven]), 'brink').earned).toBe(false);
+
+    const ten = ending({ stats: { total: 5, byDegree: {}, resources: { san: { label: '正気度', value: 10, max: 99 } } } });
+    expect(find(evaluateAchievements([ten]), 'brink').earned).toBe(true);
+  });
+
+  it('never earns 瀬戸際の生還 for a ruleset without sanity', () => {
+    expect(find(evaluateAchievements([ending()]), 'brink').earned).toBe(false);
+  });
+
+  it('earns 短編 at ten rolls, not eleven, and not zero', () => {
+    const ten = ending({ stats: { total: 10, byDegree: {}, resources: {} } });
+    expect(find(evaluateAchievements([ten]), 'short-story').earned).toBe(true);
+
+    const eleven = ending({ stats: { total: 11, byDegree: {}, resources: {} } });
+    expect(find(evaluateAchievements([eleven]), 'short-story').earned).toBe(false);
+
+    const zero = ending({ stats: { total: 0, byDegree: {}, resources: {} } });
+    expect(find(evaluateAchievements([zero]), 'short-story').earned).toBe(false);
+  });
+
+  it('tolerates a record with no stats at all', () => {
+    const bare = { sessionId: 'x', endedAt: 1, worldId: null };
+    const result = evaluateAchievements([bare]);
+    expect(find(result, 'first-ending').earned).toBe(true);
+    expect(find(result, 'flawless').earned).toBe(false);
+    expect(find(result, 'brink').earned).toBe(false);
+  });
+});
