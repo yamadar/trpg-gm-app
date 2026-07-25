@@ -35,13 +35,15 @@ export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey,
     const out = {};
     for (const key of keys) {
       const id = key.slice(key.lastIndexOf('/') + 1);
-      const { status, error } = await novelJobs.read(req.userId, id);
+      const { status, error, elapsedMs } = await novelJobs.read(req.userId, id);
       const text = await textStore.read(sessionNovelDocPath(req.userId, id));
       const meta = await dataStore.get(sessionNovelMetaKey(req.userId, id));
       const session = await dataStore.get(key);
       out[id] = {
         status,
         error,
+        // 実行中のみ数値。クライアントはこれを起点に秒を補間して表示する。
+        elapsedMs,
         hasNovel: text !== null,
         stale: isStale(meta, session),
         // この変更以前に生成された小説のメタにはtruncatedが無い。完結扱いにする。

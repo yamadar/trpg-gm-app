@@ -46,23 +46,33 @@ afterEach(async () => {
 
 describe('resolveJobStatus', () => {
   it('reports idle when there is no job', () => {
-    expect(resolveJobStatus(null, { bootId: 'b1', now: 100 })).toEqual({ status: 'idle', error: null });
+    expect(resolveJobStatus(null, { bootId: 'b1', now: 100 })).toEqual({
+      status: 'idle',
+      error: null,
+      elapsedMs: null,
+    });
   });
 
-  it('passes through done and error records', () => {
+  it('passes through done and error records without an elapsed time', () => {
     expect(resolveJobStatus({ status: 'done', error: null }, { bootId: 'b1', now: 100 })).toEqual({
       status: 'done',
       error: null,
+      elapsedMs: null,
     });
     expect(resolveJobStatus({ status: 'error', error: 'boom' }, { bootId: 'b1', now: 100 })).toEqual({
       status: 'error',
       error: 'boom',
+      elapsedMs: null,
     });
   });
 
-  it('keeps a fresh running job from the current process as running', () => {
+  it('keeps a fresh running job from the current process as running and reports its elapsed time', () => {
     const job = { status: 'running', startedAt: 100, bootId: 'b1' };
-    expect(resolveJobStatus(job, { bootId: 'b1', now: 200 })).toEqual({ status: 'running', error: null });
+    expect(resolveJobStatus(job, { bootId: 'b1', now: 200 })).toEqual({
+      status: 'running',
+      error: null,
+      elapsedMs: 100,
+    });
   });
 
   it('treats a running job from a previous process as interrupted', () => {
@@ -70,6 +80,7 @@ describe('resolveJobStatus', () => {
     const out = resolveJobStatus(job, { bootId: 'b1', now: 200 });
     expect(out.status).toBe('error');
     expect(out.error).toContain('再起動');
+    expect(out.elapsedMs).toBeNull();
   });
 
   it('treats a running job past the timeout as failed', () => {
@@ -77,6 +88,7 @@ describe('resolveJobStatus', () => {
     const out = resolveJobStatus(job, { bootId: 'b1', now: NOVEL_JOB_TIMEOUT_MS + 1 });
     expect(out.status).toBe('error');
     expect(out.error).toContain('時間内');
+    expect(out.elapsedMs).toBeNull();
   });
 });
 
@@ -93,11 +105,17 @@ describe('createNovelJobRunner', () => {
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
 
     await runner.start('u1', 's1', SESSION, 'third');
-    expect(await runner.read('u1', 's1')).toEqual({ status: 'running', error: null });
+    const running = await runner.read('u1', 's1');
+    expect(running.status).toBe('running');
+    expect(running.error).toBeNull();
+    expect(typeof running.elapsedMs).toBe('number');
 
     release();
     await runner.pending.get('u1/s1');
-    expect(await runner.read('u1', 's1')).toEqual({ status: 'done', error: null });
+    const done = await runner.read('u1', 's1');
+    expect(done.status).toBe('done');
+    expect(done.error).toBeNull();
+    expect(done.elapsedMs).toBeNull();
   });
 
   it('saves the novel text and meta on success', async () => {

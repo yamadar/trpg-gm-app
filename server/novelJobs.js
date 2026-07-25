@@ -16,16 +16,23 @@ export function makeBootId() {
 // 保存されたジョブレコードを、読み取り時点の見かけの状態へ解決する。
 // runningのまま残ったジョブ(プロセス再起動で実行主体が消えた/異常に長い)を
 // ここで失敗に倒すことで、UIが永久に「小説化中…」で固まるのを防ぐ。
+//
+// 経過時間は絶対時刻(startedAt)ではなく差分で返す。クライアントの時計がサーバーと
+// ずれていても表示が狂わないようにするため。
 export function resolveJobStatus(job, { bootId, now }) {
-  if (!job) return { status: 'idle', error: null };
-  if (job.status !== 'running') return { status: job.status, error: job.error ?? null };
+  if (!job) return { status: 'idle', error: null, elapsedMs: null };
+  if (job.status !== 'running') return { status: job.status, error: job.error ?? null, elapsedMs: null };
   if (job.bootId !== bootId) {
-    return { status: 'error', error: 'サーバーの再起動により中断されました。もう一度お試しください。' };
+    return {
+      status: 'error',
+      error: 'サーバーの再起動により中断されました。もう一度お試しください。',
+      elapsedMs: null,
+    };
   }
   if (now - job.startedAt > NOVEL_JOB_TIMEOUT_MS) {
-    return { status: 'error', error: '時間内に完了しませんでした。もう一度お試しください。' };
+    return { status: 'error', error: '時間内に完了しませんでした。もう一度お試しください。', elapsedMs: null };
   }
-  return { status: 'running', error: null };
+  return { status: 'running', error: null, elapsedMs: now - job.startedAt };
 }
 
 export function createNovelJobRunner({

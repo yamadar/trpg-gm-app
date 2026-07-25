@@ -10,7 +10,7 @@ import { createNovelJobRunner } from '../novelJobs.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
 import { createFsImageStore } from '../storage/imageStore.js';
-import { sessionImagePath } from '../storage/paths.js';
+import { sessionImagePath, sessionNovelJobKey } from '../storage/paths.js';
 
 let dir;
 let dataStore;
@@ -231,6 +231,35 @@ describe('sessions routes', () => {
     expect((await request(app).get('/api/sessions/s1/novel')).body.text).toContain('途中');
   });
 
+  it('reports elapsedMs for a running job in /novel-jobs', async () => {
+    // 実際の生成は一瞬で終わるためrunningを観測できない。ジョブレコードを直接置く。
+    buildApp({ now: () => 5000 });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
+    await dataStore.set(sessionNovelJobKey('usr_test', 's1'), {
+      status: 'running',
+      startedAt: 1000,
+      updatedAt: 1000,
+      error: null,
+      bootId: 'boot-test',
+    });
+
+    const jobs = await request(app).get('/api/novel-jobs');
+    expect(jobs.body.s1.status).toBe('running');
+    expect(jobs.body.s1.elapsedMs).toBe(4000);
+  });
+
+  it('reports a null elapsedMs for a finished job in /novel-jobs', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+
+    const jobs = await request(app).get('/api/novel-jobs');
+    expect(jobs.body.s1.status).toBe('done');
+    expect(jobs.body.s1.elapsedMs).toBeNull();
+  });
+
   it('records an error for an empty novelization without saving', async () => {
     const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [], stop_reason: 'end_turn' }) });
     buildApp({ fetchImpl });
@@ -319,7 +348,7 @@ describe('sessions routes', () => {
   it('reports idle for a session that has never been novelized', async () => {
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [], state: {} });
     const res = await request(app).get('/api/novel-jobs');
-    expect(res.body.s1).toEqual({ status: 'idle', error: null, hasNovel: false, stale: false, truncated: false });
+    expect(res.body.s1).toEqual({ status: 'idle', error: null, elapsedMs: null, hasNovel: false, stale: false, truncated: false });
   });
 
   it('reports running while the job is in flight and done afterwards', async () => {
