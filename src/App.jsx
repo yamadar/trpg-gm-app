@@ -184,7 +184,15 @@ function AppInner() {
         />
       )}
       {view === 'library' && <Library onClose={() => setView('home')} />}
-      {view === 'gallery' && <Gallery onClose={() => setView('home')} />}
+      {view === 'gallery' && (
+        <Gallery
+          onClose={() => setView('home')}
+          onStartStarter={(ctx) => {
+            setStarterContext(ctx);
+            setView('setup');
+          }}
+        />
+      )}
       {view === 'play' && session && (
         <Play session={session} setSession={setSession} onExit={handleExit} />
       )}

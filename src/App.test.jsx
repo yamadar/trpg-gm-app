@@ -58,6 +58,9 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText('公開ギャラリー'));
+    // 既定タブは「おすすめ」(スターターパック)になったため、公開アイテム一覧の
+    // 空状態を見るには明示的に他タブへ切り替える。
+    fireEvent.click(await screen.findByText('小説'));
     await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
 
     fireEvent.click(screen.getByText('閉じる'));

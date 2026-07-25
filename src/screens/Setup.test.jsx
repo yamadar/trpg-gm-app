@@ -48,6 +48,13 @@ describe('Setup', () => {
     await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalledWith('w1'));
   });
 
+  it('points the empty world state at the gallery', async () => {
+    vi.spyOn(worldLibraryClient, 'listWorlds').mockResolvedValue([]);
+    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    expect(await screen.findByText(/公開ギャラリーの「おすすめ」/)).toBeInTheDocument();
+  });
+
   it('disables the Scenario "既存を選ぶ" button until a World is selected', () => {
     render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
     fireEvent.click(screen.getByText('次へ')); // World(デフォルトskip) -> Scenario

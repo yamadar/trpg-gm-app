@@ -117,3 +117,22 @@ state注入だけでは「参照されるが活かされない」問題が起き
 - **goal/bonds抽出は実装済み**: ライブラリ紐づき(Worldに保存済み)のPCについて、`getOrParseCharacter`(`src/api/characterSheetCache.js`)がキャラシートの`raw`ハッシュをチェックし、未パース or 変更検知時のみAI呼び出しで`goal`/`bonds`をJSON抽出して`parsed`にキャッシュする(`src/api/characterSheetParse.js`)。Setup画面がセッション開始時にこれを呼び出し、`session.pc.goal`/`session.pc.bonds`として埋め込む。
 - system promptへの反映(`buildSystemPrompt`, `src/api/prompts.js`): goal/bondsが抽出済みなら「PCの目標・因縁(抽出済み)」という専用セクションで明示するが、絡める指示自体は**緩い**もの:「可能な範囲でPCのgoal/bondsや世界観の特徴を絡めること」。**「最低1つ」を必須とする指示や、数ターンごとの定期リマインドは実装されていない**(演出方針の一文として毎ターン同じトーンで添えられるのみ)。
 - 世界観の固有名詞・設定を「全文」system promptに注入する処理は無い。実際に注入されるのは`session.world.summary`という要約1本のみで、region/categoryファイルの全文や個別の固有名詞を優先配置する仕組みは無い(3.2.1節の「実装の現状」と同一の結論)。世界観を全文注入するとコストが破綻するため要約注入に統一されている、という単一の設計方針として理解すること。
+
+## 13. スターターコンテンツ(実装済み2026-07-25)
+
+素材の正本は`content/starters/{packId}/`にMarkdown + `pack.json`で置く(`server/data/`はgitignore対象のため、配布物はリポジトリ側に置く必要がある)。`content/starters/index.json`にパックidの配列があり、現在7パック: `arkham-1920s`(アーカム 1920s・coc7e)、`alden-frontier`(アルデン辺境領・dnd5e)、`midgard-eve`(ミッドガルド 終焉前夜・simple)、`hyakki-yagyo`(百鬼夜行 — 平安京・coc7e)、`neo-yokohama`(臨海特区ネオヨコハマ・gurps)、`dying-mars`(死にゆく火星・simple)、`war-of-the-worlds`(宇宙戦争 — 1898年ロンドン・gurps)。
+
+`server/starters/loadPacks.js`の`loadStarterPacks()`が読み込みと検証を行う:
+- `pack.json`: `id`がディレクトリ名と一致・`title`/`tagline`が非空文字列・`source`は文字列かnull・`moods`が`MOODS`語彙(`server/storage/moods.js`)の非空配列・`recommendedRuleset`がビルトイン4種(simple/coc7e/dnd5e/gurps)のいずれか・`scenario.id`が有効なid・`scenario.title`が非空文字列
+- `world.md`・`scenario.md`は存在し非空。`scenario.md`は`## シナリオ概要`と`## GM専用情報`の両見出しを含むこと
+- `pc`・`npc`はそれぞれちょうど2体。各名前は**`server/routes/validateId.js`の`isValidId`をそのままimportして再利用**した検証(`^[A-Za-z0-9._-]+$`。独自の正規表現を再実装すると本物のバリデータと食い違う恐れがあるため)で、ローマ字スラッグのみ許可し重複も禁止。`pc/{name}.md`は`goal:`と`bonds:`を両方含むこと(日本語の`PC名:`等の表示名はMarkdown本文側に書き、`name`自体はファイルパスにもなるASCIIスラッグに保つ。02-data-model.md「キャラクターの`name`はASCIIに限られる」参照)
+
+いずれかの検証に失敗すると`loadStarterPacks()`が例外を投げ、シード自体が失敗する仕組みで、壊れたパックが気づかれずに公開される事態を防ぐ。シードは`server/index.js`のサーバー起動時と、`npm run seed`(`scripts/seedStarters.js`)の両方から同じ`seedStarters()`が呼ばれる。
+
+`server/starters/seed.js`の`seedStarters()`は、まず公式ユーザー`usr_official`(表示名「公式サンプル」)を用意する。このアカウントは`auth/identities/*`を持たないためログイン不可だが、公開ギャラリーの作者リンク(`GET /api/users/:userId`)からは通常のユーザーと同様に参照できる。各パックをこのユーザーのライブラリへ`saveWorld`/`saveScenario`/`saveCharacter`で保存したうえで、既存の`publishWorld`/`publishScenario`/`publishCharacter`(`server/storage/shareLibrary.js`)でそのまま公開する。採番された`publicId`一式はマニフェスト`public/starters`(`starterManifestKey()`、`GET /api/starters`が返す)に集約される。
+
+シードは冪等: `shareLibrary.js`の`resolvePublicId`が公開元→`publicId`のマッピング(`users/{userId}/publish/...`)を見て、既にマッピングがあればその`publicId`を再利用し、無ければ新規採番する(通常の再公開と同じ仕組み)。そのため、素材の文面を直して再シードすると公開済みの内容だけが更新され、既にインポート済みのユーザーの手元(独立コピー)は変わらない。
+
+パックの一括インポート(`POST /api/starters/:packId/import`、`server/routes/imports.js`)はサーバー側の1呼び出しにまとめてある。クライアントから`/api/import/*`を個別に(World→Scenario→PC×2→NPC×2の計5回)叩く実装だと、途中で失敗したときに「Worldだけできて中身が無い」状態が残り、リトライで`-2`付きの重複IDが生えてしまうため。`importWorld`には`{ preferredId: pack.packId }`を渡し、日本語タイトルが`slugify`で`untitled`に潰れる問題を避けて意味のあるWorld idにする(02-data-model.md「`importWorld`の`preferredId`」参照)。
+
+**権利方針**: 実在の世界観を下敷きにしたパックはパブリックドメイン作品のみ(クトゥルフ神話・北欧神話・日本の伝承・E.R.バローズの火星シリーズ・H.G.ウェルズ『宇宙戦争』)。フォーゴトン・レルム系やサイバーパンク作品のような権利者のいる既存世界観は使わず、同ジャンルのオリジナル世界観(アルデン辺境領・臨海特区ネオヨコハマ)で代替している。PD由来のパックは`pack.json`の`source`に出典を持ち、`StarterPackList`のカード下部にそのまま表示される。バローズ作品由来のパックは「バルスーム」「ジョン・カーター」等の商標を避け、パック名を「死にゆく火星」とし登場人物もオリジナルにしている。

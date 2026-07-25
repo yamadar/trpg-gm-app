@@ -134,7 +134,16 @@ sessions/{session_id}/
   novelJob.json                    小説化ジョブの状態(実装済み2026-07-25。
                                     { status: 'running'|'done'|'error',
                                       startedAt, updatedAt, error, bootId })
+
+public/starters                      スターターパックのマニフェスト({ packs[], seededAt })。
+                                     シード(server/starters/seed.js)が書き、GET /api/startersが返す。
+                                     唯一この行だけは`users/{userId}/`配下ではなくグローバルなキーであり、
+                                     公開ツリー`public/...`名前空間の一部(04-persistence.md参照)
 ```
+
+**キャラクターの`name`はASCIIに限られる**: `server/routes/characters.js`が`router.param('name', idParamGuard)`を持ち、`isValidId`が`^[A-Za-z0-9._-]+$`を要求する(`name`がそのままファイルパスになるため)。日本語名を`saveCharacter`で直接保存することは可能だが、その後の`GET /worlds/:worldId/characters/:kind/:name`が400を返す。スターターパックはローマ字スラッグを`name`にし、日本語表記をシート本文の`PC名:`行に持つ(`server/starters/loadPacks.js`はこの`isValidId`を直接importして再利用しており、独自の正規表現は持たない。06-content-generation.md「スターターコンテンツ」節参照)。
+
+**`importWorld`の`preferredId`**: `slugify`は`[^a-z0-9-]`を全除去するため、日本語タイトルのWorldをインポートすると id が`untitled`に潰れる。`importWorld(…, publicId, { preferredId })`で id を明示でき、スターターの一括インポート(`POST /api/starters/:packId/import`、`server/routes/imports.js`)は`packId`を渡す。未指定なら従来どおり`slugify(title)`。
 
 **紐付けルール**
 - Character(PC/NPC): World配下に格納。ただしセッション作成時に「このWorldのPCを使う/新規作成する」を選べ、他Worldへの持ち込みも技術的には可能(ただし世界観との整合性はユーザー判断)

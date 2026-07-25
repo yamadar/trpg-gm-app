@@ -367,7 +367,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
                   ))}
                   {existingWorlds.length === 0 && (
                     <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-                      素材ライブラリにWorldがまだ無い。
+                      素材ライブラリにWorldがまだ無い。公開ギャラリーの「おすすめ」から一式を取り込むか、「新規に用意する」で自分で書く。
                     </div>
                   )}
                 </div>
@@ -462,7 +462,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
                   ))}
                   {existingScenarios.length === 0 && (
                     <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-                      このWorldにはScenarioがまだ無い。
+                      このWorldにはScenarioがまだ無い。「自分で用意する」で貼り付けるか、「AIに作ってもらう」を選ぶ。
                     </div>
                   )}
                 </div>
@@ -575,7 +575,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
                   ))}
                   {existingPCs.length === 0 && (
                     <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-                      このWorldにはPCがまだ無い。
+                      このWorldにはPCがまだ無い。「自由記述で新規作成」で書くか、素材ライブラリのCharacterタブで先に作る。
                     </div>
                   )}
                 </div>
