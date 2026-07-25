@@ -23,6 +23,13 @@ describe('extractPcName', () => {
     expect(extractPcName(null)).toBe('');
     expect(extractPcName(undefined)).toBe('');
   });
+
+  it('returns an empty string when the PC名 line holds only a full-width space', () => {
+    // 正規表現の末尾trimは[ \t]*(半角のみ)なので、全角スペース(U+3000)だけの行は
+    // trim前だとキャプチャがtruthyな空白文字列になってしまう(composePcRawが
+    // 「PC名行が既にある」と誤判定し、入力欄の名前を黙って捨てる原因になる)。
+    expect(extractPcName('PC名: 　\ngoal: 生き延びる')).toBe('');
+  });
 });
 
 describe('composePcRaw', () => {
@@ -46,5 +53,12 @@ describe('composePcRaw', () => {
 
   it('trims the name and the body', () => {
     expect(composePcRaw('  カイ  ', '  goal: 生き延びる  ')).toBe('PC名: カイ\ngoal: 生き延びる');
+  });
+
+  it('does not treat a full-width-space-only PC名 line as already named', () => {
+    // extractPcNameがtrimせずに全角スペースを返すと、composePcRawがここで早期returnしてしまい、
+    // 入力欄に打った名前が本文へ反映されない事故になっていた。
+    const raw = 'PC名: 　\ngoal: 生き延びる';
+    expect(composePcRaw('カイ', raw)).toBe('PC名: カイ\nPC名: 　\ngoal: 生き延びる');
   });
 });

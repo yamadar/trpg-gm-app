@@ -236,10 +236,13 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
       if (pcMode === 'existing' && selectedPC) {
         pc = selectedPC.raw;
         pcLibraryName = selectedPC.name;
+        // シート本文の「PC名:」行から先に名前を取っておく。AI解析(下のgetOrParseCharacter)は
+        // ネットワーク越しでオフライン・429・キー無しだと失敗しうるので、それだけに頼らない。
+        pcResolvedName = extractPcName(selectedPC.raw);
       } else {
         // 入力されたPC名をシート本文にも残す。ライブラリ原本とGMプロンプトの
         // 「# PC設定」節の両方に名前が載り、プレイ中の地の文も名前で呼べるようになる。
-        pc = composePcRaw(pcName, pcRaw);
+        pc = composePcRaw(pcName, pcRaw) || '(自由記述なし)';
         pcResolvedName = extractPcName(pc);
         // 保存の条件は従来どおり「自由記述が書かれていること」。名前だけのPCを
         // ライブラリに増やさないため、ここは広げない。
@@ -261,8 +264,9 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
           const parsed = await getOrParseCharacter(resolvedWorldId, 'pc', pcLibraryName);
           pcGoal = parsed.goal;
           pcBonds = parsed.bonds;
-          // 既存PCを選んだ経路では、名前はここでしか得られない。
-          if (parsed.name) pcResolvedName = parsed.name;
+          // 新規PC経路ではユーザーが今入力した名前が確定済みなので上書きしない。
+          // 既存PC経路はシート本文の抽出結果をAI解析の結果で補強・上書きしてよい。
+          if (pcMode === 'existing' && parsed.name) pcResolvedName = parsed.name;
         } catch (e) {
           console.error('name/goal/bonds parse failed', e);
         }

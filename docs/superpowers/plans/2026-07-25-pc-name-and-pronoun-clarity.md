@@ -15,7 +15,7 @@
 - テストランナーは Vitest。全体実行は `npm test`、単体は `npx vitest run <path>`、単一ケースは `npx vitest run <path> -t "<name>"`
 - サーバー側テストはファイル先頭に `// @vitest-environment node` が必要(既存ファイルには既にある)
 - コメントは日本語。「なぜそうしたか」を書き、コードを読めば分かることは書かない(既存ファイルの慣習に従う)
-- 共有 `Button` コンポーネント(`src/components/ui/Button.jsx`)は `disabled` でネイティブの `disabled` 属性を付けず、`onClick` を無効化するだけ。テストで「押せないこと」を検証するときは `toBeDisabled()` ではなく「画面が遷移しないこと」で確かめる
+- 共有 `Button` コンポーネント(`src/components/ui/Button.jsx`)は `disabled` をネイティブの `<button>` の `disabled` 属性へそのまま渡す(`onClick` も無効化する)。テストで「押せないこと」を検証するときは `toBeDisabled()` が使える
 - `Field` コンポーネントは `label` と入力要素を `htmlFor`/`id` で関連付けない。テストからの入力要素の取得は `getByPlaceholderText` を使う
 - PC名はストレージのキーにしない。ライブラリのキーは今まで通り `makeId('pc')` のスラッグ
 - 各タスクの最後にコミットする
@@ -632,8 +632,7 @@ git commit -m "feat(api): キャラクターシート解析にname抽出を追�
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
 
-    // 共有Buttonはdisabled時もネイティブのdisabled属性を付けないため、
-    // 「押しても確認ステップへ進まない」ことで検証する。
+    expect(screen.getByText('次へ')).toBeDisabled();
     fireEvent.click(screen.getByText('次へ'));
     expect(screen.queryByText('セッション名')).not.toBeInTheDocument();
 

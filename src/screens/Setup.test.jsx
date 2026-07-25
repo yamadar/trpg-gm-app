@@ -357,8 +357,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
 
-    // 共有Buttonはdisabled時もネイティブのdisabled属性を付けないため、
-    // 「押しても確認ステップへ進まない」ことで検証する。
+    expect(screen.getByText('次へ')).toBeDisabled();
     fireEvent.click(screen.getByText('次へ'));
     expect(screen.queryByText('セッション名')).not.toBeInTheDocument();
 
@@ -386,6 +385,77 @@ describe('Setup', () => {
     expect(screen.queryByPlaceholderText('例: カイ・アーレンス')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('次へ'));
     expect(screen.getByText('セッション名')).toBeInTheDocument();
+  });
+
+  // 回帰テスト: 既存PCモードのままPCを選ばずに開始すると、composePcRaw(pcName, pcRaw)が
+  // 両方空で''を返し、GMプロンプトの「# PC設定」節が空になっていた(指摘1)。
+  it('does not leave session.pc.raw empty when existing-PC mode is left without picking a PC', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('既存を選ぶ')); // PC: 既存(PCは選ばない)
+
+    fireEvent.click(screen.getByText('次へ')); // -> 確認(pcNameMissingはnewモードにしか効かない)
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.raw).not.toBe('');
+    expect(session.pc.raw).toBe('(自由記述なし)');
+  });
+
+  // 回帰テスト: 既存PCを選んだ経路の名前解決がAI解析(getOrParseCharacter)だけに頼っていると、
+  // オフライン・429・キー無しで黙って名前が落ちていた(指摘2)。シート本文の「PC名:」行が
+  // フォールバックとして先に効くことを確認する。
+  it("falls back to the sheet's PC名 line when getOrParseCharacter fails for an existing PC", async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    characterLibraryClient.listCharacters.mockResolvedValue([
+      { id: 'w1/pc/howard', worldId: 'w1', kind: 'pc', name: 'howard', revealed: null },
+    ]);
+    vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
+      raw: 'PC名: ハワード',
+      revealed: null,
+      name: 'howard',
+    });
+    vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockRejectedValue(new Error('network down'));
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('howard')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('howard'));
+    await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalledWith('w1', 'pc', 'howard'));
+
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(characterSheetCache.getOrParseCharacter).toHaveBeenCalled();
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.name).toBe('ハワード');
   });
 
   // キャンペーンの章をまたぐたびに名前を打ち直させないための前埋め。
@@ -450,6 +520,8 @@ describe('Setup', () => {
     await waitFor(() => expect(onStart).toHaveBeenCalled());
     const session = onStart.mock.calls[0][0];
     expect(session.pc.raw).toBe('PC名: ハワード\ngoal: 真相を暴く');
+    // 入力欄の「カイ」ではなく、本文に既にある「PC名:」行が優先される仕様を固定する。
+    expect(session.pc.name).toBe('ハワード');
   });
 
   it("takes the session PC name from the library sheet's parsed name when an existing PC is picked", async () => {
