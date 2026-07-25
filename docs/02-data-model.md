@@ -153,4 +153,36 @@ sessions/{session_id}/
 - `growthUnit`は成長ポイントの呼び名(「経験値」「CP」等)。GMプロンプトのxp_gained指示とPlay画面の成長ポイント表示の両方に使われる。
 - `formula`は**実装済み(2026-07-25)**。判定式アダプタ(`src/engine/rulesetAdapters.js`の`getAdapter`)を選択するフィールドで、`simple`/`coc7e`/`dnd5e`/`gurps`の4値を持つ。ビルトインは上記4値がそのまま`id`と一致する形で設定済み。カスタムRulesetもRulesetタブのドロップダウンで選択でき(既定`simple`)、未知の値はサーバー保存時に`simple`へ丸められる。未指定・未知の`formula`は`getAdapter`が`simple`にフォールバックする。判定式そのものの違い(degree語彙・SANの有無)は03-gm-logic.md 5章・07-risks-and-roadmap.md 10.1節を参照。`hint`は判定式の説明ではなく演出の色付けとして残る(3.6節参照)。
 
-`session`は`rulesetId`(選択したRulesetのid)と`ruleset`(選択時点の`{id,label,desc,hint,growthUnit}`スナップショット)を併せ持つ。`buildSystemPrompt`(`src/api/prompts.js`)は`session.ruleset`があればそれを優先し、無ければ`rulesetId`からビルトインRulesetを検索する。これは、後からビルトインRulesetの定義を変更してもプレイ中セッションの演出が変わらないようにするため。
+`session`は`rulesetId`(選択したRulesetのid)と`ruleset`(選択時点の`{id,label,desc,hint,growthUnit}`スナップショット)を併せ持つ。`buildSystemPrompt`(`src/api/prompts.js`)は`session.ruleset`があればそれを優先し、無ければ`rulesetId`からビルトインRulesetを検索する。これは、後からビルトインRulesetの定義を変更してもプレイ中セッションの演出が変わらないようにするため。この解決規則(`session.ruleset` → `rulesetId`検索 → 先頭)は`src/engine/resolveRuleset.js`の`resolveRuleset`/`resolveAdapter`に切り出されており、`prompts.js`とダイス統計モジュール(3.6節)の双方がここから import する。
+
+### 3.6 エンディング記録・実績(実装済み 2026-07-25)
+
+セッション完結(`endedAt`、3.5節)を確定したとき、Play画面で「この物語を終える」を押すと(05-ui-ux.md 7章)GMがエンディングタイトルと総括を1回のAI呼び出しで生成し(06-content-generation.md参照)、記録として保存する。
+
+**保存先**: `users/{userId}/endings/{sessionId}`(`server/storage/paths.js`の`endingKey`/`endingListPrefix`、`server/storage/endingLibrary.js`)。`sessionId`をキーにするため1セッションにつき記録は1つで、記録し直す(命名の再試行)と上書きされる。
+
+**形状**
+```json
+{
+  "sessionId": "...",
+  "sessionTitle": "星降りの夜に",
+  "endingTitle": "灰は星を数えない",
+  "summary": "...(GMによる2〜3文の総括)",
+  "endedAt": 1721900000000,
+  "recordedAt": 1721900005000,
+  "worldId": null,
+  "campaignId": null,
+  "rulesetId": "coc7e",
+  "formula": "coc7e",
+  "moods": ["ホラー", "ミステリー"],
+  "stats": { "total": 24, "successes": 14, "successRate": 0.583, "byDegree": { "fumble": 1, "fail": 8, "success": 9, "hard": 5, "extreme": 0, "critical": 1 }, "degrees": ["fumble", "fail", "success", "hard", "extreme", "critical"], "resources": { "san": { "label": "正気度", "value": 12, "max": 99 } } }
+}
+```
+- `sessionTitle`/`worldId`/`campaignId`/`rulesetId`/`formula`(`session.ruleset?.formula`)/`moods`はセッション本体からのスナップショット。`endingTitle`/`summary`はサーバーの1回のAI呼び出し(structured outputs)が生成する。
+- **記録は完結確定時点のスナップショットであり、都度再計算しない**: `endedAt`があってもセッションは継続可能(3.5節参照)なので、ログから毎回集計し直すと図鑑の内容が後から変わってしまう。「そのとき到達したエンディング」として固定する。
+- `stats`は`src/engine/rollStats.js`の`summarizeRolls(session)`がクライアント側で計算しリクエストボディに載せて送る(サーバーは`src/`をimportできないため統計ロジックをサーバー側へ複製しない。04-persistence.md参照)。形状は`{ total, successes, successRate, byDegree, degrees, resources }`:
+  - `total`/`successes`/`successRate`: ログのGMエントリが持つ`roll`の集計数・成功数・成功率(`total===0`なら`0`)
+  - `byDegree`/`degrees`: 判定式アダプタ(`resolveAdapter`、本節冒頭・3.5.1節参照)の`degrees`語彙のキーのみを持つ。`simple`/`dnd5e`/`gurps`は`['fumble','fail','success','critical']`、`coc7e`だけが`['fumble','fail','success','hard','extreme','critical']`を持つため、ハード成功・イクストリーム成功はCoC7e風の記録にだけ現れる
+  - `resources`: セッションが実際に持つ`state.resources`のキーのみ(旧セッションや`resourceDefs`を持たないルールセットは空`{}`)。CoC7e風なら`{ san: { label: '正気度', value, max } }`
+
+**実績は保存を持たない**。`src/engine/achievements.js`の`evaluateAchievements(endings)`が、エンディング記録のコレクションだけから実績を都度導出する純関数(固定8種カタログ、ユーザー定義は非対象)。未獲得のものも`earned: false`で返し(図鑑側でグレー表示)、`earnedAt`/`sessionId`は条件を最初に満たした記録のもの。実績専用の永続化が無いため、定義を後から足しても過去の記録に遡って反映される。実績一覧・条件は08-feature-ideas.md 2章、UIは05-ui-ux.mdを参照。

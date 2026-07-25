@@ -12,6 +12,7 @@
 - シーン挿絵(実装済み 2026-07-24): GMログエントリ毎に、地の文の上に生成挿絵を表示する(`src/screens/Play.jsx` + `src/api/sceneImageClient.js`)。未生成エントリの「この場面を描く」ボタンで手動生成、ヘッダの「挿絵を自動生成」トグルでシーン変化時に自動生成する。Geminiキー未設定(`GET /api/config` の `imageGen:false`)時は挿絵UIを一切出さない。生成失敗・日次上限は当該エントリにインラインエラー表示。登場人物の見た目はセッション専用レジストリ(`session.appearances`)で横断的に一貫させる(06-content-generation.md参照)。
 - Play画面の固定ヘッダー(実装済み 2026-07-25): ヘッダー(タイトル/シーン/成長ポイント/PCトグル/挿絵自動生成トグル)は`position: sticky; top: 0`のバーになっており、ログが下へ伸びてもスクロールアウトしない。左端に「← ホーム」ボタンを置く(戻る導線は左が定石であり、右上に`position: fixed`で常駐する`AuthBar`との重なりも避けられる)。シーン名・成長ポイントは1行に圧縮表示し、`session.endedAt`があればタイトル脇に「完結」バッジ(`Badge`)を出す。PCパネルが非ドックの狭幅時は、ヘッダー右端に`AuthBar`の幅ぶんの余白(`paddingRight: 56`)を確保してアバターとの重なりを防ぐ。
 - エンディング到達の案内(実装済み 2026-07-25): GMが毎ターン申告する`state_update.ending_reached`(03-gm-logic.md参照)がtrueで、かつ`session.endedAt`が未設定のとき、ログ末尾に「物語は結末に辿り着いたようだ。」の案内カードが出る。「この物語を終える」を押すと`session.endedAt`に現在時刻を保存し(セッションは塞がず継続可能なまま)、「まだ続ける」を押すと`state.ending_reached`をfalseに戻す(次ターンでGMが再度trueを返せば案内は再び出る)。`endedAt`の明示的な取り消しUIは無い。確定後はHome一覧・Playヘッダーの両方に「完結」バッジが表示される。
+- エンディング記録・結果カード(実装済み 2026-07-25): 「この物語を終える」を押すと、まずセッションの完結(`endedAt`)をローカル/サーバーへ保存してから`summarizeRolls(session)`(`src/engine/rollStats.js`)を計算し、`POST /api/sessions/:id/ending`でGMに命名させる(04-persistence.md・06-content-generation.md参照)。成功するとログ末尾のカードがエンディングタイトル・総括(2〜3文)・判定統計の表示に差し替わる。判定統計は`RollStatsLine`(`src/components/ui/RollStatsLine.jsx`)という共通コンポーネントで「判定◯回・成功率◯%」に続けて値が0でないdegreeの内訳(degreeの日本語ラベルは判定式の`degrees`語彙に沿って出し分け)、保持リソースがあれば「正気度 12/99」のように末尾へ追加する形で1行表示する(このコンポーネントはHome・Play・エンディング図鑑の3画面で共用)。記録中は「エンディングを記録しています…」を表示し、AI呼び出し失敗(命名失敗・利用枠超過等)時は完結自体は取り消さずエラーメッセージと「エンディングを記録する」の再試行ボタンを表示する(`src/screens/Play.jsx`)。
 
 
 ## 13. 演出方針(テンション制御)
@@ -51,6 +52,8 @@
 └─────────────────────────────────────┘
 ```
 情報層はタイトル・現在シーン名・手数(turn_count)・直近のGM発言1行程度のサマリと、カード右端の「続ける →」(カード全体クリックでの再開に対応する主要導線)。状態バッジ層は新規コンポーネント`Badge`(`src/components/ui/Badge.jsx`)で描画され、押せるボタンと混同されないよう`<span>`・`cursor: default`固定の角丸ピルにしている。バッジは条件を満たすもののみ表示: `session.endedAt`があれば「完結」、`publishedNovelIds`に載っていれば「公開中」、ログのいずれかのGMエントリが`image.imageId`を持てば「挿絵あり」。操作層は区切り線(`borderTop`)を挟んだ下段にまとめ、ラベルは全て動詞で統一する(旧「小説化」→「小説化する」、旧「挿絵付き」→「挿絵付きでDL」)。
+
+エンディング記録の反映(実装済み2026-07-25、02-data-model.md 3.6節参照): Home画面はマウント時に`GET /api/endings`を一括取得し(`src/api/endingClient.js`)、記録があるセッションのカードには状態バッジ層の下に「エンディング: {endingTitle}」を表示する。`endedAt`があるのに記録が無いセッション(命名APIの失敗、または本機能より前に完結したセッション)には操作層に「エンディングを記録する」ボタンが出て、そこからも`POST /api/sessions/:id/ending`を呼んで記録できる(押下中は「記録中…」、失敗時はカード下部にエラーメッセージ)。ボタン行には他画面と同様「エンディング図鑑」ボタンもあり、押すと`navigateToEndings()`で`#/endings`(14.6節)へ遷移する。
 
 小説化ボタンは**非同期ジョブの状態に応じて遷移する(実装済み2026-07-25、非同期化。06-content-generation.md 10.6節参照)**: ジョブが無く小説も未生成なら「小説化する」、`running`中は「小説化中…」(押下不可)、`done`または既に`novel.md`があれば「小説をDL」+挿絵があれば「挿絵付きでDL」+「小説を再生成」、`error`ならエラーメッセージとともに「小説化を再試行」。「小説をDL」は`GET /api/sessions/:id/novel`から取得しMarkdownとしてダウンロードする(古いログのまま生成された場合は鮮度警告を表示)。「挿絵付きでDL」は小説が生成済みかつ挿絵のあるセッションでのみ表示され、`GET /api/sessions/:id/novel/illustrated`からbase64画像埋め込みの自己完結Markdownをダウンロードする(2026-07-24追加、06-content-generation.md 10.5節参照)。ジョブ状態はHome画面マウント時に`GET /api/novel-jobs`で全セッション分を一括取得し、`running`のジョブが1件でもある間だけ5秒間隔でポーリングする(リロード・画面遷移・別タブを跨いでも「小説化中…」の表示が保たれる)。生成完了時にファイルが自動ダウンロードされることはない。
 
@@ -102,3 +105,11 @@ URLのハッシュ`#/u/{userId}`で表示される、特定ユーザーの公開
 - 表示内容: `GET /api/users/:userId`(`displayName`・`avatarUrl`・`bio`)を取得し、上部にアバター(未設定時はイニシャル1文字のプレースホルダ)・表示名・`bio`(未設定なら非表示)を表示する。下の「小説」「世界観」「キャラクター」「シナリオ」の4タブ(タブ構成はGallery画面と共通)の公開素材一覧は、Galleryと同じ`PublicItemList`コンポーネントに`ownerId={userId}`を渡して描画する(検索ボックス・雰囲気チップ・ルールセットドロップダウン・「もっと見る」・空状態の出し分けもGalleryと同一挙動、14.4節参照)。タブごとに`GET /api/public/:type?ownerId={userId}`を呼んでそのユーザーの公開素材のみに絞り込む。**旧`GET /api/users/:userId/public`一括APIは廃止済み**で、現在はこの`ownerId`絞り込みに一本化されている。一覧のカードをクリックすると`GET /api/public/:type/:publicId`で詳細を取得し、Gallery画面と共通の`PublicItemDetail`コンポーネント(`src/components/share/PublicItemDetail.jsx`)で本文を表示する。
 - ユーザーが存在しない場合(`404`)は「ユーザーが見つかりません」、その他の取得失敗時はエラーメッセージを表示し、いずれも「← 戻る」ボタン(`clearHash()`でハッシュを除去し通常画面に戻る)を出す。
 - `bio`はAuthBar(`src/components/auth/AuthBar.jsx`)のプロフィール編集フォームから自分で設定でき、`PATCH /api/me`経由で保存した内容が自分のユーザーページにも反映される。
+
+### 14.6 エンディング図鑑画面(`src/screens/EndingGallery.jsx`、実装済み2026-07-25)
+
+URLのハッシュ`#/endings`で表示される。`src/router/useHashRoute.js`の`parseHash`は`{ userId, endings }`を返すよう拡張されており(`endings`は`hash === '#/endings'`のbool)、`navigateToEndings()`が`#/endings`へ遷移させる。`App.jsx`は14.5節のユーザーページと同じ流儀で、このルートの間は通常の画面遷移を素通りしてこの画面のみを表示する。遷移経路はホーム画面のボタン行(14.1節、`+ 新規プレイ`/`素材ライブラリ`/`公開ギャラリー`の並びに「エンディング図鑑」ボタンが追加されている)。
+
+- 上部に「実績」を横並びで表示する。`src/engine/achievements.js`の`evaluateAchievements(endings)`が返す8種すべて(獲得/未獲得問わず)を`Badge`(獲得は`brass`、未獲得は`faint`+`opacity: 0.45`)で並べ、下に説明文(`description`)を常時表示する(ホバー等の隠し情報にはしない)。
+- 下部に「到達したエンディング」一覧(`GET /api/endings`、`endedAt`降順)。各カードはエンディングタイトル・完結日・セッションタイトル・`moods`チップ・総括・判定統計(`RollStatsLine`、7章参照)を表示し、「改名」(入力欄に切り替えて`PATCH /api/endings/:id`)・「削除」(`ConfirmModal`で確認後`DELETE /api/endings/:id`)ができる。
+- 未ログイン時は一覧を取得せず「エンディング図鑑の閲覧にはログインが必要です」の案内のみ表示する。記録が0件の空状態には「まだエンディングの記録がありません。物語を結末まで進めて『この物語を終える』を押すと記録されます。」を表示する。

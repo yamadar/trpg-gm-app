@@ -59,6 +59,16 @@ Home画面はマウント時に`GET /api/novel-jobs`(全セッション分のジ
 
 この判定は`GET /api/novel-jobs`と`POST /novelize`の二重起動防止チェックの両方が共有する同じ純粋関数で行われる。利用枠(`usage`の`novelize`カウント)は生成が失敗しても戻らない(現行仕様どおり、変更なし)。
 
+## 10.7 エンディング命名(実装済み 2026-07-25)
+
+Play画面で「この物語を終える」を確定すると(05-ui-ux.md 7章)、`POST /api/sessions/:id/ending`が`server/endingNaming.js`の`nameEnding()`でAnthropicを1回呼び、GMに結末を命名させる。
+
+**入力**(GM専用情報は渡さない、既存方針を踏襲): `state.history_summary`(物語要約)、PC設定(`session.pc.raw`/`goal`/`bonds`)、結末付近の地の文4件(直近のGMログエントリ、`CLOSING_NARRATION_COUNT`)。シナリオ本文・GM専用情報・フラグ等は入力に含めない。
+
+**出力**: structured outputs(`output_config.format`のjson_schema)で`{ ending_title, summary }`を得る。`ending_title`は20字程度の日本語タイトル、`summary`は2〜3文の総括。system promptはゲーム的表現(フラグのキー名・数値・選択肢)や物語内で明かされなかった秘密を書かないよう指示する。
+
+AI呼び出しは既存の`messages`日次利用枠に相乗りする(専用の新種別は作らない)。失敗時(上流エラー・不正なJSON・空タイトル)はエンディングの記録自体を作らず`502`を返し、Play画面・Home画面は再試行ボタンを出す(04-persistence.md・05-ui-ux.md参照)。ダイス統計(`stats`)自体はここでは生成せず、クライアントが`summarizeRolls`(`src/engine/rollStats.js`)で計算しリクエストボディに含めて送る(02-data-model.md 3.6節参照)。
+
 ## 11. シナリオ自動生成モード
 
 「用意されたシナリオがない」場合、ジャンル要望(冒険/推理/ホラー等)からAIにシナリオを生成させる。実装は`src/api/session.js`の`generateScenario`。
