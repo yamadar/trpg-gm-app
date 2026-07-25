@@ -1,0 +1,11 @@
+{
+  "id": "arkham-1920s",
+  "title": "アーカム 1920s",
+  "tagline": "禁書と魔女裁判の記憶が残る港町。写り込んではならないものが、乾板に写る。",
+  "source": "H.P.ラヴクラフトのクトゥルフ神話作品に基づく(パブリックドメイン)",
+  "moods": ["ホラー", "ミステリー"],
+  "recommendedRuleset": "coc7e",
+  "scenario": { "id": "photo-studio-on-the-hill", "title": "丘の上の写真館" },
+  "pc": ["howard-kane", "mabel-thorne"],
+  "npc": ["elias-witcham", "agnes-reed"]
+}
