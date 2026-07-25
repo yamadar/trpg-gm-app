@@ -201,15 +201,27 @@ export default function CharacterTab({ worldId }) {
         {characters.map((c) => (
           <Card
             key={c.name}
-            onClick={() => {
-              setCreating(false);
-              setSelectedName(c.name);
-            }}
+            className="card-actionable"
             style={{ cursor: 'pointer', borderColor: selectedName === c.name ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{c.name}</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className="card-primary-action"
+                aria-current={selectedName === c.name}
+                onClick={() => {
+                  setCreating(false);
+                  setSelectedName(c.name);
+                }}
+                style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}
+              >
+                {c.name}
+              </button>
+              <div
+                className="card-inline-action"
+                style={{ display: 'flex', gap: 8, alignItems: 'center' }}
+                onClick={(e) => e.stopPropagation()}
+              >
                 {kind === 'npc' && (
                   <span
                     style={{ fontFamily: F_DISPLAY, fontSize: 11, color: c.revealed ? COLORS.brassDark : COLORS.faint }}

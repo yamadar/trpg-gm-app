@@ -64,6 +64,13 @@ export default function StarterPackList({ onImported }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* 未ログイン時の案内はカードごとではなく一覧の先頭に1回だけ出す。
+          以前はカード内に置いていたため、7件並ぶと同じ文が7回読み上げられていた。 */}
+      {!user && (
+        <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
+          取り込みにはログインが必要です(右上からログイン)
+        </div>
+      )}
       {packs.map((pack) => (
         <Card key={pack.packId}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
@@ -86,17 +93,19 @@ export default function StarterPackList({ onImported }) {
             <div style={{ fontFamily: F_MONO, fontSize: 10, color: COLORS.faint, marginTop: 8 }}>{pack.source}</div>
           )}
 
-          <div style={{ marginTop: 12 }}>
-            {user ? (
-              <Button variant="brass" onClick={() => start(pack)} disabled={!!busy[pack.packId]}>
+          {user && (
+            <div style={{ marginTop: 12 }}>
+              <Button
+                variant="brass"
+                onClick={() => start(pack)}
+                disabled={!!busy[pack.packId]}
+                // 同じラベルのボタンが縦に並ぶため、どの冒険を始めるのかを名前に含める。
+                aria-label={`${pack.title} の冒険を始める`}
+              >
                 {busy[pack.packId] ? '取り込み中…' : 'この冒険を始める'}
               </Button>
-            ) : (
-              <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
-                追加にはログインが必要です(右上からログイン)
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {errors[pack.packId] && (
             <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 8 }}>{errors[pack.packId]}</div>

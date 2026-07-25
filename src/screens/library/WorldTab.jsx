@@ -282,15 +282,23 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         {worlds.map((w) => (
           <Card
             key={w.id}
-            onClick={() => {
-              setCreating(false);
-              onSelectWorld(w.id);
-            }}
+            className="card-actionable"
             style={{ cursor: 'pointer', borderColor: selectedWorldId === w.id ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
+                <button
+                  type="button"
+                  className="card-primary-action"
+                  aria-current={selectedWorldId === w.id}
+                  onClick={() => {
+                    setCreating(false);
+                    onSelectWorld(w.id);
+                  }}
+                  style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}
+                >
+                  {w.title}
+                </button>
                 {w.moods && w.moods.length > 0 && (
                   <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, marginTop: 2 }}>
                     {w.moods.join(' / ')}
@@ -299,6 +307,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
               </div>
               {user && (
                 <div
+                  className="card-inline-action"
                   style={{ display: 'flex', gap: 6, alignItems: 'center' }}
                   onClick={(e) => e.stopPropagation()}
                 >

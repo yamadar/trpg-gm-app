@@ -54,14 +54,18 @@ export default function AuthBar() {
     <div style={{ ...wrapStyle, textAlign: 'right' }}>
       <div ref={menuRef} style={{ position: 'relative', display: 'inline-block' }}>
         <button
+          type="button"
           onClick={() => setMenuOpen((v) => !v)}
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
+            // 固定配置なので、スクロールした本文がこの下を通り抜ける。透明のままだと
+            // ユーザー名とカードの文字が重なって読めなくなるため、紙色で背景を塗る。
+            background: COLORS.paper,
+            borderRadius: 999,
+            padding: '4px 10px 4px 4px',
+            border: `1px solid ${COLORS.lineStrong}`,
             fontFamily: F_MONO,
             fontSize: 13,
             color: COLORS.ink,
@@ -112,6 +116,7 @@ export default function AuthBar() {
             }}
           >
             <button
+              type="button"
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
@@ -121,6 +126,7 @@ export default function AuthBar() {
               自分のページ
             </button>
             <button
+              type="button"
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
@@ -130,6 +136,7 @@ export default function AuthBar() {
               プロフィール編集
             </button>
             <button
+              type="button"
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);

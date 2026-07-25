@@ -126,13 +126,16 @@ describe('StarterPackList', () => {
   // 公開ギャラリーはログイン無しで閲覧できる設計なので、ログアウト状態では
   // 認証必須のインポートAPIを叩く前にボタン自体を消して案内文にする
   // (PublicItemDetailの「ログインが必要です」と同じ扱い)
-  it('hides the start button and shows a login prompt when logged out', async () => {
+  //
+  // 案内文は一覧の先頭に1回だけ。以前はカードごとに出しており、スクリーンリーダーで
+  // 同じ文がパックの数だけ読み上げられていた。
+  it('hides the start button and shows a single login prompt when logged out', async () => {
     vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
     renderWithAuth(<StarterPackList onImported={vi.fn()} />, { user: null });
 
     expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
     expect(screen.queryByText('この冒険を始める')).not.toBeInTheDocument();
-    expect(screen.getAllByText(/ログインが必要/)).toHaveLength(PACKS.length);
+    expect(screen.getAllByText(/ログインが必要/)).toHaveLength(1);
   });
 
   it('keeps a card disabled while its import is pending, even after a second import starts', async () => {

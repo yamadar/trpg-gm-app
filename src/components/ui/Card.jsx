@@ -1,8 +1,12 @@
 import { COLORS } from '../../theme.js';
 
-export default function Card({ children, style, onClick }) {
+// onClick は「カードのどこを押しても反応する」ためのマウス向け補助であり、これ単体では
+// キーボードから到達できない。押せるカードを作るときは className="card-actionable" を
+// 付け、中のタイトルを .card-primary-action の <button> にすること(styles.css 参照)。
+export default function Card({ children, style, onClick, className }) {
   return (
     <div
+      className={className}
       onClick={onClick}
       style={{
         background: COLORS.card,

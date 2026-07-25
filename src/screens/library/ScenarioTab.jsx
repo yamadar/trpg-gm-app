@@ -209,15 +209,23 @@ export default function ScenarioTab({ worldId }) {
         {scenarios.map((s) => (
           <Card
             key={s.id}
-            onClick={() => {
-              setCreating(false);
-              setSelectedId(s.id);
-            }}
+            className="card-actionable"
             style={{ cursor: 'pointer', borderColor: selectedId === s.id ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{s.title}</div>
+                <button
+                  type="button"
+                  className="card-primary-action"
+                  aria-current={selectedId === s.id}
+                  onClick={() => {
+                    setCreating(false);
+                    setSelectedId(s.id);
+                  }}
+                  style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}
+                >
+                  {s.title}
+                </button>
                 <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
                   推奨ルール: {s.recommendedRuleset || '未設定'}
                 </div>
@@ -229,6 +237,7 @@ export default function ScenarioTab({ worldId }) {
               </div>
               {user && (
                 <div
+                  className="card-inline-action"
                   style={{ display: 'flex', gap: 6, alignItems: 'center' }}
                   onClick={(e) => e.stopPropagation()}
                 >

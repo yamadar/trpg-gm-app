@@ -26,6 +26,7 @@ export default class ErrorBoundary extends Component {
             予期しないエラーで画面を表示できなかった。ページを再読み込みしてください。
           </div>
           <button
+            type="button"
             onClick={() => window.location.reload()}
             style={{
               fontFamily: F_MONO,
