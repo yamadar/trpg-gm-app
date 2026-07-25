@@ -6,6 +6,6 @@
   "moods": ["ファンタジー", "シリアス"],
   "recommendedRuleset": "simple",
   "scenario": { "id": "the-horn-of-heimdall", "title": "ヘイムダルの角笛" },
-  "pc": ["skadi", "grima"],
+  "pc": ["skadi", "heidr"],
   "npc": ["the-messenger", "one-eyed-traveler"]
 }
