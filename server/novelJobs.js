@@ -115,6 +115,10 @@ export function createNovelJobRunner({
     // (利用枠の二重消費を防ぐのはルート側の責務であり、ここでは扱わない)。
     if (pending.has(key)) return;
     const startedAt = now();
+    // 新しい生成は前回の小説を置き換える。前回分の未読フラグが残ったままだと
+    // running中にunread:trueが観測され、既読化(古いnotice宛のPOST)が今回の
+    // 成功時のunread:trueを上書き消去しうる。開始時点で必ず降ろしておく。
+    await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: false });
     await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
     const p = run(userId, sessionId, session, pov, startedAt).finally(() => pending.delete(key));
     pending.set(key, p);

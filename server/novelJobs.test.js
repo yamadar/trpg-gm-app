@@ -306,12 +306,36 @@ describe('createNovelJobRunner', () => {
   it('does not mark anything unread when generation fails', async () => {
     // 失敗は status:'error' とエラー行がサーバー状態として残るため、
     // 永続通知は要らない。noticeを書くと消せない通知になってしまう。
+    // start()が開始時にnoticeをunread:falseへ倒すため、失敗後もnullには戻らない
+    // (それ自体は「未読ではない」という意味を保っており、このテストの主旨に反しない)。
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
     await runner.start('u1', 's1', SESSION, 'third');
     await runner.pending.get('u1/s1');
 
-    expect(await dataStore.get(sessionNovelNoticeKey('u1', 's1'))).toBeNull();
+    expect(await dataStore.get(sessionNovelNoticeKey('u1', 's1'))).toEqual({ unread: false });
+  });
+
+  it('clears a pre-existing unread notice when a new job starts', async () => {
+    // 既読化POSTが遅延している間に再生成が始まった場合を想定。開始時点で
+    // 古いunreadを降ろしておかないと、running中にunread:trueが観測されたり、
+    // 遅れて届いた既読化POSTが今回の成功時のunread:trueを消してしまう。
+    await dataStore.set(sessionNovelNoticeKey('u1', 's1'), { unread: true });
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      await gate;
+      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+
+    await runner.start('u1', 's1', SESSION, 'third');
+    expect(await dataStore.get(sessionNovelNoticeKey('u1', 's1'))).toEqual({ unread: false });
+
+    release();
+    await runner.pending.get('u1/s1');
   });
 
   it('marks the novel as unread even when it was truncated', async () => {

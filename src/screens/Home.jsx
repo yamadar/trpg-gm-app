@@ -59,8 +59,13 @@ export function collectJobEvents(prev, next, titleOf) {
 // 未読の完了を取り出す。announcedは同一マウント内で通知済みのID。
 // サーバーのフラグはマウントを跨いだ抑止、announcedはマウント内の抑止を担う。
 export function collectUnreadIds(jobs, announced) {
+  // unreadだけで判定すると、既読化POSTがサーバーの新規start()によるクリアより後に
+  // 届いた場合に新しいunreadを消してしまう窓(サーバー側で別途対処)や、
+  // それ以前に発行された古いレコードが running/unread:true のまま残る窓を
+  // クライアント側でも塞ぐ必要がある。doneを必須にすることで、実行中のジョブに
+  // 対して完了通知を出してしまう事態を避ける。
   return Object.entries(jobs)
-    .filter(([id, job]) => job.unread === true && !announced.has(id))
+    .filter(([id, job]) => job.status === 'done' && job.unread === true && !announced.has(id))
     .map(([id]) => id);
 }
 
@@ -520,8 +525,10 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         )}
         {/* running/doneで別要素を出し分けるとrole="status"のDOMノードが差し替わり、
             スクリーンリーダーは「変化」を検知できない(要素は生成時から存在している必要がある)。
-            1つのノードを維持しdoneだけ切り替える。handleNovelizeがclearFinishedを
-            running設定前に呼ぶため、両条件が同時に真になることはない。 */}
+            1つのノードを維持しdoneだけ切り替える。finishedIdsはポーリングで観測した
+            unread完了から立つため、再生成中(running)でも前回分の完了ブロックが
+            残っていて両条件が同時に真になりうる。done={!running}によりrunningを優先して
+            表示するので、その間は正しく「小説化中…」側が出る。 */}
         {(running || finishedIds.has(s.id)) && <NovelizeProgress done={!running} elapsedMs={elapsedMs} />}
 
         {/* 操作層 */}

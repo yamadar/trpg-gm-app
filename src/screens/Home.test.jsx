@@ -603,6 +603,21 @@ describe('Home', () => {
     expect(seenSpy).not.toHaveBeenCalled();
   });
 
+  it('does not announce a stale unread flag on a job that is still running', async () => {
+    // 既読化POSTが往路の最中に再生成が始まった場合、サーバーは古いunread:trueを
+    // running中に返すことがある(finding 1)。running中は完了扱いしてはならない。
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: true, stale: false, unread: true },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説を執筆しています')).toBeInTheDocument();
+    expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
+    expect(seenSpy).not.toHaveBeenCalled();
+  });
+
   it('announces an unread completion only once even if a later poll still reports it unread', async () => {
     // 既読化POSTがサーバーに届く前に次のポーリングが返る競合。s1がrunningなので
     // ポーリングが継続し、s2のunreadが2回観測される。
@@ -1044,5 +1059,12 @@ describe('collectUnreadIds', () => {
   it('returns every unread id at once', () => {
     const jobs = { s1: { status: 'done', unread: true }, s2: { status: 'done', unread: true } };
     expect(collectUnreadIds(jobs, new Set())).toEqual(['s1', 's2']);
+  });
+
+  it('ignores a stale unread flag on a job that is still running', () => {
+    // 既読化POSTが遅延している間に再生成が始まると、サーバーから
+    // running中にunread:trueが返ることがある(finding 1)。doneでなければ無視する。
+    const jobs = { s1: { status: 'running', unread: true } };
+    expect(collectUnreadIds(jobs, new Set())).toEqual([]);
   });
 });
