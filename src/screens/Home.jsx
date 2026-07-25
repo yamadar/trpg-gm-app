@@ -3,13 +3,21 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
-import { novelizeSession, getNovel, getIllustratedNovel, putSessionToServer } from '../api/sessionSyncClient.js';
+import {
+  novelizeSession,
+  getNovel,
+  getIllustratedNovel,
+  putSessionToServer,
+  listNovelJobs,
+} from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { advanceCampaignPc } from '../api/session.js';
 import { getCampaign, putCampaign, listCampaigns } from '../api/campaignClient.js';
 import { saveSession } from '../storage/index.js';
 import { makeId } from '../utils/makeId.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+
+const NOVEL_POLL_MS = 5000;
 
 function lastLineOf(session) {
   const lastGm = [...session.log].reverse().find((e) => e.role === 'gm');
@@ -32,7 +40,8 @@ export function sanitizeFilename(title) {
 
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
   const { user } = useAuth();
-  const [novelizing, setNovelizing] = useState({});
+  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale }
+  const [pollNonce, setPollNonce] = useState(0);
   const [novelizeError, setNovelizeError] = useState({});
   const [publishedNovelIds, setPublishedNovelIds] = useState({});
   const [publishBusy, setPublishBusy] = useState({});
@@ -85,6 +94,37 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       cancelled = true;
     };
   }, [user]);
+
+  // 小説化の進行状況はサーバーが真実源。リロードや画面遷移を跨いでも「小説化中…」が
+  // 維持されるよう、マウント時に取得し、実行中のジョブがある間だけ定期的に追う。
+  useEffect(() => {
+    if (!user) {
+      setNovelJobs({});
+      return;
+    }
+    let cancelled = false;
+    let timer = null;
+    (async function tick() {
+      try {
+        const jobs = await listNovelJobs();
+        if (cancelled) return;
+        // 置き換えではなくマージする: 小説化ボタン押下直後はポーリングを即座に
+        // 再始動するため(下のhandleNovelize参照)、サーバーがまだジョブ開始を
+        // 記録し切っていないタイミングでこのポーリングが先に返ってくることがある。
+        // そこで空扱いのセッションを丸ごと消さず、応答に含まれる分だけ上書きする。
+        setNovelJobs((prev) => ({ ...prev, ...jobs }));
+        if (Object.values(jobs).some((j) => j.status === 'running')) {
+          timer = setTimeout(tick, NOVEL_POLL_MS);
+        }
+      } catch {
+        // 取得に失敗してもホーム自体は使えるようにする(次の操作で再試行される)
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [user, pollNonce]);
 
   async function handlePublish(e, session) {
     e.stopPropagation();
@@ -143,45 +183,43 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
 
   async function handleNovelize(e, session) {
     e.stopPropagation();
-    setNovelizing((prev) => ({ ...prev, [session.id]: true }));
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    // 押した直後から「小説化中…」にする。以降はポーリング結果で上書きされる。
+    setNovelJobs((prev) => ({
+      ...prev,
+      [session.id]: { ...(prev[session.id] || {}), status: 'running', error: null },
+    }));
     try {
       await novelizeSession(session.id);
-      const { text, stale } = await getNovel(session.id);
-      downloadMarkdown(`${sanitizeFilename(session.title)}.md`, text);
-      if (stale) {
-        setNovelizeError((prev) => ({
-          ...prev,
-          [session.id]: 'ダウンロードした小説は最新のログを反映していない可能性があります。',
-        }));
-      }
     } catch (err) {
-      setNovelizeError((prev) => ({ ...prev, [session.id]: '小説化に失敗した: ' + err.message }));
-    } finally {
-      setNovelizing((prev) => {
-        const next = { ...prev };
-        delete next[session.id];
-        return next;
-      });
+      setNovelJobs((prev) => ({
+        ...prev,
+        [session.id]: { ...(prev[session.id] || {}), status: 'error', error: err.message },
+      }));
+      return;
+    }
+    setPollNonce((n) => n + 1); // ポーリングを再始動する
+  }
+
+  async function handleDownloadNovel(e, session) {
+    e.stopPropagation();
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      const { text } = await getNovel(session.id);
+      downloadMarkdown(`${sanitizeFilename(session.title)}.md`, text);
+    } catch (err) {
+      setNovelizeError((prev) => ({ ...prev, [session.id]: '小説の取得に失敗した: ' + err.message }));
     }
   }
 
-  async function handleNovelizeIllustrated(e, session) {
+  async function handleDownloadIllustrated(e, session) {
     e.stopPropagation();
-    setNovelizing((prev) => ({ ...prev, [session.id]: true }));
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
     try {
-      await novelizeSession(session.id);
       const { markdown } = await getIllustratedNovel(session.id);
       downloadMarkdown(`${sanitizeFilename(session.title)}-挿絵付き.md`, markdown);
     } catch (err) {
-      setNovelizeError((prev) => ({ ...prev, [session.id]: '挿絵付き小説化に失敗した: ' + err.message }));
-    } finally {
-      setNovelizing((prev) => {
-        const next = { ...prev };
-        delete next[session.id];
-        return next;
-      });
+      setNovelizeError((prev) => ({ ...prev, [session.id]: '挿絵付き小説の取得に失敗した: ' + err.message }));
     }
   }
 
@@ -235,6 +273,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   }
 
   function renderSessionCard(s) {
+    const job = novelJobs[s.id] || {};
+    const running = job.status === 'running';
+    const hasNovel = job.status === 'done' || !!job.hasNovel;
     const badges = [];
     if (s.endedAt) badges.push(<Badge key="ended" variant="brass">完結</Badge>);
     if (publishedNovelIds[s.id]) badges.push(<Badge key="published" variant="outline">公開中</Badge>);
@@ -276,9 +317,14 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>{badges}</div>
         )}
 
-        {novelizeError[s.id] && (
+        {(novelizeError[s.id] || (job.status === 'error' && job.error)) && (
           <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.stamp, marginTop: 8 }}>
-            {novelizeError[s.id]}
+            {novelizeError[s.id] || `小説化に失敗した: ${job.error}`}
+          </div>
+        )}
+        {hasNovel && job.stale && (
+          <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.brassDark, marginTop: 8 }}>
+            生成済みの小説は最新のログを反映していない可能性があります。
           </div>
         )}
 
@@ -293,23 +339,26 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
             borderTop: `1px solid ${COLORS.line}`,
           }}
         >
-          <Button
-            variant="ghost"
-            onClick={(e) => handleNovelize(e, s)}
-            disabled={!!novelizing[s.id] || !user}
-            style={ACTION_BTN}
-          >
-            {novelizing[s.id] ? '小説化中…' : '小説化する'}
-          </Button>
-          {hasIllustrations(s) && (
-            <Button
-              variant="ghost"
-              onClick={(e) => handleNovelizeIllustrated(e, s)}
-              disabled={!!novelizing[s.id] || !user}
-              style={ACTION_BTN}
-            >
-              挿絵付きでDL
+          {running ? (
+            <Button variant="ghost" disabled style={ACTION_BTN}>
+              小説化中…
             </Button>
+          ) : (
+            <>
+              {hasNovel && (
+                <Button variant="ghost" onClick={(e) => handleDownloadNovel(e, s)} style={ACTION_BTN}>
+                  小説をDL
+                </Button>
+              )}
+              {hasNovel && hasIllustrations(s) && (
+                <Button variant="ghost" onClick={(e) => handleDownloadIllustrated(e, s)} style={ACTION_BTN}>
+                  挿絵付きでDL
+                </Button>
+              )}
+              <Button variant="ghost" onClick={(e) => handleNovelize(e, s)} disabled={!user} style={ACTION_BTN}>
+                {job.status === 'error' ? '小説化を再試行' : hasNovel ? '小説を再生成' : '小説化する'}
+              </Button>
+            </>
           )}
           {s.worldId && (
             <Button

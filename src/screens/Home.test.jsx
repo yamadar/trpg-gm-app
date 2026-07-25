@@ -63,28 +63,11 @@ describe('Home', () => {
     expect(onOpenGallery).toHaveBeenCalledTimes(1);
   });
 
-  it('novelizes a session and triggers a file download when "小説化" is clicked, without navigating into the session', async () => {
-    const novelizeSpy = vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ ok: true });
-    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '小説本文', stale: false });
-    const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
-    const revokeObjectURLSpy = vi.fn();
-    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: revokeObjectURLSpy });
-
-    const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
-    const onContinue = vi.fn();
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
-
-    fireEvent.click(screen.getByText('小説化する'));
-
-    await waitFor(() => expect(novelizeSpy).toHaveBeenCalledWith('s1'));
-    await waitFor(() => expect(sessionSyncClient.getNovel).toHaveBeenCalledWith('s1'));
-    await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
-    // 「小説化」ボタンはカード全体のonClick(onContinue、セッションへの遷移)の内側にあるため、
-    // イベント伝播を止めていないと誤って遷移してしまう。stopPropagationの検証。
-    expect(onContinue).not.toHaveBeenCalled();
-  });
-
-  it('挿絵のあるセッションにのみ「挿絵付き」ボタンを表示する', () => {
+  it('挿絵のあるセッションにのみ「挿絵付き」ボタンを表示する(小説が既にある場合)', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false },
+      s2: { status: 'done', error: null, hasNovel: true, stale: false },
+    });
     const sessions = [
       {
         id: 's1',
@@ -96,36 +79,16 @@ describe('Home', () => {
       { id: 's2', title: '挿絵なし', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'y' }] },
     ];
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
-    expect(screen.getAllByText('挿絵付きでDL')).toHaveLength(1);
-  });
-
-  it('「挿絵付き」クリックで挿絵付きMarkdownをダウンロードする', async () => {
-    vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ ok: true });
-    const illustratedSpy = vi
-      .spyOn(sessionSyncClient, 'getIllustratedNovel')
-      .mockResolvedValue({ markdown: '![挿絵1](data:image/png;base64,AQ==)' });
-    const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
-    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: vi.fn() });
-
-    const sessions = [
-      { id: 's1', title: '挿絵あり', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'x', image: { imageId: 'img_a' } }] },
-    ];
-    const onContinue = vi.fn();
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
-
-    fireEvent.click(screen.getByText('挿絵付きでDL'));
-
-    await waitFor(() => expect(illustratedSpy).toHaveBeenCalledWith('s1'));
-    await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
-    expect(onContinue).not.toHaveBeenCalled();
+    expect(await screen.findAllByText('挿絵付きでDL')).toHaveLength(1);
   });
 
   it('shows an error message when novelization fails', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
     vi.spyOn(sessionSyncClient, 'novelizeSession').mockRejectedValue(new Error('upstream down'));
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
 
-    fireEvent.click(screen.getByText('小説化する'));
+    fireEvent.click(await screen.findByText('小説化する'));
 
     await waitFor(() => expect(screen.getByText(/小説化に失敗した/)).toBeInTheDocument());
   });
@@ -369,5 +332,97 @@ describe('Home', () => {
     renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
     const badge = await screen.findByText('公開中');
     expect(badge.tagName).toBe('SPAN');
+  });
+
+  it('shows 小説化中… and disables the button while the server reports a running job', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'running', error: null, hasNovel: false, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    const button = await screen.findByText('小説化中…');
+    expect(button).toBeDisabled();
+    expect(screen.queryByText('小説化する')).not.toBeInTheDocument();
+  });
+
+  it('offers download buttons when the server reports a finished novel', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false },
+    });
+    const sessions = [
+      { id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'g', image: { imageId: 'img_a' } }] },
+    ];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説をDL')).toBeInTheDocument();
+    expect(screen.getByText('挿絵付きでDL')).toBeInTheDocument();
+    expect(screen.getByText('小説を再生成')).toBeInTheDocument();
+  });
+
+  it('hides the illustrated download until a novel exists', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'idle', error: null, hasNovel: false, stale: false },
+    });
+    const sessions = [
+      { id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'g', image: { imageId: 'img_a' } }] },
+    ];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説化する')).toBeInTheDocument();
+    expect(screen.queryByText('挿絵付きでDL')).not.toBeInTheDocument();
+  });
+
+  it('shows the failure message and a retry button when the job errored', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'error', error: 'サーバーの再起動により中断されました。', hasNovel: false, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText(/サーバーの再起動により中断されました。/)).toBeInTheDocument();
+    expect(screen.getByText('小説化を再試行')).toBeInTheDocument();
+  });
+
+  it('warns that a finished novel may be out of date when the job reports stale', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, hasNovel: true, stale: true },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText(/最新のログを反映していない可能性があります/)).toBeInTheDocument();
+  });
+
+  it('marks the session as running immediately after 小説化する is pressed, without downloading', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
+    const novelizeSpy = vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ status: 'running' });
+    const getNovelSpy = vi.spyOn(sessionSyncClient, 'getNovel');
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    const onContinue = vi.fn();
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('小説化する'));
+
+    await waitFor(() => expect(novelizeSpy).toHaveBeenCalledWith('s1'));
+    expect(await screen.findByText('小説化中…')).toBeInTheDocument();
+    expect(getNovelSpy).not.toHaveBeenCalled();
+    expect(onContinue).not.toHaveBeenCalled(); // カードへ潜り込まない
+  });
+
+  it('downloads the novel when 小説をDL is pressed', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false },
+    });
+    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '小説本文', stale: false });
+    const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: vi.fn() });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('小説をDL'));
+
+    await waitFor(() => expect(sessionSyncClient.getNovel).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
   });
 });
