@@ -247,11 +247,15 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         carriedPc: campaign.carriedPc,
         chapters: campaign.chapters,
       });
-      if (!session.campaignId) {
-        const tagged = { ...session, campaignId };
-        await saveSession(tagged);
-        putSessionToServer(tagged).catch((err) => console.error('session server sync failed', err));
-      }
+      // 次章へ進む＝この章は終わり。キャンペーン側のchapters[].endedAtと足並みを揃える。
+      const ended = {
+        ...session,
+        campaignId,
+        endedAt: session.endedAt || Date.now(),
+        updatedAt: Date.now(),
+      };
+      await saveSession(ended);
+      putSessionToServer(ended).catch((err) => console.error('session server sync failed', err));
       onNextChapter?.({
         worldId: session.worldId,
         world: session.world,

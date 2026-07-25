@@ -542,4 +542,57 @@ describe('resource side effects', () => {
     await screen.findByText('← ホーム');
     expect(screen.queryByText('完結')).not.toBeInTheDocument();
   });
+
+  it('offers to finish the story when the GM reports the ending was reached', async () => {
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    expect(await screen.findByText(/結末に辿り着いた/)).toBeInTheDocument();
+    expect(screen.getByText('この物語を終える')).toBeInTheDocument();
+    expect(screen.getByText('まだ続ける')).toBeInTheDocument();
+  });
+
+  it('does not offer to finish when the GM has not reported an ending', async () => {
+    const session = makeSession({ log: [{ role: 'gm', text: '道は続く。' }] });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await screen.findByText('道は続く。');
+    expect(screen.queryByText('この物語を終える')).not.toBeInTheDocument();
+  });
+
+  it('stamps endedAt and shows the 完結 badge when the player finishes the story', async () => {
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('この物語を終える'));
+
+    await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+    const saved = saveSpy.mock.calls.at(-1)[0];
+    expect(typeof saved.endedAt).toBe('number');
+    expect(await screen.findByText('完結')).toBeInTheDocument();
+    expect(screen.queryByText('この物語を終える')).not.toBeInTheDocument();
+  });
+
+  it('clears the ending flag when the player chooses to keep playing', async () => {
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('まだ続ける'));
+
+    await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+    const saved = saveSpy.mock.calls.at(-1)[0];
+    expect(saved.state.ending_reached).toBe(false);
+    expect(saved.endedAt).toBeUndefined();
+    expect(screen.queryByText('この物語を終える')).not.toBeInTheDocument();
+  });
 });

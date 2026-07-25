@@ -5,6 +5,7 @@ import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as shareClient from '../api/shareClient.js';
 import * as sessionApi from '../api/session.js';
 import * as campaignClient from '../api/campaignClient.js';
+import * as storage from '../storage/index.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 beforeEach(() => {
@@ -424,5 +425,23 @@ describe('Home', () => {
 
     await waitFor(() => expect(sessionSyncClient.getNovel).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
+  });
+
+  it('marks the session as ended when the campaign advances to the next chapter', async () => {
+    vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '更新シート', xp: 7 });
+    vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(null);
+    vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({});
+    vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]);
+    vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, worldId: 'w1', state: {}, log: [] }];
+    renderWithAuth(
+      <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onNextChapter={vi.fn()} />
+    );
+
+    fireEvent.click(await screen.findByText('次の章へ'));
+
+    await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+    expect(typeof saveSpy.mock.calls.at(-1)[0].endedAt).toBe('number');
   });
 });

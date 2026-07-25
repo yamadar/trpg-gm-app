@@ -130,6 +130,7 @@ export default function Play({ session, setSession, onExit }) {
             turn_count: (Number.isFinite(session.state.turn_count) ? session.state.turn_count : 0) + 1,
             xp: newXp,
             tension_level: norm.stateUpdate.tension_level ?? session.state.tension_level ?? 'medium',
+            ending_reached: norm.stateUpdate.endingReached,
             ...(newResources ? { resources: newResources } : {}),
           },
           log: newLog,
@@ -185,6 +186,28 @@ export default function Play({ session, setSession, onExit }) {
   function submitChoice(choice) {
     if (busy || narrating) return;
     runTurn(choice, choice);
+  }
+
+  // エンディングの確定・取り消しはターン進行を伴わないので、最新セッションへ直接書く。
+  async function persistSession(updated) {
+    setSession(updated);
+    await saveSession(updated);
+    putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
+  }
+
+  function finishStory() {
+    const current = sessionRef.current;
+    persistSession({ ...current, endedAt: Date.now(), updatedAt: Date.now() });
+  }
+
+  // AIの誤検知で完結扱いにしないための逃げ道。次のターンで再度trueが返れば案内は戻る。
+  function keepPlaying() {
+    const current = sessionRef.current;
+    persistSession({
+      ...current,
+      state: { ...current.state, ending_reached: false },
+      updatedAt: Date.now(),
+    });
   }
 
   return (
@@ -343,6 +366,21 @@ export default function Play({ session, setSession, onExit }) {
               )}
             </Card>
           )
+        )}
+        {session.state?.ending_reached && !session.endedAt && (
+          <Card style={{ borderColor: COLORS.brass }}>
+            <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.ink, marginBottom: 10 }}>
+              物語は結末に辿り着いたようだ。
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <Button variant="brass" onClick={finishStory}>
+                この物語を終える
+              </Button>
+              <Button variant="ghost" onClick={keepPlaying}>
+                まだ続ける
+              </Button>
+            </div>
+          </Card>
         )}
         {busy && (
           <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
