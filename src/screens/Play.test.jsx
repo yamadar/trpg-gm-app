@@ -595,4 +595,75 @@ describe('resource side effects', () => {
     expect(saved.endedAt).toBeUndefined();
     expect(screen.queryByText('この物語を終える')).not.toBeInTheDocument();
   });
+
+  it('disables the ending-card buttons while a turn is in flight', async () => {
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。', choices: ['続ける'] }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+    await screen.findByText('この物語を終える');
+
+    // 選択肢ボタンを押してターン進行中(busy=true)にし、エンディングカードのボタンも
+    // 他の操作系と同様にガードされていることを確認する。
+    fireEvent.click(screen.getByText('続ける'));
+    expect(screen.getByText('この物語を終える')).toBeDisabled();
+    expect(screen.getByText('まだ続ける')).toBeDisabled();
+
+    // ターン完了まで待ち、後続テストへ未処理の非同期処理を持ち越さない。
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows a save warning when saveSession fails while finishing the story', async () => {
+    vi.spyOn(storage, 'saveSession').mockResolvedValue(false);
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('この物語を終える'));
+
+    await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
+  });
+
+  it('shows a save warning when saveSession fails while choosing to keep playing', async () => {
+    vi.spyOn(storage, 'saveSession').mockResolvedValue(false);
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('まだ続ける'));
+
+    await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
+  });
+
+  it('clears an existing save warning once finishing the story saves successfully', async () => {
+    // 開始ターンの応答自体がending_reached:trueを返すようにし、開始ターンの保存失敗で
+    // 警告を出しつつエンディングカードも表示された状態を作る。
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ narrative: '物語は終わった。', state_update: { ending_reached: true }, choices: [] }),
+          },
+        ],
+      }),
+    });
+    const saveSpy = vi
+      .spyOn(storage, 'saveSession')
+      .mockResolvedValueOnce(false) // 開始ターンは失敗させ、警告を出す
+      .mockResolvedValue(true); // 「この物語を終える」は成功させる
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
+    fireEvent.click(await screen.findByText('この物語を終える'));
+
+    await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/セッションの保存に失敗した/)).not.toBeInTheDocument();
+  });
 });

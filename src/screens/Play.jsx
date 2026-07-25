@@ -189,9 +189,18 @@ export default function Play({ session, setSession, onExit }) {
   }
 
   // エンディングの確定・取り消しはターン進行を伴わないので、最新セッションへ直接書く。
+  // runTurnと同じ保存失敗時の扱い(警告表示)にしないと、ターン中と同じ理由で
+  // ローカル保存が失敗した場合に確定/取り消しが無言で消えてしまう。
   async function persistSession(updated) {
     setSession(updated);
-    await saveSession(updated);
+    const saved = await saveSession(updated);
+    if (!saved) {
+      setSaveWarning(
+        'セッションの保存に失敗した。ブラウザの保存領域を確認してください(この操作は保存されていない可能性があります)。'
+      );
+    } else {
+      setSaveWarning('');
+    }
     putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
   }
 
@@ -373,10 +382,13 @@ export default function Play({ session, setSession, onExit }) {
               物語は結末に辿り着いたようだ。
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <Button variant="brass" onClick={finishStory}>
+              {/* 他の操作系(選択肢ボタン・自由入力)と同じくbusy中はガードする。
+                  そうしないとターン進行中の保存とここでの保存が非同期に競合し、
+                  順序保証が無いため直前のターンがIndexedDB/サーバー上で消え得る。 */}
+              <Button variant="brass" onClick={finishStory} disabled={busy || narrating}>
                 この物語を終える
               </Button>
-              <Button variant="ghost" onClick={keepPlaying}>
+              <Button variant="ghost" onClick={keepPlaying} disabled={busy || narrating}>
                 まだ続ける
               </Button>
             </div>
