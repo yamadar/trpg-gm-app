@@ -3,7 +3,7 @@
 // 表示とプロンプトのための値として本文の中に持たせる。
 
 // 全角コロンも許す。プレイヤーが日本語入力のまま書いた本文を弾かないため。
-const PC_NAME_LINE = /^[ \t]*PC名[ \t]*[:：][ \t]*(.+?)[ \t]*$/m;
+const PC_NAME_LINE = /^[ \t]*PC名[ \t]*[:：][ \t]*(.+?)[ \t\r]*$/m;
 
 export function extractPcName(raw) {
   const m = String(raw ?? '').match(PC_NAME_LINE);
