@@ -18,6 +18,14 @@ export function sessionNovelJobKey(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/novelJob`;
 }
 
+export function endingKey(userId, sessionId) {
+  return `users/${userId}/endings/${sessionId}`;
+}
+
+export function endingListPrefix(userId) {
+  return `users/${userId}/endings`;
+}
+
 export function sessionImageDir(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/images`;
 }
