@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 
 const USER_HASH_RE = /^#\/u\/([A-Za-z0-9._-]+)$/;
+const ENDINGS_HASH = '#/endings';
 
 export function parseHash(hash) {
-  const m = USER_HASH_RE.exec(hash || '');
-  return { userId: m ? m[1] : null };
+  const h = hash || '';
+  const m = USER_HASH_RE.exec(h);
+  return { userId: m ? m[1] : null, endings: h === ENDINGS_HASH };
 }
 
 function notify() {
@@ -13,6 +15,11 @@ function notify() {
 
 export function navigateToUser(userId) {
   window.location.hash = `#/u/${userId}`;
+  notify(); // jsdom/一部環境ではhash代入がイベントを発火しないため明示的に通知
+}
+
+export function navigateToEndings() {
+  window.location.hash = ENDINGS_HASH;
   notify(); // jsdom/一部環境ではhash代入がイベントを発火しないため明示的に通知
 }
 
