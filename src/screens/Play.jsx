@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
+import Badge from '../components/ui/Badge.jsx';
 
 export default function Play({ session, setSession, onExit }) {
   const { user, loading: authLoading } = useAuth();
@@ -197,28 +198,52 @@ export default function Play({ session, setSession, onExit }) {
         ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
       }}
     >
+      {/* ログは下へ伸び続けるので、ホームへの導線をスクロール位置に依らず出す。
+          「← ホーム」を左に置くのは、右上に固定されているAuthBarとの重なりを避けるため。 */}
       <div
         style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: mood.paper,
+          borderBottom: `1px solid ${COLORS.line}`,
+          margin: '-24px -20px 16px',
+          // 非ドック時は右上のAuthBar(アバター)と重ならないよう右に余白を空ける。
+          padding: docked ? '10px 20px' : '10px 56px 10px 20px',
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          marginBottom: 16,
+          alignItems: 'center',
+          gap: 12,
         }}
       >
-        <div>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink }}>
-            {session.title}
+        <Button variant="ghost" onClick={onExit} style={{ fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}>
+          ← ホーム
+        </Button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <div
+              style={{
+                fontFamily: F_DISPLAY,
+                fontSize: 16,
+                color: COLORS.ink,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {session.title}
+            </div>
+            {session.endedAt && <Badge variant="brass">完結</Badge>}
           </div>
-          <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
-            シーン: {session.state.current_scene}
-          </div>
-          <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
-            {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
+            <span>シーン: {session.state.current_scene}</span>
+            <span>
+              {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
+            </span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {!docked && (
-            <Button variant="ghost" onClick={() => setPanelOpen((v) => !v)} style={{ marginRight: 12 }}>
+            <Button variant="ghost" onClick={() => setPanelOpen((v) => !v)} style={{ fontSize: 12, padding: '6px 10px' }}>
               PC
             </Button>
           )}
@@ -231,7 +256,6 @@ export default function Play({ session, setSession, onExit }) {
                 fontFamily: F_MONO,
                 fontSize: 11,
                 color: COLORS.faint,
-                marginRight: 12,
               }}
             >
               <input
@@ -247,9 +271,6 @@ export default function Play({ session, setSession, onExit }) {
               挿絵を自動生成
             </label>
           )}
-          <Button variant="ghost" onClick={onExit}>
-            ホームへ
-          </Button>
         </div>
       </div>
 

@@ -516,4 +516,30 @@ describe('resource side effects', () => {
     const saved = saveSpy.mock.calls.at(-1)[0];
     expect('resources' in saved.state).toBe(false);
   });
+
+  it('keeps the header pinned to the top of the viewport', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    const home = await screen.findByText('← ホーム');
+    const header = home.closest('div[style*="sticky"]');
+    expect(header).not.toBeNull();
+    expect(header.style.top).toBe('0px');
+  });
+
+  it('returns home from the pinned header', async () => {
+    const onExit = vi.fn();
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={onExit} />);
+    fireEvent.click(await screen.findByText('← ホーム'));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a 完結 badge in the header for a finished session', async () => {
+    renderWithAuth(<Harness initialSession={makeSession({ endedAt: 123 })} onExit={vi.fn()} />);
+    expect(await screen.findByText('完結')).toBeInTheDocument();
+  });
+
+  it('does not show a 完結 badge for a session still in progress', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} onExit={vi.fn()} />);
+    await screen.findByText('← ホーム');
+    expect(screen.queryByText('完結')).not.toBeInTheDocument();
+  });
 });
