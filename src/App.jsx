@@ -7,7 +7,8 @@ import Play from './screens/Play.jsx';
 import Library from './screens/Library.jsx';
 import Gallery from './screens/Gallery.jsx';
 import UserPage from './screens/UserPage.jsx';
-import { useHashRoute } from './router/useHashRoute.js';
+import EndingGallery from './screens/EndingGallery.jsx';
+import { useHashRoute, clearHash } from './router/useHashRoute.js';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
 import AuthBar from './components/auth/AuthBar.jsx';
@@ -32,7 +33,7 @@ function AppInner() {
   const [uploadingSessions, setUploadingSessions] = useState(false);
   const [campaignContext, setCampaignContext] = useState(null);
   const takeover = useSessionTakeover();
-  const { userId: routeUserId } = useHashRoute();
+  const { userId: routeUserId, endings: routeEndings } = useHashRoute();
 
   useEffect(() => {
     (async () => {
@@ -83,6 +84,21 @@ function AppInner() {
       >
         <AuthBar />
         <UserPage userId={routeUserId} />
+      </div>
+    );
+  }
+
+  if (routeEndings) {
+    return (
+      <div
+        style={{
+          background: COLORS.paper,
+          minHeight: '100vh',
+          color: COLORS.ink,
+        }}
+      >
+        <AuthBar />
+        <EndingGallery onClose={clearHash} />
       </div>
     );
   }

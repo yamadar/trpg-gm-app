@@ -102,4 +102,14 @@ describe('App', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('renders the ending gallery for the #/endings route', async () => {
+    window.location.hash = '#/endings';
+    try {
+      render(<App />);
+      expect(await screen.findByText('エンディング図鑑')).toBeInTheDocument();
+    } finally {
+      window.location.hash = '';
+    }
+  });
 });
