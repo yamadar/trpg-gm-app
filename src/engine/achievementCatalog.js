@@ -130,14 +130,32 @@ function hourOf(ms) {
   return new Date(ms).getHours();
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// 連続日の判定。より短い接頭辞は既に判定済みなので、末尾の記録が「新たに」成立させ得るのは
+// その記録の日を含む連続日だけ。よって全記録を起点にする必要はなく、最新日を含む length 通りの
+// 窓だけ見ればよい。最新日が窓の末尾とは限らない形で書いてあるのは、この関数を並び順の仮定から
+// 独立させておくため(接頭辞は endedAt 昇順なので実際に成立し得るのは末尾の窓だけだが、
+// 窓は高々 length 個で総当たりの方が安い)。同じ日に複数の記録があっても日キーの集合は
+// 変わらないので、その場合は以前の反復で既に確定している。
 function hasDayStreak(list, length) {
-  const days = new Set(list.map((e) => localDayKey(e.endedAt)));
-  for (const e of list) {
-    const start = new Date(e.endedAt);
+  const newest = last(list).endedAt;
+  const base = new Date(newest);
+  // 日キーの集合は末尾から集める。接頭辞は endedAt 昇順なので、最新から length+1 日より前まで
+  // 遡ればそれ以上古い記録はどの窓にも入らない(+1日は夏時間で1日が24時間でない分の余裕)。
+  const cutoff = newest - (length + 1) * DAY_MS;
+  const days = new Set();
+  for (let i = list.length - 1; i >= 0; i--) {
+    const t = list[i].endedAt;
+    if (t < cutoff) break;
+    days.add(localDayKey(t));
+  }
+  // offset は最新日が窓の何日目か(0なら窓の先頭、length-1なら窓の末尾)。
+  for (let offset = 0; offset < length; offset++) {
     let run = true;
-    for (let i = 1; i < length && run; i++) {
-      const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-      run = days.has(dayKey(next));
+    for (let i = 0; i < length && run; i++) {
+      const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() - offset + i);
+      run = days.has(dayKey(d));
     }
     if (run) return true;
   }
@@ -272,7 +290,9 @@ export const CATALOG = [
     category: 'mood',
     tier: 1,
     icon,
-    isEarnedBy: (list) => hasMood(list, mood),
+    // 末尾の記録だけ見る。以前の記録が同じ雰囲気を持つならその反復で確定しているので、
+    // 接頭辞を走査し直しても結果は変わらない(hasMood は全件を見る moodVariety 用に残す)。
+    isEarnedBy: (list) => moodsOf(last(list)).includes(mood),
   })),
   {
     id: 'mood-all',
