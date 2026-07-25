@@ -12,6 +12,7 @@ import {
   getIllustratedNovel,
   putSessionToServer,
   listNovelJobs,
+  markNovelSeen,
 } from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { advanceCampaignPc } from '../api/session.js';
@@ -44,22 +45,44 @@ export function sanitizeFilename(title) {
   return trimmed.length > 0 ? cleaned : 'session';
 }
 
-// 小説化ジョブの状態遷移から通知イベントを取り出す。
-// 直前がrunningだったものだけを対象にすることで、マウント時の初回取得(前状態が空)で
-// 既に完了済みのセッションを一斉に「できました」と通知してしまうのを防ぐ。
+// 小説化の失敗を通知イベントとして取り出す。
+// 完了(done)はサーバーのunreadフラグが担当するため、ここでは扱わない。
+// 両方が反応すると同じ完了に対して通知が二重に出るため、経路を一本化している。
 export function collectJobEvents(prev, next, titleOf) {
   const events = [];
   for (const [id, job] of Object.entries(next)) {
     if (prev[id]?.status !== 'running') continue;
-    if (job.status === 'done') events.push({ id, kind: 'done', title: titleOf(id) });
-    else if (job.status === 'error') events.push({ id, kind: 'error', title: titleOf(id) });
+    if (job.status === 'error') events.push({ id, kind: 'error', title: titleOf(id) });
   }
   return events;
 }
 
+// 未読の完了を取り出す。announcedは同一マウント内で通知済みのID、knownIdsは
+// このクライアントが実際にカードとして表示できるセッションID(sessions prop由来)。
+// サーバーのフラグはマウントを跨いだ抑止、announcedはマウント内の抑止を担う。
+export function collectUnreadIds(jobs, announced, knownIds) {
+  // unreadだけで判定すると、既読化POSTがサーバーの新規start()によるクリアより後に
+  // 届いた場合に新しいunreadを消してしまう窓が生じうる。start()が新規ジョブ開始時に
+  // unread:falseへ倒すことでこの窓は狭まるが、閉じ切るわけではない
+  // (生成には数分かかるため現実的なリスクは小さい)。それ以前に発行された古いレコードが
+  // running/unread:true のまま残る窓もあるため、クライアント側でも塞ぐ必要がある。
+  // doneを必須にすることで、実行中のジョブに対して完了通知を出してしまう事態を避ける。
+  //
+  // /novel-jobsはアカウント全体のセッションを返すが、sessions(IndexedDB由来)は
+  // このクライアントが把握している範囲でしかない。別端末で未読のまま残っている
+  // セッションをここで拾うと、タイトルが解決できず空欄のトーストが出るうえ、
+  // markNovelSeenでフラグを消費してしまい、本来カードを持つ端末が二度と気づけなく
+  // なる。knownIdsに無いIDはここでは扱わず、サーバー側のフラグをそのまま残す。
+  return Object.entries(jobs)
+    .filter(
+      ([id, job]) => job.status === 'done' && job.unread === true && !announced.has(id) && knownIds.has(id)
+    )
+    .map(([id]) => id);
+}
+
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter, onStartStarter }) {
   const { user } = useAuth();
-  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated }
+  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated, unread }
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
   // setNovelJobsは非同期に反映されるため、tick()内の同期チェックにはrefを用いる。
   const hasRunningRef = useRef(false);
@@ -70,6 +93,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   // setNovelJobsのupdater引数の中で通知を積むと、Reactがupdaterを複数回実行した際に
   // トーストが重複する。副作用はupdaterの外で行い、比較元はこのrefから読む。
   const novelJobsRef = useRef({});
+  // 同一マウント内で通知済みのセッションID。既読化POSTの往復中に次のポーリングが
+  // 返っても二重に通知しないための抑止(マウントを跨いだ抑止はサーバーのフラグが担う)。
+  const announcedRef = useRef(new Set());
   const [toasts, setToasts] = useState([]); // [{ id, text, tone }]
   const [finishedIds, setFinishedIds] = useState(() => new Set()); // 完了ブロックを出すセッション
   const [pollNonce, setPollNonce] = useState(0);
@@ -83,35 +109,48 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   const [endingBusy, setEndingBusy] = useState({});
 
   // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
-  // hasRunningRefを常に最新の状態と一致させる。状態遷移(running→done/error)の
-  // 検知もここに集約する。
+  // hasRunningRefを常に最新の状態と一致させる。通知の判定もここに集約する。
   function applyNovelJobs(updater) {
     const prev = novelJobsRef.current;
     const next = typeof updater === 'function' ? updater(prev) : updater;
-    const events = collectJobEvents(prev, next, (id) => sessions.find((s) => s.id === id)?.title ?? '');
+    const titleOf = (id) => sessions.find((s) => s.id === id)?.title ?? '';
+    const errorEvents = collectJobEvents(prev, next, titleOf);
+    const knownIds = new Set(sessions.map((s) => s.id));
+    const unreadIds = collectUnreadIds(next, announcedRef.current, knownIds);
+
+    // サーバーが未読を降ろした=既読化が届いた。抑止はここで役目を終える
+    // (再生成でもう一度未読になったときに通知できるようにする)。
+    for (const [id, job] of Object.entries(next)) {
+      if (job.unread !== true) announcedRef.current.delete(id);
+    }
 
     novelJobsRef.current = next;
     hasRunningRef.current = Object.values(next).some((j) => j.status === 'running');
     setNovelJobs(next);
 
-    if (events.length === 0) return;
-    setFinishedIds((prevSet) => {
-      const doneIds = events.filter((ev) => ev.kind === 'done');
-      // エラーのみのイベント(doneが1件もない)では中身が同じでも新しいSetを
-      // 返すと無駄な再描画を招くため、追加が無ければ前回の参照をそのまま返す。
-      if (doneIds.length === 0) return prevSet;
-      const nextSet = new Set(prevSet);
-      for (const ev of doneIds) nextSet.add(ev.id);
-      return nextSet;
-    });
-    setToasts((prevToasts) => [
-      ...prevToasts,
-      ...events.map((ev) => ({
-        id: makeId(),
-        text: ev.kind === 'done' ? `「${ev.title}」の小説ができました` : `「${ev.title}」の小説化に失敗しました`,
-        tone: ev.kind === 'done' ? 'success' : 'error',
-      })),
-    ]);
+    if (unreadIds.length === 0 && errorEvents.length === 0) return;
+
+    if (unreadIds.length > 0) {
+      // POSTの応答を待たずに控える。待つと往復中のポーリングで二重に通知される。
+      for (const id of unreadIds) announcedRef.current.add(id);
+      setFinishedIds((prevSet) => {
+        const nextSet = new Set(prevSet);
+        for (const id of unreadIds) nextSet.add(id);
+        return nextSet;
+      });
+      for (const id of unreadIds) {
+        // 失敗は握りつぶす。サーバーのフラグが残るので次にHomeを開いたときに
+        // 再通知される。通知を失うより出し直すほうが害が小さい。
+        markNovelSeen(id).catch(() => {});
+      }
+    }
+
+    // makeId()はupdaterの外で呼ぶ(updaterが複数回実行されても無駄なidを作らない)。
+    const added = [
+      ...unreadIds.map((id) => ({ id: makeId(), text: `「${titleOf(id)}」の小説ができました`, tone: 'success' })),
+      ...errorEvents.map((ev) => ({ id: makeId(), text: `「${ev.title}」の小説化に失敗しました`, tone: 'error' })),
+    ];
+    setToasts((prevToasts) => [...prevToasts, ...added]);
   }
 
   // 完了ブロックを消す。目的を果たした(DL)か、やり直す(再生成)ときに呼ぶ。
@@ -220,6 +259,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       // ログアウトでボタンごと消えた操作を指す案内が残ってしまう。
       setFinishedIds(new Set());
       setToasts([]);
+      // 別のユーザーでログインし直したとき、前のユーザーの通知済み記録が残っていると
+      // 新しいユーザーの未読を握りつぶしてしまう。
+      announcedRef.current = new Set();
       return;
     }
     let cancelled = false;
@@ -495,8 +537,10 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         )}
         {/* running/doneで別要素を出し分けるとrole="status"のDOMノードが差し替わり、
             スクリーンリーダーは「変化」を検知できない(要素は生成時から存在している必要がある)。
-            1つのノードを維持しdoneだけ切り替える。handleNovelizeがclearFinishedを
-            running設定前に呼ぶため、両条件が同時に真になることはない。 */}
+            1つのノードを維持しdoneだけ切り替える。finishedIdsはポーリングで観測した
+            unread完了から立つため、再生成中(running)でも前回分の完了ブロックが
+            残っていて両条件が同時に真になりうる。done={!running}によりrunningを優先して
+            表示するので、その間は正しく「小説化中…」側が出る。 */}
         {(running || finishedIds.has(s.id)) && <NovelizeProgress done={!running} elapsedMs={elapsedMs} />}
 
         {/* 操作層 */}

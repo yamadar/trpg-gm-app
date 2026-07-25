@@ -1,5 +1,10 @@
 import crypto from 'node:crypto';
-import { sessionNovelDocPath, sessionNovelMetaKey, sessionNovelJobKey } from './storage/paths.js';
+import {
+  sessionNovelDocPath,
+  sessionNovelMetaKey,
+  sessionNovelJobKey,
+  sessionNovelNoticeKey,
+} from './storage/paths.js';
 import { buildTranscriptWithMarkers } from './novelMarkers.js';
 import { generateNovel, NOVELIZE_UPSTREAM_TIMEOUT_MS, NOVELIZE_MAX_CONTINUATIONS } from './novelGeneration.js';
 
@@ -80,6 +85,10 @@ export function createNovelJobRunner({
         imageIds,
         truncated,
       });
+      // 生成できたことをユーザーがまだ受け取っていない、という印。
+      // 「既読の記録が無い=未読」と定義すると、この機能の投入時に過去の小説が
+      // 一斉に未読になってしまう。成功時に立てて受け取り時に降ろす形にする。
+      await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: true });
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
     } catch (e) {
       try {
@@ -108,6 +117,10 @@ export function createNovelJobRunner({
     // (利用枠の二重消費を防ぐのはルート側の責務であり、ここでは扱わない)。
     if (pending.has(key)) return;
     const startedAt = now();
+    // 新しい生成は前回の小説を置き換える。前回分の未読フラグが残ったままだと
+    // running中にunread:trueが観測され、既読化(古いnotice宛のPOST)が今回の
+    // 成功時のunread:trueを上書き消去しうる。開始時点で必ず降ろしておく。
+    await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: false });
     await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
     const p = run(userId, sessionId, session, pov, startedAt).finally(() => pending.delete(key));
     pending.set(key, p);

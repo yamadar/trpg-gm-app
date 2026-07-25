@@ -10,7 +10,7 @@ import { createNovelJobRunner } from '../novelJobs.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
 import { createFsImageStore } from '../storage/imageStore.js';
-import { sessionImagePath, sessionNovelJobKey } from '../storage/paths.js';
+import { sessionImagePath, sessionNovelJobKey, sessionNovelNoticeKey } from '../storage/paths.js';
 
 let dir;
 let dataStore;
@@ -348,7 +348,15 @@ describe('sessions routes', () => {
   it('reports idle for a session that has never been novelized', async () => {
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [], state: {} });
     const res = await request(app).get('/api/novel-jobs');
-    expect(res.body.s1).toEqual({ status: 'idle', error: null, elapsedMs: null, hasNovel: false, stale: false, truncated: false });
+    expect(res.body.s1).toEqual({
+      status: 'idle',
+      error: null,
+      elapsedMs: null,
+      hasNovel: false,
+      stale: false,
+      truncated: false,
+      unread: false,
+    });
   });
 
   it('reports running while the job is in flight and done afterwards', async () => {
@@ -436,5 +444,63 @@ describe('sessions routes', () => {
     await waitForJob('s1');
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports unread in /novel-jobs right after a novel is generated', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+
+    const jobs = await request(app).get('/api/novel-jobs');
+    expect(jobs.body.s1.unread).toBe(true);
+  });
+
+  it('reports unread false for a novel that has no notice record', async () => {
+    // 回帰防止: この機能の投入以前に生成された小説(noticeレコードが無い)は
+    // 既読扱いにする。ここを落とすと既存ユーザーの全小説が一斉に通知される。
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+    await dataStore.delete(sessionNovelNoticeKey('usr_test', 's1'));
+
+    const jobs = await request(app).get('/api/novel-jobs');
+    expect(jobs.body.s1.hasNovel).toBe(true);
+    expect(jobs.body.s1.unread).toBe(false);
+  });
+
+  it('clears unread via POST novel/seen', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+
+    const seen = await request(app).post('/api/sessions/s1/novel/seen');
+    expect(seen.status).toBe(200);
+    expect(seen.body).toEqual({ ok: true });
+
+    const jobs = await request(app).get('/api/novel-jobs');
+    expect(jobs.body.s1.unread).toBe(false);
+  });
+
+  it('accepts POST novel/seen twice (idempotent)', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+
+    expect((await request(app).post('/api/sessions/s1/novel/seen')).status).toBe(200);
+    expect((await request(app).post('/api/sessions/s1/novel/seen')).status).toBe(200);
+    expect((await request(app).get('/api/novel-jobs')).body.s1.unread).toBe(false);
+  });
+
+  it('returns 404 from POST novel/seen for a missing session', async () => {
+    const res = await request(app).post('/api/sessions/missing/novel/seen');
+    expect(res.status).toBe(404);
   });
 });
