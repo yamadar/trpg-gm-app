@@ -12,6 +12,13 @@ describe('achievement catalogue', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('has unique labels', () => {
+    // ラベルが被ると画面テスト側が getByText で複数要素に当たって落ちる。原因はここにあるので
+    // 検出もここで行う。
+    const labels = CATALOG.map((a) => a.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
   it('gives every entry a label, a description and a predicate', () => {
     for (const a of CATALOG) {
       expect(a.label.length, a.id).toBeGreaterThan(0);

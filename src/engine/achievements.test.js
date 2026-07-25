@@ -427,6 +427,19 @@ describe('trace achievements', () => {
     });
   });
 
+  it('earns 三日連続 with a wide span between the first and last record of the run', () => {
+    // 初日0時〜最終日23時のように幅が広い3日間(48時間を超える)は、実際の履歴でも普通に
+    // 起きる。カットオフを甘く見積もると(例えば (length-1)*DAY_MS)、この幅の記録を
+    // 取りこぼしたまま気付けなくなるので、その回帰を防ぐ。
+    // (hour=0は night-owl の判定窓にも入るが、ここで見るのは streak-three だけでよい)
+    const wide = [
+      ending({ sessionId: 's0', endedAt: at(2026, 7, 1, 0) }),
+      ending({ sessionId: 's1', endedAt: at(2026, 7, 2, 12) }),
+      ending({ sessionId: 's2', endedAt: at(2026, 7, 3, 23) }),
+    ];
+    expect(find(evaluateAchievements(wide), 'streak-three').earned).toBe(true);
+  });
+
   it('earns 実り月 from five endings in the same month', () => {
     const four = [1, 2, 3, 4].map((d) => ending({ sessionId: `s${d}`, endedAt: at(2026, 7, d) }));
     expect(find(evaluateAchievements(four), 'month-five').earned).toBe(false);

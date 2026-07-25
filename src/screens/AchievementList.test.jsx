@@ -104,4 +104,12 @@ describe('AchievementList', () => {
     expect(await screen.findByText(/ログインが必要です/)).toBeInTheDocument();
     expect(listEndings).not.toHaveBeenCalled();
   });
+
+  it('names each chip row group so screen readers can tell them apart', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
+    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    await screen.findByText('初めての結末');
+    expect(screen.getByRole('group', { name: '取得状況で絞り込み' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'カテゴリで絞り込み' })).toBeInTheDocument();
+  });
 });
