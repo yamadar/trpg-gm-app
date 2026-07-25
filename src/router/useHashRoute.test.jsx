@@ -1,6 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { parseHash, useHashRoute, navigateToUser, clearHash, navigateToEndings } from './useHashRoute.js';
+import {
+  parseHash,
+  useHashRoute,
+  navigateToUser,
+  clearHash,
+  navigateToEndings,
+  navigateToAchievements,
+} from './useHashRoute.js';
 
 afterEach(() => {
   window.history.replaceState(null, '', window.location.pathname);
@@ -8,13 +15,13 @@ afterEach(() => {
 
 describe('parseHash', () => {
   it('parses a user hash', () => {
-    expect(parseHash('#/u/usr_ab12')).toEqual({ userId: 'usr_ab12', endings: false });
+    expect(parseHash('#/u/usr_ab12')).toEqual({ userId: 'usr_ab12', endings: false, achievements: false });
   });
   it('returns null for empty, unknown or malformed hashes', () => {
-    expect(parseHash('')).toEqual({ userId: null, endings: false });
-    expect(parseHash('#/other')).toEqual({ userId: null, endings: false });
-    expect(parseHash('#/u/')).toEqual({ userId: null, endings: false });
-    expect(parseHash('#/u/../evil')).toEqual({ userId: null, endings: false });
+    expect(parseHash('')).toEqual({ userId: null, endings: false, achievements: false });
+    expect(parseHash('#/other')).toEqual({ userId: null, endings: false, achievements: false });
+    expect(parseHash('#/u/')).toEqual({ userId: null, endings: false, achievements: false });
+    expect(parseHash('#/u/../evil')).toEqual({ userId: null, endings: false, achievements: false });
   });
 });
 
@@ -38,7 +45,7 @@ describe('useHashRoute', () => {
 
 describe('endings route', () => {
   it('parses the endings hash', () => {
-    expect(parseHash('#/endings')).toEqual({ userId: null, endings: true });
+    expect(parseHash('#/endings')).toEqual({ userId: null, endings: true, achievements: false });
   });
 
   it('does not treat other hashes as the endings route', () => {
@@ -48,12 +55,30 @@ describe('endings route', () => {
   });
 
   it('still parses the user hash', () => {
-    expect(parseHash('#/u/usr_1')).toEqual({ userId: 'usr_1', endings: false });
+    expect(parseHash('#/u/usr_1')).toEqual({ userId: 'usr_1', endings: false, achievements: false });
   });
 
   it('navigates to the endings route', () => {
     navigateToEndings();
     expect(window.location.hash).toBe('#/endings');
     expect(parseHash(window.location.hash).endings).toBe(true);
+  });
+});
+
+describe('achievements route', () => {
+  it('parses the achievements hash', () => {
+    expect(parseHash('#/achievements')).toEqual({ userId: null, endings: false, achievements: true });
+  });
+
+  it('does not treat other hashes as the achievements route', () => {
+    expect(parseHash('#/achievements/extra').achievements).toBe(false);
+    expect(parseHash('#/endings').achievements).toBe(false);
+    expect(parseHash('').achievements).toBe(false);
+  });
+
+  it('navigates to the achievements route', () => {
+    navigateToAchievements();
+    expect(window.location.hash).toBe('#/achievements');
+    expect(parseHash(window.location.hash).achievements).toBe(true);
   });
 });

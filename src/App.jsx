@@ -8,6 +8,7 @@ import Library from './screens/Library.jsx';
 import Gallery from './screens/Gallery.jsx';
 import UserPage from './screens/UserPage.jsx';
 import EndingGallery from './screens/EndingGallery.jsx';
+import AchievementList from './screens/AchievementList.jsx';
 import { useHashRoute, clearHash } from './router/useHashRoute.js';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
@@ -33,7 +34,7 @@ function AppInner() {
   const [uploadingSessions, setUploadingSessions] = useState(false);
   const [campaignContext, setCampaignContext] = useState(null);
   const takeover = useSessionTakeover();
-  const { userId: routeUserId, endings: routeEndings } = useHashRoute();
+  const { userId: routeUserId, endings: routeEndings, achievements: routeAchievements } = useHashRoute();
 
   useEffect(() => {
     (async () => {
@@ -99,6 +100,21 @@ function AppInner() {
       >
         <AuthBar />
         <EndingGallery onClose={clearHash} />
+      </div>
+    );
+  }
+
+  if (routeAchievements) {
+    return (
+      <div
+        style={{
+          background: COLORS.paper,
+          minHeight: '100vh',
+          color: COLORS.ink,
+        }}
+      >
+        <AuthBar />
+        <AchievementList onClose={clearHash} />
       </div>
     );
   }
