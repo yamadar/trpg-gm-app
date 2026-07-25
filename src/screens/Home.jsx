@@ -54,6 +54,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   const [advancing, setAdvancing] = useState({});
   const [campaignMap, setCampaignMap] = useState({}); // campaignId -> { title, chapterCount }
   const [endingMap, setEndingMap] = useState({}); // sessionId -> エンディング記録
+  const [endingsLoaded, setEndingsLoaded] = useState(false);
   const [endingBusy, setEndingBusy] = useState({});
 
   // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
@@ -116,15 +117,23 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   useEffect(() => {
     if (!user) {
       setEndingMap({});
+      setEndingsLoaded(true); // ログアウト状態でも「未取得」のまま記録ボタンを隠し続けないようにする
       return;
     }
     let cancelled = false;
+    setEndingsLoaded(false);
     (async () => {
       try {
         const list = await listEndings();
         if (!cancelled) setEndingMap(Object.fromEntries(list.map((e) => [e.sessionId, e])));
       } catch {
         // 記録の取得に失敗してもホーム自体は使えるようにする(黙って無視する)
+      } finally {
+        // 取得が終わるまでendingMapは空のままなので、ここで確定させる前に
+        // 「記録する」ボタンを出すと、既に記録済みのセッションでも一瞬押せてしまい、
+        // AI命名が再実行されて改名済みタイトルを上書きし利用枠を消費してしまう。
+        // 失敗時も含めて必ずtrueにし、ボタンが永久に隠れたままにならないようにする。
+        if (!cancelled) setEndingsLoaded(true);
       }
     })();
     return () => {
@@ -440,7 +449,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
               {advancing[s.id] ? '準備中…' : '次の章へ'}
             </Button>
           )}
-          {s.endedAt && !ending && (
+          {s.endedAt && endingsLoaded && !ending && (
             <Button
               variant="ghost"
               onClick={(e) => handleRecordEnding(e, s)}

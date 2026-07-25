@@ -598,4 +598,30 @@ describe('Home', () => {
     await screen.findByText('小説化する');
     expect(screen.queryByText('エンディングを記録する')).not.toBeInTheDocument();
   });
+
+  it('does not show 記録する for an ended session while listEndings is still pending (would burn an AI credit re-naming an already-recorded ending)', async () => {
+    // listEndingsが解決するまでendingMapは空なので、ガード無しでは既に記録済みの
+    // セッションにも「エンディングを記録する」が一瞬出てしまう。この間にクリックされると
+    // AI命名が再実行され、改名済みのタイトルを上書きし利用枠を1消費してしまう(finding 1)。
+    let resolveList;
+    vi.spyOn(endingClient, 'listEndings').mockReturnValue(
+      new Promise((res) => {
+        resolveList = res;
+      })
+    );
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 500, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    // 取得が終わるまでは「完結」バッジは出ていても記録ボタンは出さない。
+    await screen.findByText('完結');
+    expect(screen.queryByText('エンディングを記録する')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveList([]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('エンディングを記録する')).toBeInTheDocument();
+  });
 });
