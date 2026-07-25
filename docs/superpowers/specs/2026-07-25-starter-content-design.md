@@ -253,12 +253,13 @@ Home と Gallery の両方が同じカードを出すので、取得・描画・
 
 ```js
 starterContext = {
-  worldId, worldRaw,
-  scenarioId, scenarioTitle, scenarioRaw, 
-  rulesetId,
-  suggestedTitle,          // シナリオ題をセッション名の初期値に
+  world,        // 一括インポートAPIが返した World メタ { id, title, moods, updatedAt, raw }
+  scenario,     // 同 Scenario メタ { id, worldId, title, recommendedRuleset, moods, updatedAt, raw }
+  rulesetId,    // パックの recommendedRuleset
 }
 ```
+
+`world` / `scenario` はAPIの戻り値をそのまま渡す。個別のフィールドに分解しないのは、`selectedWorld.moods`(Play画面の配色に使われる)のように Setup が既に読んでいる項目を落とさないため。
 
 初期状態を World=選択済み / Scenario=選択済み / Ruleset=推奨値 にし、**`step` を 3(PC選択)から開始する**。
 
