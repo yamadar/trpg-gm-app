@@ -55,6 +55,19 @@ describe('nameEnding', () => {
     await expect(nameEnding({ session: SESSION, apiKey: 'k', fetchImpl })).rejects.toThrow('boom');
   });
 
+  it('includes the HTTP status in the upstream-failure message, even with an empty body', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 503, text: async () => '' });
+    await expect(nameEnding({ session: SESSION, apiKey: 'k', fetchImpl })).rejects.toThrow(/503/);
+  });
+
+  it('throws a distinct truncation error when the model stops on max_tokens (not "invalid JSON")', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: '{"ending_title": "途中で切れ' }], stop_reason: 'max_tokens' }),
+    });
+    await expect(nameEnding({ session: SESSION, apiKey: 'k', fetchImpl })).rejects.toThrow(/max_tokens|truncat/);
+  });
+
   it('throws when the model returns unparseable output', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

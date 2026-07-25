@@ -35,7 +35,13 @@ export function createEndingsRouter({ dataStore, apiKey, fetchImpl = fetch, usag
       return;
     }
     if (usage) {
-      const check = await usage.consume(req.userId, 'messages');
+      let check;
+      try {
+        check = await usage.consume(req.userId, 'messages');
+      } catch (e) {
+        res.status(502).json({ error: `usage check failed: ${e.message}` });
+        return;
+      }
       if (!check.ok) {
         res.status(429).json({ error: 'daily limit reached', resetAt: check.resetAt });
         return;

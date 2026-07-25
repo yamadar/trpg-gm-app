@@ -129,6 +129,15 @@ describe('endings routes', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it('returns 502 instead of a generic 500 when usage.consume rejects (matches messages.js error handling)', async () => {
+    const usage = { consume: vi.fn().mockRejectedValue(new Error('disk full')) };
+    buildApp({ usage });
+    await putSession('s1');
+    const res = await request(app).post('/api/sessions/s1/ending').send({ stats: STATS });
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'usage check failed: disk full' });
+  });
+
   it('consumes the messages usage kind', async () => {
     const consume = vi.fn().mockResolvedValue({ ok: true });
     buildApp({ usage: { consume } });

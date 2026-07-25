@@ -59,9 +59,17 @@ export async function nameEnding({ session, apiKey, fetchImpl = fetch }) {
   });
   if (!upstream.ok) {
     const t = await upstream.text().catch(() => '');
-    throw new Error(`upstream request failed: ${t.slice(0, 200)}`);
+    // ステータスを含めないと、本文が空のエラー応答(よくある)が
+    // "upstream request failed: " という空っぽで役に立たないメッセージになる。
+    throw new Error(`upstream request failed: ${upstream.status} ${t.slice(0, 200)}`);
   }
   const data = await upstream.json();
+  if (data.stop_reason === 'max_tokens') {
+    // max_tokens: 500で長い総括が途中で切れるとJSONとして壊れる。そのままだと
+    // 下のJSON.parse失敗経路に落ちて「invalid JSON」としか出ず、原因が truncation
+    // だと分からない(server/novelJobs.jsのrun()と同じ判定を踏襲する)。
+    throw new Error('ending naming was truncated (max_tokens)');
+  }
   let parsed;
   try {
     parsed = JSON.parse(extractText(data.content));
