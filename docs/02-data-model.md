@@ -189,4 +189,36 @@ sessions/{session_id}/
   - `resources`: セッションが実際に持つ`state.resources`のキーのみ(旧セッションや`resourceDefs`を持たないルールセットは空`{}`)。CoC7e風なら`{ san: { label: '正気度', value, max } }`
   - **信頼境界の注記**: `stats`はクライアントの自己申告値であり、サーバーは形(オブジェクトかどうか)のみ検証し中身を再計算しない(`server/routes/endings.js`)。エンディング記録が現状ユーザー本人にしか見えない(公開・ユーザー間比較の機能が無い)間はこれで許容できるが、将来エンディングを公開したりユーザー間で比較する機能を作る場合は、`stats`をサーバー側でログから再計算するか、自己申告であることを示す明示的なマーカーを持たせる必要がある。
 
-**実績は保存を持たない**。`src/engine/achievements.js`の`evaluateAchievements(endings)`が、エンディング記録のコレクションだけから実績を都度導出する純関数(固定8種カタログ、ユーザー定義は非対象)。未獲得のものも`earned: false`で返し(図鑑側でグレー表示)、`earnedAt`/`sessionId`は条件を最初に満たした記録のもの。実績専用の永続化が無いため、定義を後から足しても過去の記録に遡って反映される。実績一覧・条件は08-feature-ideas.md 2章、UIは05-ui-ux.mdを参照。
+**実績は保存を持たない**。`src/engine/achievements.js`の`evaluateAchievements(endings)`が、エンディング記録のコレクションだけから実績を都度導出する純関数(カタログ定義は`src/engine/achievementCatalog.js`に分離、ユーザー定義は非対象)。未獲得のものも`earned: false`で返し(実績一覧側でグレー表示)、`earnedAt`/`sessionId`は条件を最初に満たした記録のもの。実績専用の永続化が無いため、定義を後から足しても過去の記録に遡って反映される。
+
+カタログ(`CATALOG`)は**実装済み(2026-07-25拡張)**で50件、7カテゴリ(到達・世界・雰囲気・判定・運命・生還・軌跡)にわたる。各エントリの形:
+
+```js
+{
+  id: string,
+  label: string,
+  description: string,               // 条件を日本語1文で
+  category: string,                  // 'arrival' | 'world' | 'mood' | 'roll' | 'fate' | 'survival' | 'trace'
+  tier: 1 | 2 | 3,                   // 銅 / 銀 / 金
+  icon: string,                      // AchievementIconが持つグリフのキー
+  isEarnedBy: (list) => boolean,     // endedAt昇順の記録の接頭辞を受け取り、その時点で条件が成立したかを返す
+  progress?: (endings) => number,    // 任意。全記録に対する現在値
+  target?: number,                   // progressを持つときのみ必須
+}
+```
+
+`progress`/`target`は「数えれば現在地が出る」実績(記録N本到達・通算判定回数・雰囲気制覇など)にだけ付く。単体の記録で成否が決まる実績(ファンブル0回など)には無く、その場合`evaluateAchievements`が返す`progress`は`null`になる。
+
+`evaluateAchievements(endings)`の戻り値は`CATALOG`の各エントリに対して以下を返す配列:
+
+```js
+{
+  id, label, description, category, tier, icon,  // カタログの値そのまま
+  earned: boolean,
+  earnedAt: number | null,   // 条件を最初に満たした記録のendedAt。未獲得ならnull
+  sessionId: string | null,  // 同じく最初に満たした記録のsessionId
+  progress: { current: number, target: number } | null,  // カタログがprogressを持つ実績のみ非null。currentはtargetで頭打ち
+}
+```
+
+実績一覧・条件は08-feature-ideas.md 2章、UIは05-ui-ux.md 14.6節・14.7節を参照。

@@ -142,6 +142,39 @@ describe('portrait generation and reference images', () => {
     expect(consume).toHaveBeenCalledTimes(2);
   });
 
+  it('その場にいない(言及だけの)人物はポートレートもシーンプロンプトにも含めない', async () => {
+    const fetchImpl = vi.fn(async (url) =>
+      String(url).includes('anthropic')
+        ? {
+            ok: true,
+            json: async () => ({
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    present_names: ['ゲオルク'],
+                    new_appearances: [
+                      { name: 'ゲオルク', description: '白髪の老人、厚手の外套' },
+                      { name: 'ハンス', description: 'ゲオルクの息子。言及されるのみ' },
+                    ],
+                  }),
+                },
+              ],
+            }),
+          }
+        : geminiResponse()
+    );
+    buildApp({ fetchImpl });
+    const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
+    expect(res.status).toBe(200);
+    expect(res.body.newAppearances.map((a) => a.name)).toEqual(['ゲオルク']);
+    const geminiCalls = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('anthropic'));
+    expect(geminiCalls).toHaveLength(2); // ゲオルクのポートレート + シーン(ハンスの分は生成しない)
+    const scenePrompt = JSON.parse(geminiCalls.at(-1)[1].body).contents[0].parts.at(-1).text;
+    expect(scenePrompt).toContain('ゲオルク');
+    expect(scenePrompt).not.toContain('ハンス');
+  });
+
   it('既知キャラがimageIdを持つ場合、シーン生成に参照inlineDataを渡す', async () => {
     await dataStore.set(sessionKey('usr_test', 's1'), {
       id: 's1',

@@ -22,7 +22,20 @@ const ANALYSIS_FORMAT = {
   },
 };
 
-const SYSTEM = `この場面の地の文に登場する人物を特定せよ。既知キャラ一覧(名前と見た目)に載っていない人物が登場する場合のみ、世界観・文脈に沿った簡潔な見た目(髪・服装・目立つ特徴)を新規に考案せよ。既知キャラの見た目は変更しないこと。PCシートに見た目の記述があればそれを優先する。present_namesにはこの場面に登場する全人物名を、new_appearancesには新規に見た目を決めた人物のみを入れること。`;
+const SYSTEM = `この場面の地の文を読み、挿絵に描くべき人物を特定せよ。
+
+# present_names
+- その場面に実際に居合わせ、挿絵に姿が描かれる人物の名前のみを入れる。
+- 名前が出てくるだけの人物(話題に上るだけ、伝聞、回想、手紙の差出人など、その場にいない人物)は含めない。
+- 人物が誰も描かれない場面(風景・物のみ)では空配列にする。
+
+# new_appearances
+- present_names のうち、既知キャラ一覧(名前と見た目)に載っていない人物についてのみ、世界観・文脈に沿った見た目を新規に考案する。
+- description には見た目だけを簡潔に書く(年齢層・髪・目・肌・服装・体格・持ち物・目立つ特徴)。
+- 性格・役割・立場・人間関係・境遇・その場にいるかどうかなど、見た目以外の情報は一切書かない。
+  良い例: 「20代半ばの男。短い黒髪、無精髭、擦り切れた革のコート」
+  悪い例: 「ゲオルクの息子。迷信を信じない現実主義者。この場面には登場せず言及されるのみ」
+- 既知キャラの見た目は変更しない。PCシートに見た目の記述があればそれを優先する。`;
 
 export async function analyzeScene({ narrative, registry = {}, pcRaw = '', apiKey, fetchImpl = fetch }) {
   if (!apiKey) return { presentNames: [], newAppearances: [] };
@@ -52,12 +65,17 @@ export async function analyzeScene({ narrative, registry = {}, pcRaw = '', apiKe
       .map((b) => b.text)
       .join('');
     const parsed = JSON.parse(text);
-    const presentNames = Array.isArray(parsed.present_names)
+    const presentNamesRaw = Array.isArray(parsed.present_names)
       ? parsed.present_names.filter((n) => typeof n === 'string')
       : [];
+    const presentNames = [...new Set(presentNamesRaw)];
+    // その場にいない人物(言及されるだけ)の見た目は登録しない。
+    // 挿絵プロンプトにも載らないため、ポートレート生成の消費だけが無駄になる。
+    const present = new Set(presentNames);
     const newAppearances = Array.isArray(parsed.new_appearances)
       ? parsed.new_appearances
           .filter((a) => a && typeof a.name === 'string' && typeof a.description === 'string')
+          .filter((a) => present.has(a.name))
           .map((a) => ({ name: a.name, description: a.description }))
       : [];
     return { presentNames, newAppearances };
