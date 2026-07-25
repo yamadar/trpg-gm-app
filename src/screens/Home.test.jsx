@@ -606,7 +606,10 @@ describe('Home', () => {
   it('announces an unread completion only once even if a later poll still reports it unread', async () => {
     // 既読化POSTがサーバーに届く前に次のポーリングが返る競合。s1がrunningなので
     // ポーリングが継続し、s2のunreadが2回観測される。
-    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    // POSTを意図的に解決させないことで、2回目のポーリングが本当に往路の最中に
+    // 到着する状況を作る(resolvedValueだとthen内の処理が5秒tickのはるか前に
+    // 終わってしまい、この競合を再現できない)。
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockImplementation(() => new Promise(() => {}));
     vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
       s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false, unread: false },
       s2: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
@@ -632,6 +635,61 @@ describe('Home', () => {
 
       expect(screen.getAllByText('「B」の小説ができました')).toHaveLength(1);
       expect(seenSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('announces a re-generated novel again once the server confirms the earlier acknowledgement was read', async () => {
+    // announcedRef はマウント全体の抑止ではなく、サーバーが unread を降ろす
+    // (=既読化が届いた)までの一時的な抑止でしかない。再生成でunreadが
+    // 再びtrueになったら、もう一度通知されなければならない(finding 1の回帰防止)。
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    const novelizeSpy = vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ status: 'running' });
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false, unread: true },
+    });
+    // 既読化が反映され、サーバーはもうunreadを立てていない(このポーリングで抑止が解ける)。
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'running', error: null, hasNovel: true, stale: false, unread: false },
+    });
+    // 再生成が完了し、サーバーが再びunreadを立てた。
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false, unread: true },
+    });
+    const sessions = [{ id: 's1', title: '黄昏の塔の契約', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getAllByText('「黄昏の塔の契約」の小説ができました')).toHaveLength(1);
+      expect(seenSpy).toHaveBeenCalledTimes(1);
+
+      // 再生成を押す: 楽観的更新→novelizeSession→ポーリング再始動(2回目のlistNovelJobs)。
+      await act(async () => {
+        fireEvent.click(screen.getByText('小説を再生成'));
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+      expect(novelizeSpy).toHaveBeenCalledWith('s1');
+      expect(listSpy).toHaveBeenCalledTimes(2);
+
+      // 実行中なので5秒後に自動で再ポーリングされ、3回目のlistNovelJobsが完了を返す。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(listSpy).toHaveBeenCalledTimes(3);
+
+      expect(screen.getAllByText('「黄昏の塔の契約」の小説ができました')).toHaveLength(2);
+      expect(seenSpy).toHaveBeenCalledTimes(2);
     } finally {
       view?.unmount();
       vi.useRealTimers();
@@ -955,6 +1013,15 @@ describe('collectJobEvents', () => {
 
   it('ignores a job that is still running', () => {
     expect(collectJobEvents({ s1: { status: 'running' } }, { s1: { status: 'running' } }, titleOf)).toEqual([]);
+  });
+
+  it('reports an error transition for each of multiple sessions finishing in one poll', () => {
+    const prev = { s1: { status: 'running' }, s2: { status: 'running' } };
+    const next = { s1: { status: 'error', error: 'boom' }, s2: { status: 'error', error: 'bang' } };
+    expect(collectJobEvents(prev, next, titleOf)).toEqual([
+      { id: 's1', kind: 'error', title: 'A' },
+      { id: 's2', kind: 'error', title: 'B' },
+    ]);
   });
 });
 

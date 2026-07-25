@@ -66,7 +66,7 @@ export function collectUnreadIds(jobs, announced) {
 
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
   const { user } = useAuth();
-  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated }
+  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated, unread }
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
   // setNovelJobsは非同期に反映されるため、tick()内の同期チェックにはrefを用いる。
   const hasRunningRef = useRef(false);
@@ -100,6 +100,12 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     const titleOf = (id) => sessions.find((s) => s.id === id)?.title ?? '';
     const errorEvents = collectJobEvents(prev, next, titleOf);
     const unreadIds = collectUnreadIds(next, announcedRef.current);
+
+    // サーバーが未読を降ろした=既読化が届いた。抑止はここで役目を終える
+    // (再生成でもう一度未読になったときに通知できるようにする)。
+    for (const [id, job] of Object.entries(next)) {
+      if (job.unread !== true) announcedRef.current.delete(id);
+    }
 
     novelJobsRef.current = next;
     hasRunningRef.current = Object.values(next).some((j) => j.status === 'running');
