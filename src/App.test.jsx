@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import App from './App.jsx';
 import * as shareClient from './api/shareClient.js';
+import * as starterClient from './api/starterClient.js';
 
 afterEach(() => {
   window.location.hash = '';
@@ -111,5 +112,27 @@ describe('App', () => {
     } finally {
       window.location.hash = '';
     }
+  });
+
+  it('clears the starter context when the plain new-session button is used', async () => {
+    // 「+ 新規プレイ」から入った Setup が、直前のスターター選択を引きずらないこと
+    // (引きずると World/Scenario が勝手に選択済みになる)。
+    // 「+ 新規プレイ」はログイン必須で無効化されるため、/api/me はログイン済みユーザーを返す。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: [], seededAt: null });
+    render(<App />);
+    const newButton = await screen.findByText('+ 新規プレイ');
+    await waitFor(() => expect(newButton).not.toBeDisabled()); // ログイン確認が終わるまで待つ
+    fireEvent.click(newButton);
+    expect(await screen.findByText('1. 世界観')).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });

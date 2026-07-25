@@ -32,6 +32,7 @@ function AppInner() {
   const [authError, setAuthError] = useState(false);
   const [uploadingSessions, setUploadingSessions] = useState(false);
   const [campaignContext, setCampaignContext] = useState(null);
+  const [starterContext, setStarterContext] = useState(null);
   const takeover = useSessionTakeover();
   const { userId: routeUserId, endings: routeEndings } = useHashRoute();
 
@@ -147,12 +148,21 @@ function AppInner() {
           <Home
             sessions={sessions}
             storageOk={storageOk}
-            onNew={() => setView('setup')}
+            // 「+ 新規プレイ」から入ったSetupが直前のスターター選択を引きずると、
+            // World/Scenarioが勝手に選択済みになる
+            onNew={() => {
+              setStarterContext(null);
+              setView('setup');
+            }}
             onContinue={handleContinue}
             onOpenLibrary={() => setView('library')}
             onOpenGallery={() => setView('gallery')}
             onNextChapter={(ctx) => {
               setCampaignContext(ctx);
+              setView('setup');
+            }}
+            onStartStarter={(ctx) => {
+              setStarterContext(ctx);
               setView('setup');
             }}
           />
@@ -161,13 +171,16 @@ function AppInner() {
         <Setup
           onStart={(s) => {
             setCampaignContext(null);
+            setStarterContext(null);
             handleStart(s);
           }}
           onCancel={() => {
             setCampaignContext(null);
+            setStarterContext(null);
             setView('home');
           }}
           campaignContext={campaignContext}
+          starterContext={starterContext}
         />
       )}
       {view === 'library' && <Library onClose={() => setView('home')} />}
