@@ -61,6 +61,7 @@ Markdown推奨(逐語厳守したい記述と、GM裁量に委ねる記述を明
 - `xp`は`ruleset.growthUnit`(例:「経験値」「CP」)の単位で、GMが`state_update.xp_gained`として提示した値を毎ターン加算していく(`src/api/prompts.js`のturn出力形式、`Play.jsx`の加算処理)。
 - `resources`は**実装済み(2026-07-25)**。解決したRulesetアダプタ(`src/engine/rulesetAdapters.js`)の`resourceDefs`から`{ [key]: { value, max } }`形状でセッション作成時に初期化される(coc7eなら`{ san: { value: 60, max: 99 } }`)。`resourceDefs`が空(simple/dnd5e/gurps)なら`resources`キー自体を持たない。既存セッション(`resources`未定義)はプロンプト・UIともに無害に無視される(3.5.1節・07-risks-and-roadmap.md 10.1節参照)。
 - `current_region`・`revealed_facts`はコードに存在しない。将来案として残すのみで、現状のstateキーではない。`tension_level`は実装済み(05-ui-ux.md 13.2節参照)。
+- `state.ending_reached?: boolean`は**実装済み(2026-07-25)**。GMが毎ターン`state_update.ending_reached`で物語が結末に到達したかを申告する一時的なフラグ(`src/api/prompts.js`のスキーマ、`src/api/turnResult.js`の正規化。既定false。03-gm-logic.md参照)。trueかつ`session.endedAt`未設定のときPlay画面が確定案内カードを出し(05-ui-ux.md参照)、「まだ続ける」を押すとfalseに戻す(次ターンでAIが再度trueを返せば案内は再度出る)。旧セッションはこのキーを持たないため無害にfalse扱いになる。
 
 ### 3.4 自由記述→構造化変換パイプライン
 実装済み(`src/api/characterSheetCache.js`・`src/api/characterSheetParse.js`)。現状はPCのgoal/bondsのみを対象とする。NPCの構造化パース、statsの抽出は未実装。
@@ -100,6 +101,8 @@ Session(プレイ単位) = World + Scenario + Ruleset(埋め込みスナップ�
 
 **SP2(管理タブ+Homeグルーピング)実装済み(2026-07-25)**。素材ライブラリにCampaignタブ(`src/screens/library/CampaignTab.jsx`)が加わり、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC(`carriedPc`)閲覧・改名・削除ができる(`DELETE`は`campaignMetaKey`のみ削除する冪等操作で、メンバーセッションの`campaignId`は不変。dangling`campaignId`はHomeで非グループ表示にフォールバックする)。新規作成UIはタブに無く、Campaignはホームの「次の章へ」からのみ生成される。ホーム画面は`campaignId`付きセッションを、登場`worldId`ごとに`listCampaigns`でタイトル解決してキャンペーン見出し(全N章)配下にグループ表示する。**章からのセッション再開・クロスWorld・構造化インベントリ・NPC記憶連携・次章シナリオ自動提案はSP3以降として未実装**。
 
+**セッション終了(`endedAt`)は実装済み(2026-07-25)**。セッションは任意`endedAt?: number`を持つ。Play画面で「この物語を終える」を押したとき、またはキャンペーンで「次の章へ」を実行したとき(その章を終わったとみなし、`chapters[].endedAt`と同じタイミングで設定する)に現在時刻が入る。未設定なら未完結。`endedAt`があってもセッションは継続可能(入力欄は塞がれない。エピローグの書き足しや誤操作の救済のため)で、取り消しUIは無い。Home一覧・Play画面ではこのフィールドの有無で「完結」バッジを表示する(05-ui-ux.md参照)。
+
 **SAN(正気度)の章またぎの扱いは意図的な仕様**: `carriedPc`が持ち越すのはPCシート本文(`raw`)とxpのみで、`state.resources`(SAN等)は含まれない。そのため次章のSetupではRulesetアダプタの`resourceDefs`から通常のセッション開始と同じ初期値(coc7eなら60/99)でSANが再初期化される。前章終盤で正気度が減っていても引き継がれない設計であり、不具合ではない(POWからのSAN算出・SAN回復ルールと同様、YAGNIとして対象外。07-risks-and-roadmap.md 10.1節参照)。
 
 **フォルダ構造(`server/storage/paths.js`が正)**
@@ -125,6 +128,9 @@ sessions/{session_id}.json          セッション本体(world/scenario/ruleset
 sessions/{session_id}/
   novel.md                         小説化(novelize)した本文
   novel.json                       小説の鮮度メタ({turnCount, updatedAt})
+  novelJob.json                    小説化ジョブの状態(実装済み2026-07-25。
+                                    { status: 'running'|'done'|'error',
+                                      startedAt, updatedAt, error, bootId })
 ```
 
 **紐付けルール**

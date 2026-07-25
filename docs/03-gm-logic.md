@@ -20,12 +20,13 @@
        "current_scene": "更新後のシーン名",
        "flags": {"追加/更新分のみ": true},
        "history_summary": "更新後の物語要約(300字程度)",
-       "xp_gained": 0
+       "xp_gained": 0,
+       "ending_reached": false
      },
      "choices": ["選択肢1", "選択肢2", "選択肢3"]
    }
    ```
-   `xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
+   `xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のboolean で、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
 5. Game Engineがstate_updateを検証・確定・保存(IndexedDB。加えてサーバーへも自動同期。04章参照)
 6. UIにnarrative・choices反映
 
