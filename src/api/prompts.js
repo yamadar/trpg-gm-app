@@ -110,6 +110,11 @@ export function buildSystemBlocks(session) {
   const rs = resolveRuleset(session);
   const adapter = resolveAdapter(session);
   const growthUnit = session.ruleset?.growthUnit || '経験値';
+  // adapter.resourceDefsはformulaの解決だけで決まるが、実際にSAN等が機能するかは
+  // セッションがstate.resourcesを持っているかに依存する(後方互換の既存セッションは持たない)。
+  // プロンプトで約束する内容と実際に起きうる内容を一致させるため、実在するリソースだけに絞る。
+  const sessionResources = session.state?.resources || {};
+  const activeResourceDefs = adapter.resourceDefs.filter((d) => d.key in sessionResources);
   const pcGoalBondsSection =
     session.pc.goal || session.pc.bonds
       ? `\n# PCの目標・因縁(抽出済み)\ngoal: ${session.pc.goal || '(未設定)'}\nbonds: ${session.pc.bonds || '(未設定)'}\n`
@@ -130,8 +135,8 @@ ${pcGoalBondsSection}
 # ルール性向: ${rs.label}
 ${rs.hint || '特別な演出指定なし。'}
 ${
-  adapter.resourceDefs.length
-    ? `\n# リソース\n${adapter.resourceDefs
+  activeResourceDefs.length
+    ? `\n# リソース\n${activeResourceDefs
         .map((d) => `- ${d.label}: 最大${d.max}。現在値は毎ターンの「現在の状況」に示される。`)
         .join('\n')}\n`
     : ''
@@ -140,7 +145,7 @@ ${
 - 行動の結果が不確実な場面では、先にroll_checkツールを呼び出し、結果を受け取ってからJSONを出力すること。判定が不要ならそのままJSONを出力する。
 - 判定は1ターンに最大1回。複数の行動が含まれる場合は、最も重要な1つだけを判定する。
 - success_percentは目安(ほぼ確実=85 / 有利=70 / 五分=50 / 困難=30 / 無謀=10)を基準に、PCの能力・道具・状況で調整して自分で設定する。結果そのものは自分で決めない(ロール結果は別途渡される)。
-- ${adapter.promptText}${adapter.sideEffectPrompt ? `\n- ${adapter.sideEffectPrompt}` : ''}
+- ${adapter.promptText}${activeResourceDefs.length && adapter.sideEffectPrompt ? `\n- ${adapter.sideEffectPrompt}` : ''}
 
 # GMの心得
 - PCの行動・発言・感情を勝手に決めないこと。narrativeはプレイヤーの行動の結果を描写し、次の判断材料となる状況の提示で終えること。

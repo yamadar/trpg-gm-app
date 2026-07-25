@@ -501,7 +501,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null }) {
         )}
 
         {step === 2 && (
-          <Field label="ルール性向" hint="判定は成功率%に統一して実行する(どのルールでも公平に判定できる)。ここでの選択は主に演出の色付けに使う。">
+          <Field label="ルール性向" hint="判定の出方(成功度の段階・大失敗の出やすさ)がルールごとに変わる。CoC7e風はハード/イクストリーム成功が加わり、正気度(SAN)も追加される。開始後は変更できない。">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {allRulesets.map((r) => (
                 <Card

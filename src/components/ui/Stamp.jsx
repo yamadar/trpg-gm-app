@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { COLORS, F_MONO, motionAllowed } from '../../theme.js';
 
-// degree別の演出色。文字と枠を揃え、criticalのみ真鍮系で強調する。
+// degree別の演出色。文字と枠を揃え、critical/extremeは真鍮系で強調する。
 const DEGREE_COLORS = {
   critical: { fg: COLORS.brassDark, border: COLORS.brass },
   extreme: { fg: COLORS.brassDark, border: COLORS.brass },
@@ -100,26 +100,28 @@ export default function Stamp({ roll, animate = false }) {
       </span>
       <span style={{ opacity: 0.6 }}>|</span>
       {stamped ? (
-        <span
-          style={{
-            display: 'inline-block',
-            animation: animating
-              ? `trpg-stamp-in 0.25s ease-out${roll.degree === 'fumble' ? ', trpg-stamp-shake 0.3s ease-in-out 0.25s' : ''}`
-              : undefined,
-          }}
-        >
-          {label}
-        </span>
+        <>
+          <span
+            style={{
+              display: 'inline-block',
+              animation: animating
+                ? `trpg-stamp-in 0.25s ease-out${roll.degree === 'fumble' ? ', trpg-stamp-shake 0.3s ease-in-out 0.25s' : ''}`
+                : undefined,
+            }}
+          >
+            {label}
+          </span>
+          {roll.resourceChange && roll.resourceChange.delta !== 0 && (
+            <>
+              <span style={{ opacity: 0.6 }}>|</span>
+              <span style={{ color: COLORS.stampDark }}>
+                {roll.resourceChange.label} {roll.resourceChange.delta}
+              </span>
+            </>
+          )}
+        </>
       ) : (
         <span style={{ opacity: 0.5 }}>…</span>
-      )}
-      {roll.resourceChange && roll.resourceChange.delta !== 0 && (
-        <>
-          <span style={{ opacity: 0.6 }}>|</span>
-          <span style={{ color: COLORS.stampDark }}>
-            {roll.resourceChange.label} {roll.resourceChange.delta}
-          </span>
-        </>
       )}
     </div>
   );

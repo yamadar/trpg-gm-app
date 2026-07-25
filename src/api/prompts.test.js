@@ -165,15 +165,37 @@ describe('buildSystemBlocks adapter injection', () => {
     expect(text).not.toContain('# リソース');
   });
 
-  it('injects coc7e degree text, sideEffectPrompt, and a resource section', () => {
+  it('injects coc7e degree text, sideEffectPrompt, and a resource section when the session actually has state.resources.san', () => {
     const text = buildSystemBlocks({
       world: { summary: 'w' }, scenario: { raw: 's' }, pc: { raw: 'p' },
       ruleset: { id: 'coc7e', label: 'CoC7e風', formula: 'coc7e' },
+      state: { resources: { san: { value: 60, max: 99 } } },
     })[0].text;
     expect(text).toContain('ハード成功');
     expect(text).toContain('check_kind');
     expect(text).toContain('# リソース');
     expect(text).toContain('正気度');
+  });
+
+  it('omits the resource section and sideEffectPrompt for a coc7e-adapter session without state.resources (legacy session)', () => {
+    const text = buildSystemBlocks({
+      world: { summary: 'w' }, scenario: { raw: 's' }, pc: { raw: 'p' },
+      ruleset: { id: 'coc7e', label: 'CoC7e風', formula: 'coc7e' },
+    })[0].text;
+    // degree語彙自体は判定式の一部なので出てよいが、実在しないSANの副作用指示は出してはいけない。
+    expect(text).toContain('ハード成功');
+    expect(text).not.toContain('# リソース');
+    expect(text).not.toContain('check_kind');
+  });
+
+  it('omits the resource section for a coc7e-adapter session with an empty state.resources', () => {
+    const text = buildSystemBlocks({
+      world: { summary: 'w' }, scenario: { raw: 's' }, pc: { raw: 'p' },
+      ruleset: { id: 'coc7e', label: 'CoC7e風', formula: 'coc7e' },
+      state: { resources: {} },
+    })[0].text;
+    expect(text).not.toContain('# リソース');
+    expect(text).not.toContain('check_kind');
   });
 });
 

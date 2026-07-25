@@ -78,6 +78,29 @@ describe('Stamp', () => {
     expect(screen.getByText('正気度 -4')).toBeInTheDocument();
   });
 
+  it('does not reveal the resource note before the stamp lands (avoids spoiling fail vs fumble during rolling/settled)', () => {
+    vi.useFakeTimers();
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }); // motion許可
+    render(
+      <Stamp
+        animate
+        roll={{
+          check_label: '正気度チェック', roll: 80, success_percent: 50, success: false, degree: 'fail',
+          resourceChange: { key: 'san', label: '正気度', delta: -4, before: 60, after: 56 },
+        }}
+      />
+    );
+    // 回転中: ラベルも注記もまだ出ない
+    expect(screen.queryByText('失敗')).not.toBeInTheDocument();
+    expect(screen.queryByText('正気度 -4')).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(800)); // 出目停止
+    expect(screen.queryByText('失敗')).not.toBeInTheDocument();
+    expect(screen.queryByText('正気度 -4')).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(250)); // 押印
+    expect(screen.getByText('失敗')).toBeInTheDocument();
+    expect(screen.getByText('正気度 -4')).toBeInTheDocument();
+  });
+
   it('hides the resource note when delta is 0', () => {
     render(
       <Stamp

@@ -11,7 +11,7 @@ export const RULESETS = [
     id: 'coc7e',
     label: 'CoC7e風',
     desc: 'クトゥルフ神話TRPG風。恐怖・異常事態でSAN値チェックを演出。',
-    hint: '恐怖・異常事態の場面では適宜roll_checkでSAN値チェックを表現し、成功してもSAN減少の描写を加えること。',
+    hint: '恐怖・異常事態の場面では適宜roll_checkでSAN値チェックを表現し、正気度の変化は判定結果に応じて描写すること。',
     growthUnit: '経験値',
     formula: 'coc7e',
   },
