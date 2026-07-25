@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import EndingGallery from './EndingGallery.jsx';
 import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+import { CATALOG } from '../engine/achievementCatalog.js';
 
 const SIMPLE_STATS = {
   total: 4,
@@ -28,7 +29,8 @@ function ending(overrides = {}) {
     sessionTitle: '星降りの夜に',
     endingTitle: '灰は星を数えない',
     summary: '彼女は坑道を出た。',
-    endedAt: 1000,
+    // night-owl(0-4時)・dawn(5-7時)のどちらにもかからない時刻にする(タイムゾーンに依存させないため)。
+    endedAt: new Date(2026, 0, 1, 12).getTime(),
     worldId: null,
     moods: ['ホラー'],
     stats: SIMPLE_STATS,
@@ -67,12 +69,40 @@ describe('EndingGallery', () => {
     expect(screen.getByText(/正気度 12\/99/)).toBeInTheDocument();
   });
 
-  it('shows earned and unearned achievements', async () => {
+  it('summarises the achievements instead of listing the whole catalogue', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
     renderWithAuth(<EndingGallery onClose={vi.fn()} />);
-    expect(await screen.findByText('初めての結末')).toBeInTheDocument();
-    expect(screen.getByText('三つの結末')).toBeInTheDocument();
-    expect(screen.getByText('初めてエンディングに到達した')).toBeInTheDocument();
+    // このフィクスチャ(雰囲気ホラー・判定4回)1件では first-ending / mood-horror / short-story の3件が立つ。
+    expect(await screen.findByText(`3 / ${CATALOG.length}`)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: '実績の取得状況' })).toBeInTheDocument();
+    // 直近の獲得だけを出すので、未取得の実績は図鑑には並ばない
+    expect(screen.getByText('初めての結末')).toBeInTheDocument();
+    expect(screen.queryByText('五十の結末')).toBeNull();
+  });
+
+  it('shows at most three recently earned achievements, newest first', async () => {
+    const many = [1, 2, 3].map((i) =>
+      ending({ sessionId: `s${i}`, endedAt: new Date(2026, 6, i, 9).getTime(), worldId: 'w1' })
+    );
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue(many);
+    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    const tiles = await screen.findAllByTestId('achievement-tile');
+    expect(tiles.length).toBe(3);
+    const dates = tiles.map((t) => t.textContent.match(/\d{4}-\d{2}-\d{2}/)[0]);
+    expect([...dates]).toEqual([...dates].sort().reverse());
+  });
+
+  it('says so when nothing has been earned yet', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
+    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    expect(await screen.findByText(/まだ実績がありません/)).toBeInTheDocument();
+  });
+
+  it('links to the full achievement list', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
+    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: /すべて見る/ }));
+    expect(window.location.hash).toBe('#/achievements');
   });
 
   it('renames an ending', async () => {
@@ -148,4 +178,9 @@ describe('EndingGallery', () => {
     fireEvent.click(await screen.findByText('ホームへ'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+});
+
+afterEach(() => {
+  // ハッシュを残すと他のテストへ漏れる
+  window.history.replaceState(null, '', window.location.pathname);
 });

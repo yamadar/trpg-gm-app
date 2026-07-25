@@ -7,6 +7,9 @@ import RollStatsLine from '../components/ui/RollStatsLine.jsx';
 import ConfirmModal from '../components/library/ConfirmModal.jsx';
 import { listEndings, renameEnding, deleteEnding } from '../api/endingClient.js';
 import { evaluateAchievements } from '../engine/achievements.js';
+import AchievementTile from '../components/achievements/AchievementTile.jsx';
+import AchievementProgressBar from '../components/achievements/AchievementProgressBar.jsx';
+import { navigateToAchievements } from '../router/useHashRoute.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { formatDate } from '../utils/formatDate.js';
 
@@ -40,6 +43,13 @@ export default function EndingGallery({ onClose }) {
 
   // 改名入力欄のキー入力のたびに再計算されないよう、endingsが変わった時だけ導出する。
   const achievements = useMemo(() => evaluateAchievements(endings), [endings]);
+  // 図鑑では取得済みの直近3件だけを見せ、全件は #/achievements に任せる。
+  // 件数が増えても図鑑本体(エンディング一覧)が押し下げられないようにするため。
+  const earned = useMemo(() => achievements.filter((a) => a.earned), [achievements]);
+  const recent = useMemo(
+    () => [...earned].sort((a, b) => (b.earnedAt || 0) - (a.earnedAt || 0)).slice(0, 3),
+    [earned]
+  );
 
   async function saveTitle(sessionId) {
     setBusyId(sessionId);
@@ -92,17 +102,41 @@ export default function EndingGallery({ onClose }) {
         <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.stamp, marginBottom: 16 }}>{error}</div>
       )}
 
-      <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.brassDark, marginBottom: 10 }}>実績</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 32 }}>
-        {achievements.map((a) => (
-          <div key={a.id} style={{ opacity: a.earned ? 1 : 0.45 }}>
-            <Badge variant={a.earned ? 'brass' : 'faint'}>{a.label}</Badge>
-            <div style={{ fontFamily: F_BODY, fontSize: 11, color: COLORS.inkSoft, marginTop: 4, maxWidth: 200 }}>
-              {a.description}
+      {user && (
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.brassDark }}>
+              {/* 件数だけを1つのテキストノードにする(AchievementListと同じ形)。ラベルと同じdivだと
+                  「実績 」の接頭辞が混ざり、"3 / 50"のようなテキストマッチが効かなくなるため。 */}
+              実績 <span>{earned.length} / {achievements.length}</span>
             </div>
+            <Button variant="ghost" onClick={navigateToAchievements} style={{ fontSize: 12, padding: '6px 10px' }}>
+              すべて見る →
+            </Button>
           </div>
-        ))}
-      </div>
+          <AchievementProgressBar
+            current={earned.length}
+            target={achievements.length}
+            label="実績の取得状況"
+          />
+          {recent.length === 0 ? (
+            <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, marginTop: 10 }}>
+              まだ実績がありません。物語を結末まで進めると集まります。
+            </div>
+          ) : (
+            <>
+              <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, margin: '14px 0 8px' }}>
+                直近の獲得
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                {recent.map((a) => (
+                  <AchievementTile key={a.id} achievement={a} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.brassDark, marginBottom: 10 }}>
         到達したエンディング
