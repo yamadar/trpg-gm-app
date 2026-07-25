@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateAchievements } from './achievements.js';
 import { CATALOG } from './achievementCatalog.js';
+import { MOODS } from '../constants/moods.js';
 
 function ending(overrides = {}) {
   return {
@@ -199,5 +200,38 @@ describe('world achievements', () => {
 
     const two = [...one, ending({ sessionId: 'b', endedAt: 2, campaignId: 'c1' })];
     expect(find(evaluateAchievements(two), 'campaign-two')).toMatchObject({ earned: true, sessionId: 'b' });
+  });
+});
+
+describe('mood achievements', () => {
+  it('earns the per-mood achievement from any ending carrying that mood', () => {
+    const list = [ending({ sessionId: 'a', endedAt: 1, moods: ['ホラー', 'ミステリー'] })];
+    expect(find(evaluateAchievements(list), 'mood-horror')).toMatchObject({ earned: true, sessionId: 'a' });
+    expect(find(evaluateAchievements(list), 'mood-mystery').earned).toBe(true);
+    expect(find(evaluateAchievements(list), 'mood-comedy').earned).toBe(false);
+  });
+
+  it('earns 八色の物語 only when all eight moods have been reached', () => {
+    const seven = MOODS.slice(0, 7).map((m, i) => ending({ sessionId: `s${i}`, endedAt: i + 1, moods: [m] }));
+    expect(find(evaluateAchievements(seven), 'mood-all')).toMatchObject({
+      earned: false,
+      progress: { current: 7, target: 8 },
+    });
+
+    const eight = [...seven, ending({ sessionId: 'last', endedAt: 8, moods: [MOODS[7]] })];
+    expect(find(evaluateAchievements(eight), 'mood-all')).toMatchObject({ earned: true, sessionId: 'last' });
+  });
+
+  it('earns 混ざりあう色 from a single ending with three moods', () => {
+    const two = [ending({ sessionId: 'a', endedAt: 1, moods: ['ホラー', 'SF'] })];
+    expect(find(evaluateAchievements(two), 'mood-blend').earned).toBe(false);
+
+    const three = [ending({ sessionId: 'a', endedAt: 1, moods: ['ホラー', 'SF', '日常'] })];
+    expect(find(evaluateAchievements(three), 'mood-blend').earned).toBe(true);
+  });
+
+  it('tolerates endings without moods', () => {
+    const list = [ending({ sessionId: 'a', endedAt: 1 })];
+    expect(find(evaluateAchievements(list), 'mood-horror').earned).toBe(false);
   });
 });

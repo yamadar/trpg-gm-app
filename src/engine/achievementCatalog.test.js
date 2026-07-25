@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CATALOG, CATEGORIES } from './achievementCatalog.js';
+import { CATALOG, CATEGORIES, MOOD_ENTRIES } from './achievementCatalog.js';
+import { MOODS } from '../constants/moods.js';
 
 const CATEGORY_KEYS = CATEGORIES.map((c) => c.key);
 
@@ -34,5 +35,11 @@ describe('achievement catalogue', () => {
     const seen = CATALOG.map((a) => a.category).filter((c, i, arr) => c !== arr[i - 1]);
     const expected = CATEGORY_KEYS.filter((k) => CATALOG.some((a) => a.category === k));
     expect(seen).toEqual(expected);
+  });
+});
+
+describe('mood achievements', () => {
+  it('covers every mood in MOODS exactly once', () => {
+    expect(MOOD_ENTRIES.map((m) => m.mood).sort()).toEqual([...MOODS].sort());
   });
 });

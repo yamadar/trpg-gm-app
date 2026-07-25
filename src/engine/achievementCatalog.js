@@ -6,6 +6,8 @@
 // 成立していれば、より早い反復で確定しているため)。渡される配列は評価側が使い回すので
 // 保持してはいけない。
 
+import { MOODS } from '../constants/moods.js';
+
 export const CATEGORIES = [
   { key: 'arrival', label: '到達' },
   { key: 'world', label: '世界' },
@@ -62,6 +64,28 @@ const countOf = (list) => list.length;
 const worldGroup = (list) => maxByKey(list, (e) => e.worldId);
 const worldVariety = (list) => distinctCount(list, (e) => e.worldId);
 const campaignGroup = (list) => maxByKey(list, (e) => e.campaignId);
+
+function moodsOf(ending) {
+  return Array.isArray(ending.moods) ? ending.moods : [];
+}
+
+function hasMood(list, mood) {
+  return list.some((e) => moodsOf(e).includes(mood));
+}
+
+const moodVariety = (list) => MOODS.filter((m) => hasMood(list, m)).length;
+
+// 雰囲気タグごとの実績。MOODS と1対1で対応させ、カタログのテストで取りこぼしを検出する。
+export const MOOD_ENTRIES = [
+  { mood: 'ホラー', id: 'mood-horror', icon: 'skull' },
+  { mood: '冒険', id: 'mood-adventure', icon: 'map' },
+  { mood: 'ミステリー', id: 'mood-mystery', icon: 'quill' },
+  { mood: '日常', id: 'mood-daily', icon: 'heart' },
+  { mood: 'SF', id: 'mood-sf', icon: 'sparkle' },
+  { mood: 'ファンタジー', id: 'mood-fantasy', icon: 'star' },
+  { mood: 'コメディ', id: 'mood-comedy', icon: 'mask' },
+  { mood: 'シリアス', id: 'mood-serious', icon: 'scales' },
+];
 
 export const CATALOG = [
   {
@@ -171,6 +195,33 @@ export const CATALOG = [
     tier: 3,
     icon: 'crown',
     ...counted(campaignGroup, 4),
+  },
+  ...MOOD_ENTRIES.map(({ mood, id, icon }) => ({
+    id,
+    label: `${mood}の結末`,
+    description: `雰囲気「${mood}」の物語でエンディングに到達した`,
+    category: 'mood',
+    tier: 1,
+    icon,
+    isEarnedBy: (list) => hasMood(list, mood),
+  })),
+  {
+    id: 'mood-all',
+    label: '八色の物語',
+    description: 'すべての雰囲気でエンディングに到達した',
+    category: 'mood',
+    tier: 3,
+    icon: 'crown',
+    ...counted(moodVariety, MOODS.length),
+  },
+  {
+    id: 'mood-blend',
+    label: '混ざりあう色',
+    description: '1つの物語に雰囲気を3つ以上つけて完結した',
+    category: 'mood',
+    tier: 1,
+    icon: 'mask',
+    isEarnedBy: (list) => moodsOf(last(list)).length >= 3,
   },
   {
     id: 'short-story',
