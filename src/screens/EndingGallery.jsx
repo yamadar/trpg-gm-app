@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -43,7 +43,8 @@ export default function EndingGallery({ onClose }) {
     };
   }, [user]);
 
-  const achievements = evaluateAchievements(endings);
+  // 改名入力欄のキー入力のたびに再計算されないよう、endingsが変わった時だけ導出する。
+  const achievements = useMemo(() => evaluateAchievements(endings), [endings]);
 
   async function saveTitle(sessionId) {
     setBusyId(sessionId);
@@ -68,6 +69,9 @@ export default function EndingGallery({ onClose }) {
       setEndings((prev) => prev.filter((e) => e.sessionId !== sessionId));
       setPendingDelete(null);
     } catch (e) {
+      // モーダルを開いたままだとエラーメッセージがオーバーレイの裏に隠れて読めないため、
+      // 失敗時もモーダルを閉じてエラーを見えるようにする。
+      setPendingDelete(null);
       setError('削除に失敗した: ' + e.message);
     } finally {
       setBusyId(null);

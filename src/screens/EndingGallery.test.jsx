@@ -114,6 +114,21 @@ describe('EndingGallery', () => {
     await waitFor(() => expect(screen.queryByText('灰は星を数えない')).not.toBeInTheDocument());
   });
 
+  it('closes the confirm modal on delete failure so the error message is readable (not hidden behind the overlay)', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
+    vi.spyOn(endingClient, 'deleteEnding').mockRejectedValue(new Error('boom'));
+    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('削除'));
+    fireEvent.click(screen.getByText('削除する'));
+
+    await waitFor(() => expect(screen.getByText(/削除に失敗した/)).toBeInTheDocument());
+    // モーダルが閉じていること(キャンセルボタンが消えている)を確認する。
+    expect(screen.queryByText('キャンセル')).not.toBeInTheDocument();
+    // セッション自体は残る(削除に失敗しているため)。
+    expect(screen.getByText('灰は星を数えない')).toBeInTheDocument();
+  });
+
   it('shows an error when loading fails', async () => {
     vi.spyOn(endingClient, 'listEndings').mockRejectedValue(new Error('boom'));
     renderWithAuth(<EndingGallery onClose={vi.fn()} />);
