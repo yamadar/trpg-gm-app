@@ -1,6 +1,8 @@
 import { COLORS, F_MONO } from '../../theme.js';
 
-export default function Button({ children, onClick, disabled, variant = 'primary', style }) {
+// rest は aria-label / aria-pressed / title など、呼び出し側が付けたい属性を通すため。
+// 同じ文言のボタンが並ぶ一覧で、アクセシブル名だけを個別化する用途が主。
+export default function Button({ children, onClick, disabled, variant = 'primary', style, ...rest }) {
   const base = {
     fontFamily: F_MONO,
     fontSize: 13,
@@ -25,8 +27,10 @@ export default function Button({ children, onClick, disabled, variant = 'primary
   };
   return (
     <button
-      // 既定のtypeはsubmit。<form>内に置いたButtonが意図せずフォーム送信するのを防ぐ。
-      type="button"
+      {...rest}
+      // HTMLの既定は submit で、<form>内に置くと意図せずフォーム送信してしまう。
+      // 既定を button に倒しつつ、必要な呼び出し側は type を明示して上書きできる。
+      type={rest.type || 'button'}
       // styles.cssの:focus-visibleが、塗り系variantの上でリング色を紙色へ反転するのに使う。
       data-variant={variant}
       onClick={disabled ? undefined : onClick}

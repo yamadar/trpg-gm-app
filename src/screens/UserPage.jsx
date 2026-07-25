@@ -4,6 +4,7 @@ import Button from '../components/ui/Button.jsx';
 import { getUserProfile, getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
+import Tabs from '../components/ui/Tabs.jsx';
 import { clearHash } from '../router/useHashRoute.js';
 import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
 
@@ -81,7 +82,7 @@ export default function UserPage({ userId }) {
     setDetail(null);
   }
 
-  const wrapStyle = { maxWidth: 720, margin: '0 auto', padding: '40px 20px' };
+  const wrapStyle = { maxWidth: 720, margin: '0 auto', padding: '64px 20px 40px' };
 
   if (loading) {
     return (
@@ -153,7 +154,9 @@ export default function UserPage({ userId }) {
             </div>
           )}
           <div>
-            <div style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink }}>{profile.displayName}</div>
+            <h1 style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink, margin: 0 }}>
+              {profile.displayName}
+            </h1>
             {profile.bio && (
               <p
                 style={{
@@ -174,25 +177,9 @@ export default function UserPage({ userId }) {
         </Button>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
-        {TABS.map((t) => (
-          <div
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: tab === t.key ? COLORS.ink : 'transparent',
-              color: tab === t.key ? COLORS.paper : COLORS.faint,
-              border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
-            }}
-          >
-            {t.label}
-          </div>
-        ))}
-      </div>
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label="公開物の種類" />
 
+      <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
       <PublicItemList
         key={tab}
         type={tab}
@@ -219,6 +206,7 @@ export default function UserPage({ userId }) {
         ) : (
           detail && <PublicItemDetail type={tab} item={detail} onBack={backToList} />
         ))}
+      </div>
     </div>
   );
 }

@@ -137,9 +137,16 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {items.map((it) => (
-              <Card key={it.publicId} onClick={() => onOpenDetail(it.publicId)} style={{ cursor: 'pointer' }}>
+              <Card key={it.publicId} className="card-actionable" style={{ cursor: 'pointer' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>{it.title}</div>
+                  <button
+                    type="button"
+                    className="card-primary-action"
+                    onClick={() => onOpenDetail(it.publicId)}
+                    style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}
+                  >
+                    {it.title}
+                  </button>
                   {type === 'characters' && (
                     <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>
                       {KIND_LABELS[it.kind] || it.kind}
@@ -151,6 +158,10 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
                     <>
                       <button
                         type="button"
+                        className="card-inline-action"
+                        // 作者名だけでは Tab 順に同じ名前が並んで区別できないため、
+                        // どの公開物の作者かをアクセシブル名に含める。
+                        aria-label={`${it.title} の作者 ${it.ownerName} のページ`}
                         onClick={(e) => {
                           e.stopPropagation();
                           onAuthorClick(it.ownerId);

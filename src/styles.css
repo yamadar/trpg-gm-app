@@ -4,6 +4,15 @@
  * (:focus-visible) だけはインラインスタイルで表現できないため、ここに置く。
  * 値は theme.js の COLORS と対応させること(ink / brass)。 */
 
+/* 紙色の地。App 側は各画面のラッパーに background を敷いているが、それが覆わない
+ * 領域(オーバースクロールの跳ね返り、画面の縦幅に満たないとき)では既定のキャンバス色が
+ * 覗く。OSがダークモードだとそこだけ黒く抜けるため、地の色をここで固定する。 */
+html,
+body {
+  background: #ede6d6; /* COLORS.paper */
+  margin: 0;
+}
+
 /* フォーカスリング。
  *
  * theme.js の inputStyle が長らく outline: none を指定しており、キーボード利用者は
@@ -23,4 +32,52 @@
 button[data-variant='primary']:focus-visible,
 button[data-variant='brass']:focus-visible {
   outline-color: #ede6d6 !important; /* COLORS.paper */
+}
+
+/* カード全体を押せるようにしつつ、カード内に別のボタン(作者名など)も置くための
+ * 定番パターン。
+ *
+ * 以前はカードの <div> に onClick を付けていたが、それではキーボードから一切
+ * 到達できなかった(WCAG 2.1.1)。かといってカード自体を <button> にすると、
+ * 中の作者ボタンが入れ子ボタンになり不正なHTMLになる。
+ *
+ * そこで「主アクションはタイトルの <button> が担い、その ::after を carte 全体へ
+ * 広げてマウスの当たり判定だけを拡張する」形にする。支援技術にはボタン1つとして
+ * 見え、マウスではカードのどこを押しても反応する。 */
+.card-actionable {
+  position: relative;
+}
+
+.card-primary-action {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-primary-action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* オーバーレイ(::after)より手前に出さないと、カード内の別のボタンが押せなくなる。 */
+.card-inline-action {
+  position: relative;
+  z-index: 1;
+}
+
+/* オーバーレイ自体は透明で領域を持たないため、フォーカスリングはタイトル文字の
+ * 周りにだけ出る。カード全体を囲う方が分かりやすいのでリングを付け替える。 */
+.card-primary-action:focus-visible {
+  outline: none !important;
+}
+
+.card-actionable:has(.card-primary-action:focus-visible) {
+  outline: 2px solid #1f2a38;
+  outline-offset: 2px;
 }

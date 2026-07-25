@@ -603,7 +603,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   grouped.forEach((g) => g.items.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px' }}>
+    <main style={{ maxWidth: 640, margin: '0 auto', padding: '64px 20px 48px' }}>
       <ToastStack items={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
       <h1
         style={{
@@ -645,9 +645,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
 
       {user && sessions.length === 0 && (
         <div style={{ marginBottom: 32 }}>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: 16, color: COLORS.ink, marginBottom: 4 }}>
+          <h2 style={{ fontFamily: F_DISPLAY, fontSize: 16, color: COLORS.ink, margin: '0 0 4px' }}>
             はじめての冒険を選ぶ
-          </div>
+          </h2>
           <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, marginBottom: 12 }}>
             世界観・シナリオ・登場人物が揃った一式を取り込んで、そのまま遊び始められる。取り込んだ素材は素材ライブラリに入るので、あとから自由に書き換えられる。
           </div>
@@ -655,20 +655,25 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: user ? 32 : 8 }}>
-        <Button variant="brass" onClick={onNew} disabled={!user}>
+      {/* 狭い画面では4つを1行に詰めようとして「素材ラ/イブラ/リ」のように語中で
+          折り返していた。折り返しを禁止し、収まらないときは行を増やす。 */}
+      <nav
+        aria-label="主要メニュー"
+        style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: user ? 32 : 8 }}
+      >
+        <Button variant="brass" onClick={onNew} disabled={!user} style={{ whiteSpace: 'nowrap' }}>
           + 新規プレイ
         </Button>
-        <Button variant="ghost" onClick={onOpenLibrary}>
+        <Button variant="ghost" onClick={onOpenLibrary} style={{ whiteSpace: 'nowrap' }}>
           素材ライブラリ
         </Button>
-        <Button variant="ghost" onClick={onOpenGallery}>
+        <Button variant="ghost" onClick={onOpenGallery} style={{ whiteSpace: 'nowrap' }}>
           公開ギャラリー
         </Button>
-        <Button variant="ghost" onClick={navigateToEndings}>
+        <Button variant="ghost" onClick={navigateToEndings} style={{ whiteSpace: 'nowrap' }}>
           エンディング図鑑
         </Button>
-      </div>
+      </nav>
 
       {!user && (
         <div
@@ -721,6 +726,6 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
           </div>
         </>
       )}
-    </div>
+    </main>
   );
 }

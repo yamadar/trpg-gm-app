@@ -60,8 +60,12 @@ export default function AuthBar() {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            background: 'transparent',
-            border: 'none',
+            // 固定配置なので、スクロールした本文がこの下を通り抜ける。透明のままだと
+            // ユーザー名とカードの文字が重なって読めなくなるため、紙色で背景を塗る。
+            background: COLORS.paper,
+            borderRadius: 999,
+            padding: '4px 10px 4px 4px',
+            border: `1px solid ${COLORS.line}`,
             cursor: 'pointer',
             fontFamily: F_MONO,
             fontSize: 13,

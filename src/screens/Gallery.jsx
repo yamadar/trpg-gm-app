@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_MONO } from '../theme.js';
 import Button from '../components/ui/Button.jsx';
+import Tabs from '../components/ui/Tabs.jsx';
 import { getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
@@ -47,33 +48,17 @@ export default function Gallery({ onClose, onStartStarter }) {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '40px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink }}>公開ギャラリー</div>
+    <main style={{ maxWidth: 720, margin: '0 auto', padding: '64px 20px 40px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, gap: 12 }}>
+        <h1 style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink, margin: 0 }}>公開ギャラリー</h1>
         <Button variant="ghost" onClick={onClose}>
           閉じる
         </Button>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
-        {TABS.map((t) => (
-          <div
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: tab === t.key ? COLORS.ink : 'transparent',
-              color: tab === t.key ? COLORS.paper : COLORS.faint,
-              border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
-            }}
-          >
-            {t.label}
-          </div>
-        ))}
-      </div>
+      <Tabs tabs={TABS} value={tab} onChange={setTab} label="公開物の種類" />
 
+      <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
       {/* starters は公開アイテムの一覧/詳細ではなく「まとめて取り込む単位」なので、
           /api/public/:type の TYPES にも属さない。ここだけ別コンポーネントを描画する。 */}
       {tab === 'starters' ? (
@@ -115,6 +100,7 @@ export default function Gallery({ onClose, onStartStarter }) {
             ))}
         </>
       )}
-    </div>
+      </div>
+    </main>
   );
 }
