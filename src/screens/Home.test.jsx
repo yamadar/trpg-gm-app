@@ -74,7 +74,7 @@ describe('Home', () => {
     const onContinue = vi.fn();
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
 
-    fireEvent.click(screen.getByText('小説化'));
+    fireEvent.click(screen.getByText('小説化する'));
 
     await waitFor(() => expect(novelizeSpy).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(sessionSyncClient.getNovel).toHaveBeenCalledWith('s1'));
@@ -96,7 +96,7 @@ describe('Home', () => {
       { id: 's2', title: '挿絵なし', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'y' }] },
     ];
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
-    expect(screen.getAllByText('挿絵付き')).toHaveLength(1);
+    expect(screen.getAllByText('挿絵付きでDL')).toHaveLength(1);
   });
 
   it('「挿絵付き」クリックで挿絵付きMarkdownをダウンロードする', async () => {
@@ -113,7 +113,7 @@ describe('Home', () => {
     const onContinue = vi.fn();
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
 
-    fireEvent.click(screen.getByText('挿絵付き'));
+    fireEvent.click(screen.getByText('挿絵付きでDL'));
 
     await waitFor(() => expect(illustratedSpy).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
@@ -125,7 +125,7 @@ describe('Home', () => {
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
 
-    fireEvent.click(screen.getByText('小説化'));
+    fireEvent.click(screen.getByText('小説化する'));
 
     await waitFor(() => expect(screen.getByText(/小説化に失敗した/)).toBeInTheDocument());
   });
@@ -159,16 +159,16 @@ describe('Home', () => {
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
 
     // s1の小説化を開始(pendingのまま)
-    fireEvent.click(screen.getAllByText('小説化')[0]);
+    fireEvent.click(screen.getAllByText('小説化する')[0]);
     await waitFor(() => expect(screen.getAllByText('小説化中…').length).toBe(1));
-    expect(screen.getAllByText('小説化').length).toBe(1); // s2はまだ「小説化」のまま
+    expect(screen.getAllByText('小説化する').length).toBe(1); // s2はまだ「小説化」のまま
 
     // s1がまだpendingの間にs2の小説化も開始
-    fireEvent.click(screen.getAllByText('小説化')[0]);
+    fireEvent.click(screen.getAllByText('小説化する')[0]);
     await waitFor(() => expect(screen.getAllByText('小説化中…').length).toBe(2));
     // 単一のnovelizingIdガードでは、s2を開始した瞬間にs1が「小説化」へ
     // 戻ってしまうため、この時点で両方が同時に「小説化中…」にはならない。
-    expect(screen.queryAllByText('小説化').length).toBe(0);
+    expect(screen.queryAllByText('小説化する').length).toBe(0);
 
     // 後始末: 両方のpendingなpromiseを解決してunhandled rejectionを防ぐ
     await act(async () => {
@@ -187,7 +187,7 @@ describe('Home', () => {
       { user: null }
     );
     expect(screen.getByText('+ 新規プレイ')).toBeDisabled();
-    expect(screen.getByText('小説化')).toBeDisabled();
+    expect(screen.getByText('小説化する')).toBeDisabled();
     expect(screen.getByText(/ログインが必要/)).toBeInTheDocument();
     // ライブラリと続きから再開は許可されたまま
     expect(screen.getByText('素材ライブラリ')).not.toBeDisabled();
@@ -341,5 +341,33 @@ describe('Home', () => {
       expect(await screen.findByText('続きから再開')).toBeInTheDocument();
       expect(screen.getByText('孤児セッション')).toBeInTheDocument();
     });
+  });
+
+  it('shows a 完結 badge for a session that has ended', () => {
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 123, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    expect(screen.getByText('完結')).toBeInTheDocument();
+  });
+
+  it('does not show a 完結 badge for a session still in progress', () => {
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    expect(screen.queryByText('完結')).not.toBeInTheDocument();
+  });
+
+  it('shows an 挿絵あり badge when the session log carries images', () => {
+    const sessions = [
+      { id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'g', image: { imageId: 'img_a' } }] },
+    ];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    expect(screen.getByText('挿絵あり')).toBeInTheDocument();
+  });
+
+  it('renders 公開中 as a badge rather than a button', async () => {
+    vi.spyOn(shareClient, 'publishedNovels').mockResolvedValue({ s1: 'pub_1' });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    const badge = await screen.findByText('公開中');
+    expect(badge.tagName).toBe('SPAN');
   });
 });

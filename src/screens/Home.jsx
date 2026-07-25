@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
+import Badge from '../components/ui/Badge.jsx';
 import { novelizeSession, getNovel, getIllustratedNovel, putSessionToServer } from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { advanceCampaignPc } from '../api/session.js';
@@ -15,6 +16,13 @@ function lastLineOf(session) {
   if (!lastGm) return '(まだ進行なし)';
   return lastGm.text.slice(0, 60) + (lastGm.text.length > 60 ? '…' : '');
 }
+
+function hasIllustrations(session) {
+  return !!session.log?.some((e) => e.role === 'gm' && e.image?.imageId);
+}
+
+// 操作行のボタンは数が多いので、共通の小さめサイズに揃える。
+const ACTION_BTN = { fontSize: 12, padding: '6px 10px' };
 
 export function sanitizeFilename(title) {
   const cleaned = (title || 'session').replace(/[\\/:*?"<>|]/g, '_');
@@ -227,28 +235,20 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   }
 
   function renderSessionCard(s) {
+    const badges = [];
+    if (s.endedAt) badges.push(<Badge key="ended" variant="brass">完結</Badge>);
+    if (publishedNovelIds[s.id]) badges.push(<Badge key="published" variant="outline">公開中</Badge>);
+    if (hasIllustrations(s)) badges.push(<Badge key="illustrated" variant="faint">挿絵あり</Badge>);
+
     return (
       <Card key={s.id} style={{ cursor: 'pointer' }} onClick={() => onContinue(s.id)}>
+        {/* 情報層 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 8,
-                marginBottom: 4,
-              }}
-            >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
               <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>{s.title}</div>
               {s.state?.current_scene && (
-                <div
-                  style={{
-                    fontFamily: F_MONO,
-                    fontSize: 11,
-                    color: COLORS.brassDark,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
+                <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark, whiteSpace: 'nowrap' }}>
                   シーン: {s.state.current_scene}
                   {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
                 </div>
@@ -267,77 +267,80 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
             >
               {lastLineOf(s)}
             </div>
-            {novelizeError[s.id] && (
-              <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.stamp, marginTop: 4 }}>
-                {novelizeError[s.id]}
-              </div>
-            )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-            <div
-              style={{
-                fontFamily: F_MONO,
-                fontSize: 12,
-                color: COLORS.brass,
-                whiteSpace: 'nowrap',
-              }}
+          <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brass, whiteSpace: 'nowrap' }}>続ける →</div>
+        </div>
+
+        {/* 状態バッジ層。押せる要素と混同されないようボタン行とは分ける。 */}
+        {badges.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>{badges}</div>
+        )}
+
+        {novelizeError[s.id] && (
+          <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.stamp, marginTop: 8 }}>
+            {novelizeError[s.id]}
+          </div>
+        )}
+
+        {/* 操作層 */}
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+            marginTop: 12,
+            paddingTop: 12,
+            borderTop: `1px solid ${COLORS.line}`,
+          }}
+        >
+          <Button
+            variant="ghost"
+            onClick={(e) => handleNovelize(e, s)}
+            disabled={!!novelizing[s.id] || !user}
+            style={ACTION_BTN}
+          >
+            {novelizing[s.id] ? '小説化中…' : '小説化する'}
+          </Button>
+          {hasIllustrations(s) && (
+            <Button
+              variant="ghost"
+              onClick={(e) => handleNovelizeIllustrated(e, s)}
+              disabled={!!novelizing[s.id] || !user}
+              style={ACTION_BTN}
             >
-              続ける →
-            </div>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              挿絵付きでDL
+            </Button>
+          )}
+          {s.worldId && (
+            <Button
+              variant="ghost"
+              onClick={(e) => handleNextChapter(e, s)}
+              disabled={!!advancing[s.id] || !user}
+              style={ACTION_BTN}
+            >
+              {advancing[s.id] ? '準備中…' : '次の章へ'}
+            </Button>
+          )}
+          {user &&
+            (publishedNovelIds[s.id] ? (
               <Button
                 variant="ghost"
-                onClick={(e) => handleNovelize(e, s)}
-                disabled={!!novelizing[s.id] || !user}
-                style={{ fontSize: 11, padding: '4px 8px' }}
+                onClick={(e) => handleUnpublish(e, s)}
+                disabled={!!publishBusy[s.id]}
+                style={ACTION_BTN}
               >
-                {novelizing[s.id] ? '小説化中…' : '小説化'}
+                公開解除
               </Button>
-              {s.log?.some((en) => en.role === 'gm' && en.image?.imageId) && (
-                <Button
-                  variant="ghost"
-                  onClick={(e) => handleNovelizeIllustrated(e, s)}
-                  disabled={!!novelizing[s.id] || !user}
-                  style={{ fontSize: 11, padding: '4px 8px' }}
-                >
-                  挿絵付き
-                </Button>
-              )}
-              {s.worldId && (
-                <Button
-                  variant="ghost"
-                  onClick={(e) => handleNextChapter(e, s)}
-                  disabled={!!advancing[s.id] || !user}
-                  style={{ fontSize: 11, padding: '4px 8px' }}
-                >
-                  {advancing[s.id] ? '準備中…' : '次の章へ'}
-                </Button>
-              )}
-              {user &&
-                (publishedNovelIds[s.id] ? (
-                  <>
-                    <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>公開中</span>
-                    <Button
-                      variant="ghost"
-                      onClick={(e) => handleUnpublish(e, s)}
-                      disabled={!!publishBusy[s.id]}
-                      style={{ fontSize: 11, padding: '4px 8px' }}
-                    >
-                      公開解除
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    onClick={(e) => handlePublish(e, s)}
-                    disabled={!!publishBusy[s.id]}
-                    style={{ fontSize: 11, padding: '4px 8px' }}
-                  >
-                    小説を公開
-                  </Button>
-                ))}
-            </div>
-          </div>
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={(e) => handlePublish(e, s)}
+                disabled={!!publishBusy[s.id]}
+                style={ACTION_BTN}
+              >
+                小説を公開
+              </Button>
+            ))}
         </div>
       </Card>
     );
