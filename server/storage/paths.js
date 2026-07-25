@@ -14,6 +14,10 @@ export function sessionNovelMetaKey(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/novel`;
 }
 
+export function sessionNovelJobKey(userId, sessionId) {
+  return `users/${userId}/sessions/${sessionId}/novelJob`;
+}
+
 export function sessionImageDir(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/images`;
 }
