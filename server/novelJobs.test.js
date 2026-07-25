@@ -134,7 +134,28 @@ describe('createNovelJobRunner', () => {
     expect(out.error).toContain('aborted');
   });
 
-  it('records an error for a truncated response without saving', async () => {
+  it('continues a truncated response and saves the joined text as complete', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      call += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'text', text: call === 1 ? '前半' : '後半' }],
+          stop_reason: call === 1 ? 'max_tokens' : 'end_turn',
+        }),
+      };
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.pending.get('u1/s1');
+
+    expect((await runner.read('u1', 's1')).status).toBe('done');
+    expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBe('前半後半');
+    expect((await dataStore.get('users/u1/sessions/s1/novel')).truncated).toBe(false);
+  });
+
+  it('saves what it has and marks it truncated when the continuation limit is reached', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }),
@@ -143,8 +164,10 @@ describe('createNovelJobRunner', () => {
     await runner.start('u1', 's1', SESSION, 'third');
     await runner.pending.get('u1/s1');
 
-    expect((await runner.read('u1', 's1')).status).toBe('error');
-    expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBeNull();
+    // 打ち切られても本文は捨てない。欠落はtruncatedフラグで伝える。
+    expect((await runner.read('u1', 's1')).status).toBe('done');
+    expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBe('途中'.repeat(fetchImpl.mock.calls.length));
+    expect((await dataStore.get('users/u1/sessions/s1/novel')).truncated).toBe(true);
   });
 
   it('records an error for an empty response without saving', async () => {
@@ -167,7 +190,7 @@ describe('createNovelJobRunner', () => {
     await runner.pending.get('u1/s1');
 
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.messages[0].content).toContain('〈挿絵1〉');
+    expect(body.messages[0].content[0].text).toContain('〈挿絵1〉');
     expect(body.system).toContain('挿絵挿入位置');
     const meta = await dataStore.get('users/u1/sessions/s1/novel');
     expect(meta.imageIds).toEqual(['img_a']);

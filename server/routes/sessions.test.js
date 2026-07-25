@@ -91,7 +91,7 @@ describe('sessions routes', () => {
     const fetchImpl = async (url, options) => {
       const body = JSON.parse(options.body);
       expect(url).toBe('https://api.anthropic.com/v1/messages');
-      expect(body.messages[0].content).toContain('波止場を調べる');
+      expect(body.messages[0].content[0].text).toContain('波止場を調べる');
       return {
         ok: true,
         json: async () => ({ content: [{ type: 'text', text: '小説化された本文。' }], stop_reason: 'end_turn' }),
@@ -135,7 +135,7 @@ describe('sessions routes', () => {
     await waitForJob('s1');
     // upstreamへ渡したトランスクリプトにマーカーが含まれ、systemに保持指示がある
     const sentBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(sentBody.messages[0].content).toContain('〈挿絵1〉');
+    expect(sentBody.messages[0].content[0].text).toContain('〈挿絵1〉');
     expect(sentBody.system).toContain('挿絵挿入位置');
     // novel.mdはマーカー入り、メタにimageIds
     const saved = await textStore.read('users/usr_test/sessions/s1/novel.md');
@@ -194,17 +194,41 @@ describe('sessions routes', () => {
     expect(res.body.stale).toBe(true);
   });
 
-  it('records an error for a truncated (max_tokens) novelization without saving', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }) });
+  it('continues a truncated (max_tokens) novelization and saves the joined text', async () => {
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'text', text: call === 1 ? '前半' : '後半' }],
+          stop_reason: call === 1 ? 'max_tokens' : 'end_turn',
+        }),
+      };
+    };
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     const res = await request(app).post('/api/sessions/s1/novelize');
     expect(res.status).toBe(202);
     await waitForJob('s1');
     const jobs = await request(app).get('/api/novel-jobs');
-    expect(jobs.body.s1.status).toBe('error');
+    expect(jobs.body.s1.status).toBe('done');
+    expect(jobs.body.s1.truncated).toBe(false);
     const get = await request(app).get('/api/sessions/s1/novel');
-    expect(get.status).toBe(404); // 保存されていない
+    expect(get.body.text).toBe('前半後半');
+  });
+
+  it('reports truncated in /novel-jobs when the novelization hit the continuation limit', async () => {
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }) });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+    const jobs = await request(app).get('/api/novel-jobs');
+    expect(jobs.body.s1.status).toBe('done');
+    expect(jobs.body.s1.truncated).toBe(true);
+    // 未完でも本文は残る。
+    expect((await request(app).get('/api/sessions/s1/novel')).body.text).toContain('途中');
   });
 
   it('records an error for an empty novelization without saving', async () => {
@@ -295,7 +319,7 @@ describe('sessions routes', () => {
   it('reports idle for a session that has never been novelized', async () => {
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [], state: {} });
     const res = await request(app).get('/api/novel-jobs');
-    expect(res.body.s1).toEqual({ status: 'idle', error: null, hasNovel: false, stale: false });
+    expect(res.body.s1).toEqual({ status: 'idle', error: null, hasNovel: false, stale: false, truncated: false });
   });
 
   it('reports running while the job is in flight and done afterwards', async () => {

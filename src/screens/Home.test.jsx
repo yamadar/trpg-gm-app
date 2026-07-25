@@ -84,6 +84,21 @@ describe('Home', () => {
     expect(await screen.findAllByText('挿絵付きでDL')).toHaveLength(1);
   });
 
+  it('warns that the tail may be missing when the novel was truncated', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false, truncated: true },
+      s2: { status: 'done', error: null, hasNovel: true, stale: false, truncated: false },
+    });
+    const sessions = [
+      { id: 's1', title: '打ち切りあり', updatedAt: 2, state: {}, log: [] },
+      { id: 's2', title: '打ち切りなし', updatedAt: 1, state: {}, log: [] },
+    ];
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    // 警告は打ち切られたセッションにだけ出る。
+    expect(await screen.findAllByText(/末尾が欠けている可能性があります/)).toHaveLength(1);
+  });
+
   it('shows an error message when novelization fails', async () => {
     vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
     vi.spyOn(sessionSyncClient, 'novelizeSession').mockRejectedValue(new Error('upstream down'));

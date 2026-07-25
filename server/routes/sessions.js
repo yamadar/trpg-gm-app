@@ -39,7 +39,14 @@ export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey,
       const text = await textStore.read(sessionNovelDocPath(req.userId, id));
       const meta = await dataStore.get(sessionNovelMetaKey(req.userId, id));
       const session = await dataStore.get(key);
-      out[id] = { status, error, hasNovel: text !== null, stale: isStale(meta, session) };
+      out[id] = {
+        status,
+        error,
+        hasNovel: text !== null,
+        stale: isStale(meta, session),
+        // この変更以前に生成された小説のメタにはtruncatedが無い。完結扱いにする。
+        truncated: meta?.truncated === true,
+      };
     }
     res.json(out);
   }));

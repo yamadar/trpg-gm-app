@@ -1,30 +1,16 @@
 import crypto from 'node:crypto';
 import { sessionNovelDocPath, sessionNovelMetaKey, sessionNovelJobKey } from './storage/paths.js';
 import { buildTranscriptWithMarkers } from './novelMarkers.js';
+import { generateNovel, NOVELIZE_UPSTREAM_TIMEOUT_MS, NOVELIZE_MAX_CONTINUATIONS } from './novelGeneration.js';
 
-// HTTPリクエストが応答を待たなくなったので、上流の打ち切りは同期時代の120秒から延ばす。
-export const NOVELIZE_UPSTREAM_TIMEOUT_MS = 300000;
-// runningのまま放置されたジョブを失敗とみなすまでの時間。上流タイムアウトより十分長く取る。
-export const NOVEL_JOB_TIMEOUT_MS = 600000;
-
-const MARKER_INSTRUCTION =
-  '\nトランスクリプト中の〈挿絵N〉は対応する場面の挿絵挿入位置である。小説本文の対応する場面の切れ目に、各マーカーを一度だけ行独立でそのまま残すこと。';
+// runningのまま放置されたジョブを失敗とみなすまでの時間。
+// 生成は打ち切り時に継続リクエストを重ねるため、最悪ケース
+// (初回+継続の全リクエストがそれぞれ上流タイムアウトぎりぎりまでかかる)を
+// 包含していないと、正常に進行中のジョブを失敗扱いにしてしまう。
+export const NOVEL_JOB_TIMEOUT_MS = NOVELIZE_UPSTREAM_TIMEOUT_MS * (NOVELIZE_MAX_CONTINUATIONS + 1) + 300000;
 
 export function makeBootId() {
   return `boot_${crypto.randomBytes(8).toString('hex')}`;
-}
-
-function extractText(content) {
-  return (content || [])
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n');
-}
-
-// pov: 'third'(既定)または 'first'。
-function buildNovelizeSystemPrompt(pov) {
-  const voice = pov === 'first' ? 'PC視点の一人称' : '三人称';
-  return `以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを${voice}の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。`;
 }
 
 // 保存されたジョブレコードを、読み取り時点の見かけの状態へ解決する。
@@ -68,38 +54,22 @@ export function createNovelJobRunner({
       // tryの外に置くとrun()のPromiseがrejectし、start()側で誰も待たないため
       // プロセス全体を落とす未処理rejectionになってしまう。
       const { transcript, imageIds } = buildTranscriptWithMarkers(session.log);
-      const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-5',
-          max_tokens: 12000,
-          thinking: { type: 'disabled' },
-          system: buildNovelizeSystemPrompt(pov) + (imageIds.length > 0 ? MARKER_INSTRUCTION : ''),
-          messages: [{ role: 'user', content: transcript }],
-        }),
-        signal: AbortSignal.timeout(NOVELIZE_UPSTREAM_TIMEOUT_MS),
+      const { text, truncated } = await generateNovel({
+        transcript,
+        hasImages: imageIds.length > 0,
+        pov,
+        apiKey,
+        fetchImpl,
       });
-      if (!upstream.ok) {
-        const t = await upstream.text().catch(() => '');
-        throw new Error(`upstream request failed: ${t.slice(0, 200)}`);
-      }
-      const data = await upstream.json();
-      if (data.stop_reason === 'max_tokens') {
-        throw new Error('novelization was truncated (max_tokens); not saved');
-      }
-      const text = extractText(data.content);
-      if (!text) throw new Error('novelization produced empty output; not saved');
 
+      // truncatedでも保存する。継続の上限に達しただけで本文自体は使えるので、
+      // 複数リクエスト分のコストを払った生成を捨てない(欠落はUIで警告する)。
       await textStore.write(sessionNovelDocPath(userId, sessionId), text);
       await dataStore.set(sessionNovelMetaKey(userId, sessionId), {
         turnCount: session.state?.turn_count ?? null,
         updatedAt: now(),
         imageIds,
+        truncated,
       });
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
     } catch (e) {

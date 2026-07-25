@@ -72,7 +72,7 @@
 - **パストラバーサル対策**: サーバー側の全パスパラメータを`idParamGuard`/`kindParamGuard`(`server/routes/validateId.js`)で検証し、`..`や不正文字を含むIDを`400`で拒否(04-persistence.md参照)。
 - **deleteWorldカスケード**: World削除時に配下のCharacter/Scenario/region/categoryもまとめて削除するようにし、孤立データが残らないようにした。
 - **上流タイムアウト**: `/api/messages`・`/api/sessions/:id/novelize`のAnthropic呼び出しに`AbortSignal.timeout`を設定し、ハングを防止。
-- **novel鮮度管理**: 小説化後にセッションが進行した場合、`GET /api/sessions/:id/novel`が`stale`フラグを返し、Home画面が古い小説であることを警告する。また小説化が`max_tokens`で打ち切られた場合は保存せずエラーを返す(途中で切れた小説を保存しない)。
+- **novel鮮度管理**: 小説化後にセッションが進行した場合、`GET /api/sessions/:id/novel`が`stale`フラグを返し、Home画面が古い小説であることを警告する。また小説化が`max_tokens`で打ち切られた場合は継続リクエストで書き足させ、継続上限に達してもなお終わらなければ`truncated`フラグ付きで保存してHome画面が末尾欠落の可能性を警告する(06-content-generation.md 10.6.1節)。
 - **入力検証・アトミック書き込み**: PUT系エンドポイントの必須フィールド型チェック、`dataStore.set`のtmpファイル+rename方式によるアトミック書き込み(書き込み中のクラッシュでファイルが壊れないようにする)。
 
 ## 12. 未対応のリスク: プロキシ認証

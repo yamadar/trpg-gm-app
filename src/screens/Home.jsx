@@ -406,6 +406,11 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
             生成済みの小説は最新のログを反映していない可能性があります。
           </div>
         )}
+        {hasNovel && job.truncated && (
+          <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.brassDark, marginTop: 8 }}>
+            小説が出力上限に達したため、末尾が欠けている可能性があります。
+          </div>
+        )}
 
         {/* 操作層 */}
         <div

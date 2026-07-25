@@ -127,7 +127,10 @@ rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。
 sessions/{session_id}.json          セッション本体(world/scenario/ruleset/pc/state/logを1ファイルにフラット保存)
 sessions/{session_id}/
   novel.md                         小説化(novelize)した本文
-  novel.json                       小説の鮮度メタ({turnCount, updatedAt})
+  novel.json                       小説のメタ({ turnCount, updatedAt, imageIds,
+                                    truncated })。truncatedは継続リクエストの
+                                    上限に達し末尾が欠けている可能性を表す
+                                    (06-content-generation.md 10.6.1節)
   novelJob.json                    小説化ジョブの状態(実装済み2026-07-25。
                                     { status: 'running'|'done'|'error',
                                       startedAt, updatedAt, error, bootId })
