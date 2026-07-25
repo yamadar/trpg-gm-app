@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMessagesRouter } from './routes/messages.js';
 import { createSessionsRouter } from './routes/sessions.js';
+import { createEndingsRouter } from './routes/endings.js';
 import { createWorldsRouter } from './routes/worlds.js';
 import { createCharactersRouter } from './routes/characters.js';
 import { createScenariosRouter } from './routes/scenarios.js';
@@ -98,6 +99,7 @@ export function createApp({
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
   app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
+  app.use('/api', createEndingsRouter({ dataStore, apiKey, fetchImpl, usage }));
   app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey: apiKey, geminiApiKey, geminiModel, fetchImpl, usage }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
