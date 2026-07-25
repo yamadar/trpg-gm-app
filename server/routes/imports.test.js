@@ -218,4 +218,73 @@ describe('imports routes', () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe('starter packs', () => {
+    async function seedOnePack() {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'src-world', title: '百鬼夜行 — 平安京', raw: '# 世界', moods: ['ホラー'] });
+      await saveScenario(dataStore, textStore, OWNER.id, {
+        worldId: 'src-world', id: 'sc', title: 'シナリオ', raw: '# 本文', recommendedRuleset: 'coc7e', moods: ['ホラー'],
+      });
+      await saveCharacter(dataStore, textStore, OWNER.id, { worldId: 'src-world', kind: 'pc', name: 'pc-one', raw: 'PC1' });
+      await saveCharacter(dataStore, textStore, OWNER.id, { worldId: 'src-world', kind: 'npc', name: 'npc-one', raw: 'NPC1', revealed: false });
+
+      const world = await publishWorld(dataStore, textStore, OWNER.id, 'src-world', OWNER);
+      const scenario = await publishScenario(dataStore, textStore, OWNER.id, 'src-world', 'sc', OWNER);
+      const pc = await publishCharacter(dataStore, textStore, OWNER.id, 'src-world', 'pc', 'pc-one', OWNER);
+      const npc = await publishCharacter(dataStore, textStore, OWNER.id, 'src-world', 'npc', 'npc-one', OWNER);
+
+      await dataStore.set('public/starters', {
+        packs: [{
+          packId: 'hyakki-yagyo',
+          title: '百鬼夜行 — 平安京',
+          recommendedRuleset: 'coc7e',
+          worldPublicId: world.meta.publicId,
+          scenarioPublicId: scenario.meta.publicId,
+          pcPublicIds: [pc.meta.publicId],
+          npcPublicIds: [npc.meta.publicId],
+        }],
+        seededAt: 1,
+      });
+    }
+
+    it('imports the whole pack in one call', async () => {
+      await seedOnePack();
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(res.status).toBe(201);
+      expect(res.body.world).toMatchObject({ id: 'hyakki-yagyo', title: '百鬼夜行 — 平安京', moods: ['ホラー'] });
+      expect(res.body.scenario).toMatchObject({ worldId: 'hyakki-yagyo', title: 'シナリオ', recommendedRuleset: 'coc7e' });
+      expect(res.body.pcs).toHaveLength(1);
+      expect(res.body.npcs).toHaveLength(1);
+      expect(res.body.pcs[0]).toMatchObject({ kind: 'pc', name: 'pc-one', worldId: 'hyakki-yagyo' });
+      // NPCの秘匿情報はインポート先で未開示に戻る
+      expect(res.body.npcs[0]).toMatchObject({ kind: 'npc', revealed: false });
+    });
+
+    // slugify は非ASCIIを全除去するので、preferredId 無しだと 'untitled' になる
+    it('uses the packId as the world id instead of slugify(title)', async () => {
+      await seedOnePack();
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(res.body.world.id).toBe('hyakki-yagyo');
+    });
+
+    it('suffixes the world id when the same pack is imported twice', async () => {
+      await seedOnePack();
+      await request(app).post('/api/starters/hyakki-yagyo/import');
+      const second = await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(second.status).toBe(201);
+      expect(second.body.world.id).toBe('hyakki-yagyo-2');
+      expect(second.body.scenario.worldId).toBe('hyakki-yagyo-2');
+    });
+
+    it('404s for an unknown pack id', async () => {
+      await seedOnePack();
+      const res = await request(app).post('/api/starters/nope/import');
+      expect(res.status).toBe(404);
+    });
+
+    it('404s when nothing has been seeded', async () => {
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(res.status).toBe(404);
+    });
+  });
 });

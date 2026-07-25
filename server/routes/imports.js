@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard, isValidId } from './validateId.js';
 import { importWorld, importCharacter, importScenario } from '../storage/importLibrary.js';
+import { starterManifestKey } from '../storage/paths.js';
 
 export function createImportsRouter({ dataStore, textStore }) {
   const router = Router();
   router.param('publicId', idParamGuard);
+  router.param('packId', idParamGuard);
 
   function sendImport(res, result) {
     if (result.ok) {
@@ -38,6 +40,47 @@ export function createImportsRouter({ dataStore, textStore }) {
     const target = targetWorldIdOf(req, res);
     if (target === null) return;
     sendImport(res, await importScenario(dataStore, textStore, req.userId, req.params.publicId, target));
+  }));
+
+  // 一括インポート。クライアントから /api/import/* を7回叩くと途中で失敗したときに
+  // 「Worldだけできて中身が無い」状態が残り、リトライで -2 付きの重複が生える。
+  // サーバー側の1呼び出しにまとめて、失敗はエラー1つで返す。
+  router.post('/starters/:packId/import', asyncHandler(async (req, res) => {
+    const manifest = await dataStore.get(starterManifestKey());
+    const pack = (manifest?.packs ?? []).find((p) => p.packId === req.params.packId);
+    if (!pack) {
+      res.status(404).json({ error: 'unknown starter pack' });
+      return;
+    }
+
+    // preferredId には manifest 側の packId を渡す(パスパラメータではなく、
+    // 自分が書いたマニフェストの値を使う)
+    const world = await importWorld(dataStore, textStore, req.userId, pack.worldPublicId, { preferredId: pack.packId });
+    if (!world.ok) {
+      res.status(500).json({ error: 'starter world is missing; re-run the seed' });
+      return;
+    }
+    const worldId = world.meta.id;
+
+    const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId);
+    if (!scenario.ok) {
+      res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
+      return;
+    }
+
+    const imported = { pcs: [], npcs: [] };
+    for (const [field, ids] of [['pcs', pack.pcPublicIds ?? []], ['npcs', pack.npcPublicIds ?? []]]) {
+      for (const publicId of ids) {
+        const result = await importCharacter(dataStore, textStore, req.userId, publicId, worldId);
+        if (!result.ok) {
+          res.status(500).json({ error: 'starter character is missing; re-run the seed' });
+          return;
+        }
+        imported[field].push(result.meta);
+      }
+    }
+
+    res.status(201).json({ world: world.meta, scenario: scenario.meta, ...imported });
   }));
 
   return router;
