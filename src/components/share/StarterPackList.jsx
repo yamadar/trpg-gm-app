@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../../theme.js';
 import Card from '../ui/Card.jsx';
 import Button from '../ui/Button.jsx';
@@ -12,8 +12,13 @@ function rulesetLabel(id) {
 
 export default function StarterPackList({ onImported }) {
   const [packs, setPacks] = useState([]);
-  const [busy, setBusy] = useState(null); // インポート中の packId
-  const [errors, setErrors] = useState({}); // packId -> メッセージ
+  // 複数カードを並行して操作できるので、busy/errors はどちらも packId をキーにした
+  // オブジェクトで持つ(単一スカラーだと他カードの操作でこのカードの状態が上書きされる)。
+  const [busy, setBusy] = useState({});
+  const [errors, setErrors] = useState({});
+  // アンマウント後の setState を防ぐ。onImported で親が画面遷移し、start() の
+  // 完了待ちの間にこのコンポーネントごと外れるケースがあるため。
+  const aliveRef = useRef(true);
 
   useEffect(() => {
     let alive = true;
@@ -21,15 +26,15 @@ export default function StarterPackList({ onImported }) {
       .then((m) => alive && setPacks(m?.packs ?? []))
       // 取得できないことは「まだ無い」と同じ扱いにする。ここでエラーを出すと、
       // スターター未シードの環境で Home / Gallery に無関係な赤字が出続ける。
-      .catch(() => alive && setPacks([]))
-      .finally(() => {});
+      .catch(() => alive && setPacks([]));
     return () => {
       alive = false;
+      aliveRef.current = false;
     };
   }, []);
 
   async function start(pack) {
-    setBusy(pack.packId);
+    setBusy((prev) => ({ ...prev, [pack.packId]: true }));
     setErrors((prev) => ({ ...prev, [pack.packId]: '' }));
     try {
       const result = await importStarterPack(pack.packId);
@@ -39,9 +44,13 @@ export default function StarterPackList({ onImported }) {
         rulesetId: pack.recommendedRuleset,
       });
     } catch (e) {
-      setErrors((prev) => ({ ...prev, [pack.packId]: '取り込みに失敗した: ' + e.message }));
+      if (aliveRef.current) {
+        setErrors((prev) => ({ ...prev, [pack.packId]: '取り込みに失敗した: ' + e.message }));
+      }
     } finally {
-      setBusy(null);
+      if (aliveRef.current) {
+        setBusy((prev) => ({ ...prev, [pack.packId]: false }));
+      }
     }
   }
 
@@ -61,8 +70,8 @@ export default function StarterPackList({ onImported }) {
           <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, marginTop: 6 }}>{pack.tagline}</div>
 
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            {(pack.moods ?? []).map((m) => (
-              <Badge key={m}>{m}</Badge>
+            {(pack.moods ?? []).map((m, i) => (
+              <Badge key={`${m}-${i}`}>{m}</Badge>
             ))}
             <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>{pack.scenarioTitle}</span>
           </div>
@@ -72,8 +81,8 @@ export default function StarterPackList({ onImported }) {
           )}
 
           <div style={{ marginTop: 12 }}>
-            <Button variant="brass" onClick={() => start(pack)} disabled={busy === pack.packId}>
-              {busy === pack.packId ? '取り込み中…' : 'この冒険を始める'}
+            <Button variant="brass" onClick={() => start(pack)} disabled={!!busy[pack.packId]}>
+              {busy[pack.packId] ? '取り込み中…' : 'この冒険を始める'}
             </Button>
           </div>
 

@@ -1,7 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import StarterPackList from './StarterPackList.jsx';
 import * as starterClient from '../../api/starterClient.js';
+
+// 未settleのPromiseをテストから任意のタイミングでresolve/rejectするためのヘルパー。
+// 「フェッチが完了した後の状態」を確実に観測するために使う(初回同期レンダーの
+// 見せかけの一致でwaitForが即通過してしまうのを避ける)。
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 const PACKS = [
   {
@@ -43,16 +56,36 @@ describe('StarterPackList', () => {
   });
 
   // 未シードの環境でもHome/Galleryが壊れないよう、「無い」は親ではなくここで吸収する
-  it('renders nothing when the manifest is empty', async () => {
-    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: [], seededAt: null });
+  it('renders nothing once the manifest resolves as empty', async () => {
+    const { promise, resolve } = deferred();
+    vi.spyOn(starterClient, 'listStarters').mockReturnValue(promise);
     const { container } = render(<StarterPackList onImported={vi.fn()} />);
-    await waitFor(() => expect(container).toBeEmptyDOMElement());
+
+    expect(starterClient.listStarters).toHaveBeenCalled();
+
+    await act(async () => {
+      resolve({ packs: [], seededAt: null });
+      await promise;
+    });
+
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders nothing when the manifest cannot be fetched', async () => {
-    vi.spyOn(starterClient, 'listStarters').mockRejectedValue(new Error('offline'));
+  it('renders nothing and shows no error text when the manifest fetch fails', async () => {
+    const { promise, reject } = deferred();
+    vi.spyOn(starterClient, 'listStarters').mockReturnValue(promise);
     const { container } = render(<StarterPackList onImported={vi.fn()} />);
-    await waitFor(() => expect(container).toBeEmptyDOMElement());
+
+    expect(starterClient.listStarters).toHaveBeenCalled();
+
+    await act(async () => {
+      reject(new Error('offline'));
+      await promise.catch(() => {});
+    });
+
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(/失敗/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/offline/)).not.toBeInTheDocument();
   });
 
   it('imports the pack and hands the caller a starterContext', async () => {
@@ -87,5 +120,31 @@ describe('StarterPackList', () => {
 
     expect(await screen.findByText(/取り込みに失敗した/)).toBeInTheDocument();
     expect(screen.getAllByText('この冒険を始める')[1].closest('button')).not.toBeDisabled();
+  });
+
+  it('keeps a card disabled while its import is pending, even after a second import starts', async () => {
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+    const first = deferred();
+    const second = deferred();
+    vi.spyOn(starterClient, 'importStarterPack')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    render(<StarterPackList onImported={vi.fn()} />);
+
+    const buttons = await screen.findAllByText('この冒険を始める');
+    fireEvent.click(buttons[0]);
+    expect(buttons[0].closest('button')).toBeDisabled();
+
+    fireEvent.click(buttons[1]);
+    expect(buttons[1].closest('button')).toBeDisabled();
+
+    // 2枚目のインポートが開始しても、1枚目のインポートはまだ進行中なので無効のまま
+    expect(buttons[0].closest('button')).toBeDisabled();
+
+    await act(async () => {
+      first.resolve({ world: {}, scenario: {} });
+      second.resolve({ world: {}, scenario: {} });
+      await Promise.all([first.promise, second.promise]);
+    });
   });
 });
