@@ -232,4 +232,72 @@ describe('loadStarterPacks validation (malformed fixtures)', () => {
       );
     }
   });
+
+  // requireNonEmptyString は title/tagline/scenario.title の3箇所から呼ばれる共有関数のため、
+  // どれか1箇所だけ検証を外しても他の呼び出しがカバーしていると気づけない。呼び出し箇所ごとに個別に確認する。
+  it('rejects an empty or missing title', async () => {
+    for (const title of ['', undefined]) {
+      const dir = await buildInvalidRoot('sample', { meta: { title } });
+      await expect(loadStarterPacks(dir)).rejects.toThrow(
+        /starter pack "sample": title must be a non-empty string/
+      );
+    }
+  });
+
+  it('rejects an empty or missing tagline', async () => {
+    for (const tagline of ['', undefined]) {
+      const dir = await buildInvalidRoot('sample', { meta: { tagline } });
+      await expect(loadStarterPacks(dir)).rejects.toThrow(
+        /starter pack "sample": tagline must be a non-empty string/
+      );
+    }
+  });
+
+  it('rejects an empty or missing scenario.title', async () => {
+    for (const title of ['', undefined]) {
+      const dir = await buildInvalidRoot('sample', {
+        meta: { scenario: { id: 'sample-scenario', title } },
+      });
+      await expect(loadStarterPacks(dir)).rejects.toThrow(
+        /starter pack "sample": scenario\.title must be a non-empty string/
+      );
+    }
+  });
+
+  // index.json には載っているがパックディレクトリに pack.json 自体が無いケース。
+  // '/nonexistent/starters' のテストは index.json 読み込みで先に落ちるため、この分岐には届かない。
+  it('rejects when pack.json is missing entirely', async () => {
+    const dir = await buildInvalidRoot('sample', { metaRaw: null });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(/starter pack "sample": pack\.json not found/);
+  });
+
+  it('rejects syntactically invalid JSON in pack.json', async () => {
+    const dir = await buildInvalidRoot('sample', { metaRaw: '{' });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": pack\.json is not valid JSON/
+    );
+  });
+
+  it('rejects a source that is neither a string nor null', async () => {
+    const dir = await buildInvalidRoot('sample', { meta: { source: 42 } });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": source must be a string or null/
+    );
+  });
+
+  it('rejects an empty moods array', async () => {
+    const dir = await buildInvalidRoot('sample', { meta: { moods: [] } });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": moods must be a non-empty array/
+    );
+  });
+
+  it('rejects an invalid scenario.id', async () => {
+    const dir = await buildInvalidRoot('sample', {
+      meta: { scenario: { id: 'invalid id!', title: 'サンプルシナリオ' } },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenario\.id is not a valid id/
+    );
+  });
 });
