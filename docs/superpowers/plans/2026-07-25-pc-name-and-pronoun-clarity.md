@@ -219,8 +219,11 @@ Expected: FAIL — 新規5件のうち少なくとも `names the protagonist…`
 const CAST_RULES_COMMON = `- 一つの段落の中で、二人以上の人物を「彼」「彼女」で受けないこと。片方は必ず名前、または立場・特徴による固有の呼称で書くこと。
 - 会話の応酬では、どの台詞・動作が誰のものかが常に一意に定まるように書くこと。`;
 
+// トランスクリプトには実はPCの名前が入っていることが多い(PL行やNPCの呼びかけ)。
+// 「名前は存在しない」と断言すると、使える名前を無視して余計な呼称を作らせてしまうため、
+// 「読み取れるなら使う」を先に指示し、読み取れない場合の代替(固定の呼び名)を続ける。
 const NAMELESS_PC_RULE =
-  '- 主人公の名前はログに存在しない。世界観に合う呼称(名前、または「その傭兵」のような固定の呼び名)を一つだけ定め、全編を通して一貫して使うこと。場面ごとに呼び方を変えないこと。';
+  '- 主人公の名前は与えられていない。ログから読み取れるならその名前を使い、読み取れなければ世界観に合う呼称(「その傭兵」のような固定の呼び名)を一つだけ定めること。いずれの場合も全編を通して一貫して使い、場面ごとに呼び方を変えないこと。';
 
 // 一人称では主人公は「私」等になり他の人物と衝突しないため、主人公の行は出さない。
 function buildCastRules(pov, pcName) {
@@ -933,10 +936,13 @@ import { extractPcName, composePcRaw } from '../utils/pcName.js';
       if (pcMode === 'existing' && selectedPC) {
         pc = selectedPC.raw;
         pcLibraryName = selectedPC.name;
+        // シート本文の「PC名:」行から先に名前を取っておく。AI解析(下のgetOrParseCharacter)は
+        // ネットワーク越しでオフライン・429・キー無しだと失敗しうるので、それだけに頼らない。
+        pcResolvedName = extractPcName(selectedPC.raw);
       } else {
         // 入力されたPC名をシート本文にも残す。ライブラリ原本とGMプロンプトの
         // 「# PC設定」節の両方に名前が載り、プレイ中の地の文も名前で呼べるようになる。
-        pc = composePcRaw(pcName, pcRaw);
+        pc = composePcRaw(pcName, pcRaw) || '(自由記述なし)';
         pcResolvedName = extractPcName(pc);
         // 保存の条件は従来どおり「自由記述が書かれていること」。名前だけのPCを
         // ライブラリに増やさないため、ここは広げない。
@@ -958,8 +964,9 @@ import { extractPcName, composePcRaw } from '../utils/pcName.js';
           const parsed = await getOrParseCharacter(resolvedWorldId, 'pc', pcLibraryName);
           pcGoal = parsed.goal;
           pcBonds = parsed.bonds;
-          // 既存PCを選んだ経路では、名前はここでしか得られない。
-          if (parsed.name) pcResolvedName = parsed.name;
+          // 新規PC経路ではユーザーが今入力した名前が確定済みなので上書きしない。
+          // 既存PC経路はシート本文の抽出結果をAI解析の結果で補強・上書きしてよい。
+          if (pcMode === 'existing' && parsed.name) pcResolvedName = parsed.name;
         } catch (e) {
           console.error('name/goal/bonds parse failed', e);
         }

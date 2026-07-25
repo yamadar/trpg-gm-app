@@ -91,7 +91,7 @@ pc = composePcRaw(pcName, pcRaw);   // 既に PC名: 行があればそのまま
 
 合成した本文がライブラリ原本(`putCharacter`)にもセッション(`session.pc.raw`)にも入るため、GMプロンプトの `# PC設定` 節(`src/api/prompts.js`)にも名前が載る。プレイ中の地の文が名前でPCを呼びやすくなる副次効果がある。
 
-`pcRaw` が空でも `pcName` は必ずあるので、現行の `pc = pcRaw || '(自由記述なし)'` のフォールバックは `composePcRaw()` の結果が空にならないことで自然に解消される。
+`pcMode === 'existing'` のままPCを選ばずに開始する経路(`starterContext` の初期状態)も同じ分岐を通り、その場合は `pcName`・`pcRaw` がともに空になる。そのため現行の `pc = pcRaw || '(自由記述なし)'` のフォールバックは残し、`pc = composePcRaw(pcName, pcRaw) || '(自由記述なし)'` とする。
 
 **セッション形状**: `session.pc` に `name` が加わる。
 
@@ -114,7 +114,7 @@ name: {
 
 `required` にも `name` を加え、system プロンプトを「以下のキャラクターシートから name(名前)・goal(目標)・bonds(因縁・関係)を抽出せよ。」に変える。
 
-`src/screens/Setup.jsx` の `handleStart()` は、既存PC選択時に `parsed.name` を `session.pc.name` として使う。
+`src/screens/Setup.jsx` の `handleStart()` は、既存PC選択時にまずシート本文(`selectedPC.raw`)から `extractPcName()` で名前を拾っておき、続けて解析(`getOrParseCharacter`)が成功して `parsed.name` が非空ならその値で上書きする。解析はネットワーク越しで失敗しうる(オフライン・429・APIキー未設定など)ため、シート本文からの抽出を先に効かせて名前が黙って消えないようにする二段構えである。
 
 **キャッシュの世代交代**: `getOrParseCharacter`(`src/api/characterSheetCache.js`)は `parsedHash === hashText(raw)` が一致するかぎり既存の `parsed` を再利用する。このままでは `name` を持たない古いキャッシュが使われ続け、既存PCで名前が取れない。ハッシュ計算にパーサのバージョン識別子を混ぜ、既存の全PCが次回使用時に一度だけ再パースされるようにする。
 

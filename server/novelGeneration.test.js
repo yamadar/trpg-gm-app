@@ -169,6 +169,9 @@ describe('generateNovel', () => {
     const system = bodyOf(fetchImpl, 0).system;
     expect(system).toContain('一つだけ定め');
     expect(system).not.toContain('主人公の名前は「');
+    // 固定の呼び名を作らせる前に、まずログから読み取れる名前を優先させる文言を検証する。
+    // これが無いと旧文言(「名前はログに存在しない」と断言するだけ)でも通ってしまう。
+    expect(system).toContain('ログから読み取れるならその名前を使い');
   });
 
   it('forbids receiving two people with 彼/彼女 in one paragraph, named or not', async () => {

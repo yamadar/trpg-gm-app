@@ -58,9 +58,7 @@ describe('Setup', () => {
   it('disables the Scenario "既存を選ぶ" button until a World is selected', () => {
     render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
     fireEvent.click(screen.getByText('次へ')); // World(デフォルトskip) -> Scenario
-    // 共有Buttonコンポーネント(src/components/ui/Button.jsx)はdisabled時にネイティブの
-    // disabled属性を付与せず、onClickを無効化するのみ(Button.test.jsxの既存挙動と同じ)。
-    // そのためtoBeDisabled()ではなく、クリックしても既存Scenario選択UIへ遷移しないことで検証する。
+    expect(screen.getByText('既存を選ぶ')).toBeDisabled();
     fireEvent.click(screen.getByText('既存を選ぶ'));
     expect(screen.queryByText('既存Scenarioを選ぶ')).not.toBeInTheDocument();
   });
@@ -500,6 +498,41 @@ describe('Setup', () => {
     const session = onStart.mock.calls[0][0];
     expect(session.pc.name).toBe('カイ');
     expect(session.pc.raw).toBe('PC名: カイ\ngoal: 生き延びる');
+  });
+
+  // 新規PC経路は`if (pcMode === 'existing' && parsed.name)`で絞られており、AI解析の結果が
+  // 上書きしない。ユーザーが入力した名前が確定済みの値として優先されることを固定する。
+  it('keeps the entered PC name even when parsing returns a different name (new-PC path)', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    vi.spyOn(characterLibraryClient, 'putCharacter').mockResolvedValue({});
+    vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockResolvedValue({
+      name: '別の名前',
+      goal: '',
+      bonds: '',
+    });
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC(新規作成が既定)
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'カイ' } });
+    fireEvent.change(screen.getByPlaceholderText(/能力値・スキル/), { target: { value: 'goal: 生き延びる' } });
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(characterSheetCache.getOrParseCharacter).toHaveBeenCalled();
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.name).toBe('カイ');
   });
 
   it('does not duplicate a PC名 line that the player already wrote in the sheet', async () => {
