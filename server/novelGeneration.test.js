@@ -153,4 +153,49 @@ describe('generateNovel', () => {
 
     expect(bodyOf(fetchImpl, 0).system).toContain('一人称');
   });
+
+  it('names the protagonist in the system prompt when pcName is given', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, pcName: 'カイ', fetchImpl });
+
+    expect(bodyOf(fetchImpl, 0).system).toContain('主人公の名前は「カイ」である');
+  });
+
+  // 名無しのまま遊び終わった既存セッションの救済。呼称をモデルに一つ決めさせる。
+  it('tells the model to coin one consistent designation when pcName is empty', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, fetchImpl });
+
+    const system = bodyOf(fetchImpl, 0).system;
+    expect(system).toContain('一つだけ定め');
+    expect(system).not.toContain('主人公の名前は「');
+  });
+
+  it('forbids receiving two people with 彼/彼女 in one paragraph, named or not', async () => {
+    for (const pcName of ['カイ', '']) {
+      const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+      await generateNovel({ ...BASE, pcName, fetchImpl });
+      expect(bodyOf(fetchImpl, 0).system).toContain('二人以上の人物を「彼」「彼女」で受けないこと');
+    }
+  });
+
+  // 一人称では主人公が「私」等になり、他の人物と衝突しない。主人公の行は不要。
+  it('drops the protagonist rule in first person but keeps the rule for the rest of the cast', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, pov: 'first', pcName: 'カイ', fetchImpl });
+
+    const system = bodyOf(fetchImpl, 0).system;
+    expect(system).not.toContain('主人公の名前は「カイ」である');
+    expect(system).not.toContain('一つだけ定め');
+    expect(system).toContain('二人以上の人物を「彼」「彼女」で受けないこと');
+  });
+
+  // 挿絵マーカーの指示は書き分け規律の後ろに来る(既存の連結位置を変えていないことの確認)。
+  it('keeps the marker instruction after the cast rules', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, hasImages: true, pcName: 'カイ', fetchImpl });
+
+    const system = bodyOf(fetchImpl, 0).system;
+    expect(system.indexOf('人物の書き分け')).toBeLessThan(system.indexOf('挿絵挿入位置'));
+  });
 });

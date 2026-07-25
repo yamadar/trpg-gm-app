@@ -22,10 +22,36 @@ function extractText(content) {
     .join('\n');
 }
 
-// pov: 'third'(既定)または 'first'。
-function buildNovelizeSystemPrompt(pov) {
+// 主人公と他の人物がどちらも「彼」になり、読者が取り違える事故を防ぐための規律。
+// トランスクリプトのGM地の文はPCを二人称で呼ぶため、三人称へ書き直す時点で
+// モデルに使える語が「彼」しか残らない。指示がないと衝突は構造的に必ず起きる。
+const CAST_RULES_COMMON = `- 一つの段落の中で、二人以上の人物を「彼」「彼女」で受けないこと。片方は必ず名前、または立場・特徴による固有の呼称で書くこと。
+- 会話の応酬では、どの台詞・動作が誰のものかが常に一意に定まるように書くこと。`;
+
+const NAMELESS_PC_RULE =
+  '- 主人公の名前はログに存在しない。世界観に合う呼称(名前、または「その傭兵」のような固定の呼び名)を一つだけ定め、全編を通して一貫して使うこと。場面ごとに呼び方を変えないこと。';
+
+// 一人称では主人公は「私」等になり他の人物と衝突しないため、主人公の行は出さない。
+function buildCastRules(pov, pcName) {
+  const lines =
+    pov === 'first'
+      ? [CAST_RULES_COMMON]
+      : [
+          pcName
+            ? `- 主人公の名前は「${pcName}」である。地の文では原則この名前で呼び、代名詞は直前の主語が明白なときだけ使うこと。`
+            : NAMELESS_PC_RULE,
+          CAST_RULES_COMMON,
+        ];
+  return `\n\n# 人物の書き分け\n${lines.join('\n')}`;
+}
+
+// pov: 'third'(既定)または 'first'。pcName が空なら呼称をモデルに決めさせる。
+function buildNovelizeSystemPrompt(pov, pcName) {
   const voice = pov === 'first' ? 'PC視点の一人称' : '三人称';
-  return `以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを${voice}の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。`;
+  return (
+    `以下はTRPGセッションの進行ログである。プレイヤー発言とGMの地の文が交互に並んでいる。これを${voice}の小説として、場面転換や心理描写を補いながら自然な文章に書き直せ。ゲーム的な表現(選択肢・判定結果の数値等)はそのまま出力せず、物語として自然に溶け込ませること。説明文やコードブロック記号は付けず、小説本文のみを出力すること。` +
+    buildCastRules(pov, pcName)
+  );
 }
 
 // トランスクリプトは継続のたびに再送されるため、キャッシュ対象として印を付ける。
@@ -48,13 +74,14 @@ function buildMessages(transcript, soFar) {
 export async function generateNovel({
   transcript,
   hasImages = false,
+  pcName = '',
   pov,
   apiKey,
   fetchImpl = fetch,
   maxContinuations = NOVELIZE_MAX_CONTINUATIONS,
   timeoutMs = NOVELIZE_UPSTREAM_TIMEOUT_MS,
 }) {
-  const system = buildNovelizeSystemPrompt(pov) + (hasImages ? MARKER_INSTRUCTION : '');
+  const system = buildNovelizeSystemPrompt(pov, pcName) + (hasImages ? MARKER_INSTRUCTION : '');
   const parts = [];
 
   for (let attempt = 0; attempt <= maxContinuations; attempt += 1) {
