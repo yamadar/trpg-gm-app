@@ -45,6 +45,7 @@ export default function AchievementList({ onClose }) {
   const [category, setCategory] = useState('all');
 
   useEffect(() => {
+    setError('');
     if (!user) {
       setEndings([]);
       return;
@@ -53,9 +54,12 @@ export default function AchievementList({ onClose }) {
     (async () => {
       try {
         const list = await listEndings();
-        if (!cancelled) setEndings(list);
+        if (!cancelled) {
+          setEndings(list);
+          setError('');
+        }
       } catch (e) {
-        if (!cancelled) setError('エンディングの取得に失敗した: ' + e.message);
+        if (!cancelled) setError('エンディングの取得に失敗した: ' + (e?.message || String(e)));
       }
     })();
     return () => {
