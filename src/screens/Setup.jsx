@@ -16,47 +16,60 @@ import Field from '../components/ui/Field.jsx';
 import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
 
-export default function Setup({ onStart, onCancel, campaignContext = null }) {
-  const [step, setStep] = useState(0);
+export default function Setup({ onStart, onCancel, campaignContext = null, starterContext = null }) {
+  // starterContext はスターターパックを一括インポートした直後の状態。World/Scenario/Ruleset を
+  // 選択済みにして PC 選択(step 3)から開く。PCまで自動選択しないのは、どちらを演じるかが
+  // 初回ユーザーの最初の選択であり、「PCはWorldに属していて選ぶもの」を最短で伝えるため。
+  const [step, setStep] = useState(starterContext ? 3 : 0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [libraryWarning, setLibraryWarning] = useState('');
 
   // World
-  const [worldMode, setWorldMode] = useState(campaignContext ? 'existing' : 'skip'); // existing | new | skip
+  const [worldMode, setWorldMode] = useState(campaignContext || starterContext ? 'existing' : 'skip'); // existing | new | skip
   const [worldTitle, setWorldTitle] = useState('');
   const [worldRaw, setWorldRaw] = useState('');
   const [worldFiles, setWorldFiles] = useState([]);
   const [existingWorlds, setExistingWorlds] = useState([]);
   const [selectedWorld, setSelectedWorld] = useState(
-    campaignContext ? { id: campaignContext.worldId, raw: campaignContext.world.summary } : null
+    campaignContext
+      ? { id: campaignContext.worldId, raw: campaignContext.world.summary }
+      : starterContext
+      ? starterContext.world
+      : null
   ); // { id, title, raw } | null
 
   // Scenario
-  const [scenarioMode, setScenarioMode] = useState('paste'); // existing | paste | generate
+  const [scenarioMode, setScenarioMode] = useState(starterContext ? 'existing' : 'paste'); // existing | paste | generate
   const [scenarioTitle, setScenarioTitle] = useState('');
   const [scenarioRaw, setScenarioRaw] = useState('');
   const [scenarioFiles, setScenarioFiles] = useState([]);
   const [genre, setGenre] = useState('');
   const [existingScenarios, setExistingScenarios] = useState([]);
-  const [selectedScenario, setSelectedScenario] = useState(null); // { id, title, raw, recommendedRuleset } | null
+  const [selectedScenario, setSelectedScenario] = useState(starterContext ? starterContext.scenario : null); // { id, title, raw, recommendedRuleset } | null
 
-  const [rulesetId, setRulesetId] = useState(campaignContext ? campaignContext.rulesetId || 'simple' : 'simple');
+  const [rulesetId, setRulesetId] = useState(
+    campaignContext ? campaignContext.rulesetId || 'simple' : starterContext ? starterContext.rulesetId : 'simple'
+  );
   const [customRulesets, setCustomRulesets] = useState([]);
 
   // PC
-  const [pcMode, setPcMode] = useState('new'); // existing | new
+  const [pcMode, setPcMode] = useState(starterContext ? 'existing' : 'new'); // existing | new
   const [pcRaw, setPcRaw] = useState(campaignContext ? campaignContext.pcRaw || '' : '');
   const [existingPCs, setExistingPCs] = useState([]);
   const [selectedPC, setSelectedPC] = useState(null); // { name, raw } | null
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(starterContext ? starterContext.scenario.title : '');
 
   const worldTokenRef = useRef(0);
   const scenarioTokenRef = useRef(0);
   const pcTokenRef = useRef(0);
 
   const worldId = worldMode === 'existing' ? selectedWorld?.id ?? null : null;
+  // worldId が変わったときだけ従属する選択をリセットする。campaignContext/starterContext のように
+  // 最初から worldId が埋まっている場合、マウント時のリセットで選択が消えてしまうため、
+  // 現在値で初期化してマウント直後は「変化なし」として扱う。
+  const prevWorldIdRef = useRef(worldId);
   const allRulesets = useMemo(() => [...RULESETS, ...customRulesets], [customRulesets]);
 
   const steps = ['世界観', 'シナリオ', 'ルール', 'PC', '確認'];
@@ -74,7 +87,11 @@ export default function Setup({ onStart, onCancel, campaignContext = null }) {
   }, []);
 
   useEffect(() => {
-    setSelectedScenario(null);
+    if (prevWorldIdRef.current !== worldId) {
+      setSelectedScenario(null);
+      setSelectedPC(null);
+      prevWorldIdRef.current = worldId;
+    }
     if (!worldId) {
       setExistingScenarios([]);
       return;
@@ -85,7 +102,6 @@ export default function Setup({ onStart, onCancel, campaignContext = null }) {
   }, [worldId]);
 
   useEffect(() => {
-    setSelectedPC(null);
     if (!worldId) {
       setExistingPCs([]);
       return;

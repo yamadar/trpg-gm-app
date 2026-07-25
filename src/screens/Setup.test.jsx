@@ -428,4 +428,66 @@ describe('Setup', () => {
     // busy解除でボタン文言が"ゲーム開始"へ戻る(準備中…のままにならない)
     expect(screen.getByText('ゲーム開始')).toBeInTheDocument();
   });
+
+  describe('starterContext', () => {
+    const STARTER = {
+      world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界本文' },
+      scenario: {
+        id: 'photo-studio-on-the-hill', worldId: 'arkham-1920s', title: '丘の上の写真館',
+        recommendedRuleset: 'coc7e', moods: ['ホラー'], raw: '# シナリオ本文',
+      },
+      rulesetId: 'coc7e',
+    };
+
+    it('opens on the PC step with world, scenario and ruleset already chosen', async () => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+        { name: 'howard-kane' }, { name: 'mabel-thorne' },
+      ]);
+      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
+
+      // ステップ表示が「4. PC」を選択中にしている
+      expect(await screen.findByText('4. PC')).toBeInTheDocument();
+      // PC一覧が選択済みWorldから取れている
+      await waitFor(() => expect(characterLibraryClient.listCharacters).toHaveBeenCalledWith('arkham-1920s', 'pc'));
+      expect(await screen.findByText('howard-kane')).toBeInTheDocument();
+    });
+
+    // worldId が最初から埋まっているので、マウント時に走る useEffect が選択を消してはいけない
+    it('keeps the preselected scenario after mount', async () => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([]);
+      // Scenarioステップの一覧はlistScenarios(worldId)の結果から描画されるため、既存テストの
+      // 慣習(Worldが決まっている状態でScenarioステップへ進むテストは必ずモックする)に倣う。
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
+      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
+
+      fireEvent.click(await screen.findByText('戻る')); // → ルール
+      fireEvent.click(screen.getByText('戻る')); // → シナリオ
+      expect(await screen.findByText('丘の上の写真館')).toBeInTheDocument();
+    });
+
+    it('starts a session carrying the starter world, scenario, moods and ruleset', async () => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([{ name: 'howard-kane' }]);
+      vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({ name: 'howard-kane', raw: 'PC名: ハワード' });
+      const onStart = vi.fn();
+      render(<Setup onStart={onStart} onCancel={vi.fn()} starterContext={STARTER} />);
+
+      fireEvent.click(await screen.findByText('howard-kane'));
+      fireEvent.click(screen.getByText('次へ')); // → 確認
+      fireEvent.click(await screen.findByText('ゲーム開始'));
+
+      await waitFor(() => expect(onStart).toHaveBeenCalled());
+      const session = onStart.mock.calls[0][0];
+      expect(session.worldId).toBe('arkham-1920s');
+      expect(session.world.summary).toBe('# 世界本文');
+      expect(session.scenario.raw).toBe('# シナリオ本文');
+      expect(session.moods).toEqual(['ホラー']);
+      expect(session.rulesetId).toBe('coc7e');
+      expect(session.title).toContain('丘の上の写真館');
+    });
+
+    it('behaves exactly as before when starterContext is absent', () => {
+      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+      expect(screen.getByText('1. 世界観')).toBeInTheDocument();
+    });
+  });
 });
