@@ -106,6 +106,40 @@ describe('importWorld', () => {
     const imported = await getWorld(dataStore, textStore, 'usr_b', result.meta.id);
     expect(imported.moods).toEqual(['ホラー', '冒険']);
   });
+
+  describe('importWorld preferredId', () => {
+    it('uses preferredId as the base id when given', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: '百鬼夜行 — 平安京', raw: '# 本文' });
+      const { meta: pub } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+
+      const res = await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { preferredId: 'hyakki-yagyo' });
+
+      expect(res.ok).toBe(true);
+      expect(res.meta.id).toBe('hyakki-yagyo');
+      expect(res.meta.title).toBe('百鬼夜行 — 平安京');
+    });
+
+    it('suffixes preferredId on collision', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: '百鬼夜行 — 平安京', raw: '# 本文' });
+      const { meta: pub } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+
+      await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { preferredId: 'hyakki-yagyo' });
+      const second = await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { preferredId: 'hyakki-yagyo' });
+
+      expect(second.meta.id).toBe('hyakki-yagyo-2');
+    });
+
+    it('falls back to slugify(title) when preferredId is absent or empty', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: 'Ruins Of Alden', raw: '# 本文' });
+      const { meta: pub } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+
+      const noArg = await importWorld(dataStore, textStore, 'usr_b', pub.publicId);
+      expect(noArg.meta.id).toBe('ruinsofalden');
+
+      const empty = await importWorld(dataStore, textStore, 'usr_c', pub.publicId, { preferredId: '' });
+      expect(empty.meta.id).toBe('ruinsofalden');
+    });
+  });
 });
 
 describe('importCharacter', () => {

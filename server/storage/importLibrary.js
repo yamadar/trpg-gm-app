@@ -14,10 +14,14 @@ async function findAvailable(base, exists) {
   }
 }
 
-export async function importWorld(dataStore, textStore, userId, publicId) {
+// preferredId: 呼び出し側が id を指定できる。slugify は非ASCIIを全除去するため、
+// 日本語タイトルのWorldは何を入れても 'untitled' に潰れてしまう。スターターパックの
+// ように id が意味を持つ経路のための逃げ道であり、未指定なら従来どおり title から作る。
+export async function importWorld(dataStore, textStore, userId, publicId, { preferredId } = {}) {
   const pub = await getPublicWorld(dataStore, textStore, publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
-  const id = await findAvailable(slugify(pub.title), async (c) => (await dataStore.get(worldMetaKey(userId, c))) !== null);
+  const base = typeof preferredId === 'string' && preferredId.length > 0 ? preferredId : slugify(pub.title);
+  const id = await findAvailable(base, async (c) => (await dataStore.get(worldMetaKey(userId, c))) !== null);
   const world = await saveWorld(dataStore, textStore, userId, {
     id,
     title: pub.title,
