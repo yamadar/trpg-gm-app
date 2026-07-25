@@ -43,10 +43,11 @@ export default function StarterPackList({ onImported }) {
     setErrors((prev) => ({ ...prev, [pack.packId]: '' }));
     try {
       const result = await importStarterPack(pack.packId);
-      onImported({
+      if (!aliveRef.current) return;
+      onImported?.({
         world: result.world,
         scenario: result.scenario,
-        rulesetId: pack.recommendedRuleset,
+        rulesetId: result.scenario?.recommendedRuleset ?? pack.recommendedRuleset,
       });
     } catch (e) {
       if (aliveRef.current) {
