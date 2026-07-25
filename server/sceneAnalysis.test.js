@@ -23,11 +23,24 @@ describe('analyzeScene', () => {
   });
   it('filters malformed entries', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      anthropicJson({ present_names: ['A', 5], new_appearances: [{ name: 'A' }, { name: 'B', description: 'ok' }] })
+      anthropicJson({ present_names: ['A', 'B', 5], new_appearances: [{ name: 'A' }, { name: 'B', description: 'ok' }] })
     );
     const out = await analyzeScene({ narrative: 'x', apiKey: 'k', fetchImpl });
-    expect(out.presentNames).toEqual(['A']);
+    expect(out.presentNames).toEqual(['A', 'B']);
     expect(out.newAppearances).toEqual([{ name: 'B', description: 'ok' }]);
+  });
+  it('drops appearances for characters who are only mentioned, not present', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      anthropicJson({
+        present_names: ['ゲオルク'],
+        new_appearances: [
+          { name: 'ゲオルク', description: '白髪の老人、厚手の外套' },
+          { name: 'ハンス', description: 'ゲオルクの息子。この場面には登場せず言及されるのみ' },
+        ],
+      })
+    );
+    const out = await analyzeScene({ narrative: 'x', apiKey: 'k', fetchImpl });
+    expect(out.newAppearances).toEqual([{ name: 'ゲオルク', description: '白髪の老人、厚手の外套' }]);
   });
   it('returns empty when the API responds not-ok', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) });
