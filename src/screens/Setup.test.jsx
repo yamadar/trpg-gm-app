@@ -93,6 +93,7 @@ describe('Setup', () => {
 
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -142,6 +143,7 @@ describe('Setup', () => {
 
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -184,6 +186,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('シンプル')); // 手動でsimpleに選び直す
 
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -214,6 +217,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -243,6 +247,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -267,6 +272,7 @@ describe('Setup', () => {
     await waitFor(() => expect(screen.getByText('自作ルール')).toBeInTheDocument());
     fireEvent.click(screen.getByText('自作ルール'));
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -334,6 +340,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
 
@@ -342,6 +349,68 @@ describe('Setup', () => {
     const session = onStart.mock.calls[0][0];
     expect(session.pc.goal).toBeUndefined();
     expect(session.pc.bonds).toBeUndefined();
+  });
+
+  it('blocks the PC step until a PC name is entered in the new-PC mode', () => {
+    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+
+    // 共有Buttonはdisabled時もネイティブのdisabled属性を付けないため、
+    // 「押しても確認ステップへ進まない」ことで検証する。
+    fireEvent.click(screen.getByText('次へ'));
+    expect(screen.queryByText('セッション名')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'カイ' } });
+    fireEvent.click(screen.getByText('次へ'));
+    expect(screen.getByText('セッション名')).toBeInTheDocument();
+  });
+
+  it('does not block the PC step when an existing PC is picked from the library', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+
+    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('既存を選ぶ')); // PC: 既存
+
+    expect(screen.queryByPlaceholderText('例: カイ・アーレンス')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('次へ'));
+    expect(screen.getByText('セッション名')).toBeInTheDocument();
+  });
+
+  // キャンペーンの章をまたぐたびに名前を打ち直させないための前埋め。
+  it('prefills the PC name from the carried sheet when a campaignContext is given', async () => {
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    render(
+      <Setup
+        onStart={vi.fn()}
+        onCancel={vi.fn()}
+        campaignContext={{
+          worldId: 'w1',
+          world: { raw: 'World原文', summary: 'World要約' },
+          moods: [],
+          pcRaw: 'PC名: カイ(熟練)',
+          xp: 12,
+          rulesetId: 'simple',
+          campaignId: 'cp1',
+        }}
+      />
+    );
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+
+    expect(screen.getByPlaceholderText('例: カイ・アーレンス')).toHaveValue('カイ(熟練)');
   });
 
   it('clears a previously selected Scenario when the World changes', async () => {
@@ -384,6 +453,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // Scenario
     fireEvent.click(screen.getByText('次へ')); // Ruleset
     fireEvent.click(screen.getByText('次へ')); // PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ')); // 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
     await waitFor(() => expect(onStart).toHaveBeenCalled());
@@ -428,6 +498,7 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('次へ'));
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('ゲーム開始'));
 
