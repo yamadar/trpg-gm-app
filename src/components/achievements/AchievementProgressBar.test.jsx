@@ -12,17 +12,17 @@ describe('AchievementProgressBar', () => {
   });
 
   it('fills in proportion to the target', () => {
-    const { container } = render(<AchievementProgressBar current={3} target={10} label="進捗" />);
-    expect(container.querySelector('div > div').style.width).toBe('30%');
+    render(<AchievementProgressBar current={3} target={10} label="進捗" />);
+    expect(screen.getByRole('progressbar').firstChild.style.width).toBe('30%');
   });
 
   it('never overflows when current exceeds target', () => {
-    const { container } = render(<AchievementProgressBar current={30} target={10} label="進捗" />);
-    expect(container.querySelector('div > div').style.width).toBe('100%');
+    render(<AchievementProgressBar current={30} target={10} label="進捗" />);
+    expect(screen.getByRole('progressbar').firstChild.style.width).toBe('100%');
   });
 
   it('stays at zero when the target is zero', () => {
-    const { container } = render(<AchievementProgressBar current={0} target={0} label="進捗" />);
-    expect(container.querySelector('div > div').style.width).toBe('0%');
+    render(<AchievementProgressBar current={0} target={0} label="進捗" />);
+    expect(screen.getByRole('progressbar').firstChild.style.width).toBe('0%');
   });
 });
