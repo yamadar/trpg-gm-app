@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import EndingGallery from './EndingGallery.jsx';
 import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
@@ -81,15 +81,57 @@ describe('EndingGallery', () => {
   });
 
   it('shows at most three recently earned achievements, newest first', async () => {
-    const many = [1, 2, 3].map((i) =>
-      ending({ sessionId: `s${i}`, endedAt: new Date(2026, 6, i, 9).getTime(), worldId: 'w1' })
-    );
+    // 判定回数を short-story(10回以下)の範囲外にして、単発の記録でも
+    // 複数の実績が同時に立たないようにする(byDegreeの内訳は使わないので合計だけ揃える)。
+    const NEUTRAL_STATS = {
+      total: 15,
+      successes: 8,
+      successRate: 0.5,
+      byDegree: { fumble: 1, fail: 6, success: 7, critical: 1 },
+      degrees: ['fumble', 'fail', 'success', 'critical'],
+      resources: {},
+    };
+    // 3件が同じ日・同じ世界・同じ雰囲気に固まると、獲得実績が1つの日付に何個も乗って
+    // 「日付が全部同じなので並び替えても変わらない」まま検定を通ってしまう(このテストの穴)。
+    // ここでは各記録がちょうど1つの実績だけを単独の日付で獲得するように組む。
+    //   1件目: 雰囲気なし → first-ending だけが 07-01 に立つ
+    //   2件目: 初出の雰囲気「冒険」 → mood-adventure だけが 07-05 に立つ
+    //   3件目: 雰囲気は2件目と同じ(再発火させない) → 3件目という件数で three-endings だけが 07-10 に立つ
+    // evaluateAchievements で実際に確認済み(獲得3件、各々別日付)。
+    const many = [
+      ending({
+        sessionId: 's1',
+        endedAt: new Date(2026, 6, 1, 12).getTime(),
+        worldId: null,
+        moods: [],
+        stats: NEUTRAL_STATS,
+      }),
+      ending({
+        sessionId: 's2',
+        endedAt: new Date(2026, 6, 5, 12).getTime(),
+        worldId: null,
+        moods: ['冒険'],
+        stats: NEUTRAL_STATS,
+      }),
+      ending({
+        sessionId: 's3',
+        endedAt: new Date(2026, 6, 10, 12).getTime(),
+        worldId: null,
+        moods: ['冒険'],
+        stats: NEUTRAL_STATS,
+      }),
+    ];
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue(many);
     renderWithAuth(<EndingGallery onClose={vi.fn()} />);
     const tiles = await screen.findAllByTestId('achievement-tile');
     expect(tiles.length).toBe(3);
     const dates = tiles.map((t) => t.textContent.match(/\d{4}-\d{2}-\d{2}/)[0]);
-    expect([...dates]).toEqual([...dates].sort().reverse());
+    // 3件とも別日付なので、狭義単調減少であることが並び替え(newest first)の実証になる。
+    // コンパレータの符号が反転すると、この2つの不等式のどちらかが必ず落ちる。
+    expect(dates[0] > dates[1]).toBe(true);
+    expect(dates[1] > dates[2]).toBe(true);
+    // 日付だけでなく、最新タイルの中身(三つの結末=07-10に立つ実績)も固定して確認する。
+    expect(within(tiles[0]).getByText('三つの結末')).toBeInTheDocument();
   });
 
   it('says so when nothing has been earned yet', async () => {
