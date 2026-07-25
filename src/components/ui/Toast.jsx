@@ -63,13 +63,20 @@ function ToastItem({ item, onDismiss }) {
         onClick={() => onDismiss(item.id)}
         style={{
           flexShrink: 0,
+          // 24x24はWCAG 2.5.8(ターゲットサイズ最小)の下限。以前はpadding:2のみで
+          // 実測18px程度しかなく、誤タップしやすかった。
+          minWidth: 24,
+          minHeight: 24,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           background: 'transparent',
           border: 'none',
           color: COLORS.brassDark,
           fontSize: 14,
           lineHeight: 1,
           cursor: 'pointer',
-          padding: 2,
+          padding: 0,
         }}
       >
         ×

@@ -14,15 +14,21 @@ export default function Button({ children, onClick, disabled, variant = 'primary
   };
   const variants = {
     primary: { background: COLORS.ink, color: COLORS.paper },
-    brass: { background: COLORS.brass, color: COLORS.paper },
+    // 背景はbrass(#9C7A45)ではなくbrassDark。brassの上のpaper文字は3.20:1しかなく、
+    // 13pxは大字扱いにならないためAAに届かない。brassDarkなら4.67:1。
+    brass: { background: COLORS.brassDark, color: COLORS.paper },
     ghost: {
       background: 'transparent',
       color: COLORS.ink,
-      border: `1px solid ${COLORS.line}`,
+      border: `1px solid ${COLORS.lineStrong}`,
     },
   };
   return (
     <button
+      // 既定のtypeはsubmit。<form>内に置いたButtonが意図せずフォーム送信するのを防ぐ。
+      type="button"
+      // styles.cssの:focus-visibleが、塗り系variantの上でリング色を紙色へ反転するのに使う。
+      data-variant={variant}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       style={{ ...base, ...variants[variant], ...style }}

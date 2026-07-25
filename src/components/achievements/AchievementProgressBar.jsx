@@ -17,12 +17,3 @@ export default function AchievementProgressBar({ current, target, label, width }
     </div>
   );
 }
-      aria-valuemin={0}
-      aria-valuemax={target}
-      aria-label={label}
-      style={{ height: 4, borderRadius: 999, background: COLORS.paperDark, overflow: 'hidden', width }}
-    >
-      <div style={{ height: '100%', width: `${pct}%`, background: COLORS.brass }} />
-    </div>
-  );
-}

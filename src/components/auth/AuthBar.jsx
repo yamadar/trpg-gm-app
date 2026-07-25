@@ -54,6 +54,7 @@ export default function AuthBar() {
     <div style={{ ...wrapStyle, textAlign: 'right' }}>
       <div ref={menuRef} style={{ position: 'relative', display: 'inline-block' }}>
         <button
+          type="button"
           onClick={() => setMenuOpen((v) => !v)}
           style={{
             display: 'flex',
@@ -112,6 +113,7 @@ export default function AuthBar() {
             }}
           >
             <button
+              type="button"
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
@@ -121,6 +123,7 @@ export default function AuthBar() {
               自分のページ
             </button>
             <button
+              type="button"
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
@@ -130,6 +133,7 @@ export default function AuthBar() {
               プロフィール編集
             </button>
             <button
+              type="button"
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
