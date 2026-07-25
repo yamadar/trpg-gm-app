@@ -101,32 +101,15 @@ summarizeRolls(session) -> {
 
 クライアントは `src/api/endingClient.js` に `recordEnding` / `listEndings` / `renameEnding` / `deleteEnding` を置く。
 
-## 5. 実績: `src/engine/achievements.js`(新規・純関数)
+## 5. 実績
 
-```js
-evaluateAchievements(endings) -> [{ id, label, description, earned, earnedAt, sessionId }]
-```
+実績は後続の [2026-07-25-achievements-expansion-design.md](2026-07-25-achievements-expansion-design.md) で50件・7カテゴリへ拡張し、一覧は専用画面 `#/achievements` へ移した。カタログの定義と図鑑上部の構成はそちらを参照。
 
-**エンディング記録のコレクションだけから導出する。実績の保存を持たない。** これにより (a) マイグレーションが要らない、(b) 実績定義を後から足すと過去の記録に遡って付く、(c) 判定が純粋で試験しやすい。
-
-カタログはコード内の固定リスト(ユーザー定義は非対象)。全件を返し、未獲得は `earned: false` で返す — 図鑑側でグレー表示して集める動機にするため。
-
-| id | ラベル | 条件 | 種別 |
-|---|---|---|---|
-| `first-ending` | 初めての結末 | 記録が1つ以上 | コレクション |
-| `three-endings` | 三つの結末 | 記録が3つ以上 | コレクション |
-| `world-trilogy` | 一つの世界の三つの結末 | 同一 `worldId` の記録が3つ以上 | コレクション |
-| `flawless` | 無傷の旅路 | 1つの記録で `total >= 1` かつ `byDegree.fumble === 0` | 単体 |
-| `lucky` | 豪運 | 1つの記録で `byDegree.critical >= 3` | 単体 |
-| `cursed` | 厄日 | 1つの記録で `byDegree.fumble >= 3` | 単体 |
-| `brink` | 瀬戸際の生還 | 1つの記録で `stats.resources.san.value <= 10`(CoC7e風のみ) | 単体 |
-| `short-story` | 短編 | 1つの記録で `1 <= total <= 10` | 単体 |
-
-`earnedAt` / `sessionId` は**条件を最初に満たした記録**のもの(記録を `endedAt` の昇順に並べて判定するので決定的)。コレクション種別は条件を成立させた記録のものになる。
-
-ルールセット依存の実績(`brink`)は、その語彙・リソースを持たない記録では単に条件を満たさない。判定は `stats` の形だけを見るので、`formula` の分岐を実績側に持ち込まない。
+**エンディング記録のコレクションだけから導出する。実績の保存を持たない。** これにより (a) マイグレーションが要らない、(b) 実績定義を後から足すと過去の記録に遡って付く、(c) 判定が純粋で試験しやすい。この設計の核は拡張後も変わっていない。
 
 ## 6. 図鑑画面: `src/screens/EndingGallery.jsx`(新規)
+
+以下の画面構成図は初版のもので、実績を並べていた冒頭ブロックは含まない。実績は後続の [2026-07-25-achievements-expansion-design.md](2026-07-25-achievements-expansion-design.md) で50件・7カテゴリへ拡張し、一覧は専用画面 `#/achievements` へ移した。図鑑上部の現在の構成はそちらを参照。
 
 **ルーティング**: `src/router/useHashRoute.js` に `#/endings` を追加する。現在 `parseHash` は `{ userId }` だけを返すので `{ userId, endings }` に拡張し、`navigateToEndings()` を追加する(既存の `navigateToUser` / `clearHash` と同じ流儀)。`src/App.jsx` は `#/u/:userId` と同様に、このルートで `EndingGallery` を描画する。
 
@@ -136,10 +119,6 @@ evaluateAchievements(endings) -> [{ id, label, description, earned, earnedAt, se
 
 ```
 エンディング図鑑
-
-〔実績〕
-[初めての結末] [三つの結末] [無傷の旅路] [豪運] [厄日] [瀬戸際の生還] [一つの世界の三つの結末] [短編]
- ↑獲得済みは brass、未獲得はグレー。ホバー等ではなく説明文を常時添える
 
 〔到達したエンディング〕(endedAt 降順)
 ┌────────────────────────────────────────┐

@@ -41,6 +41,7 @@ import {
   publishNovelListPrefix,
   sessionImageDir,
   sessionImagePath,
+  starterManifestKey,
 } from './paths.js';
 
 describe('storage paths', () => {
@@ -139,5 +140,9 @@ describe('public/publish paths', () => {
     expect(publishScenarioListPrefix('usr_1', 'w1')).toBe('users/usr_1/publish/worlds/w1/scenarios');
     expect(publishNovelMapKey('usr_1', 'sess1')).toBe('users/usr_1/publish/sessions/sess1');
     expect(publishNovelListPrefix('usr_1')).toBe('users/usr_1/publish/sessions');
+  });
+
+  it('keeps the starter manifest under the public namespace', () => {
+    expect(starterManifestKey()).toBe('public/starters');
   });
 });

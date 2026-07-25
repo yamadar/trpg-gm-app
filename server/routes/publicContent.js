@@ -3,12 +3,18 @@ import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { queryPublic, getPublicWorld, getPublicItem } from '../storage/shareLibrary.js';
 import { getUser } from '../auth/users.js';
+import { starterManifestKey } from '../storage/paths.js';
 
 const TYPES = new Set(['worlds', 'characters', 'scenarios', 'novels']);
 
 export function createPublicContentRouter({ dataStore, textStore }) {
   const router = Router();
   router.param('publicId', idParamGuard);
+
+  // 未シードは正常系。404にすると「まだ無い」を UI がエラーとして扱わざるを得なくなる。
+  router.get('/starters', asyncHandler(async (req, res) => {
+    res.json((await dataStore.get(starterManifestKey())) ?? { packs: [], seededAt: null });
+  }));
 
   router.get('/public/:type', asyncHandler(async (req, res) => {
     if (!TYPES.has(req.params.type)) {

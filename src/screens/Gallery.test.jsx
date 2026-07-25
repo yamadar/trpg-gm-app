@@ -3,6 +3,7 @@ import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Gallery from './Gallery.jsx';
 import * as shareClient from '../api/shareClient.js';
 import * as worldLibraryClient from '../api/worldLibraryClient.js';
+import * as starterClient from '../api/starterClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 const PUBLISHED_AT = 1700000000000;
@@ -13,6 +14,9 @@ const EMPTY_PAGE = { items: [], total: 0, hasMore: false };
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  // 既定タブが「おすすめ」に変わったため、それを明示的に検証しないテストでは
+  // 未シード環境と同じ「空」を返し、余計な未モックfetchを起こさないようにする。
+  vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: [], seededAt: null });
 });
 
 afterEach(() => {
@@ -20,9 +24,10 @@ afterEach(() => {
 });
 
 describe('Gallery', () => {
-  it('loads the novels tab by default', async () => {
+  it('loads the novels tab when it is selected', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
   });
 
@@ -32,6 +37,7 @@ describe('Gallery', () => {
       () => new Promise((resolve) => { resolveList = resolve; })
     );
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     expect(screen.getByText('読み込み中…')).toBeInTheDocument();
 
     await act(async () => {
@@ -44,6 +50,7 @@ describe('Gallery', () => {
   it('shows the empty state when a type has no published items', async () => {
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() =>
       expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument()
     );
@@ -52,6 +59,7 @@ describe('Gallery', () => {
   it('shows a fetch-error message when listPublic fails', async () => {
     vi.spyOn(shareClient, 'listPublic').mockRejectedValue(new Error('boom'));
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
   });
 
@@ -68,6 +76,7 @@ describe('Gallery', () => {
       return EMPTY_PAGE;
     });
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
 
     fireEvent.click(screen.getByText('世界観'));
@@ -175,6 +184,7 @@ describe('Gallery', () => {
       raw: '物語本文',
     });
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() => expect(screen.getByText('Epic Adventure')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Epic Adventure'));
     await screen.findByText('物語本文');
@@ -405,6 +415,7 @@ describe('Gallery', () => {
     });
     const getPublicSpy = vi.spyOn(shareClient, 'getPublic');
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
     await screen.findByText('Epic Adventure');
 
@@ -479,7 +490,9 @@ describe('Gallery', () => {
     });
 
     renderWithAuth(<Gallery onClose={vi.fn()} />);
-    // novels タブの取得が未解決のまま世界観タブへ切替える(PublicItemListはtabをkeyに再マウントされる)。
+    // まず小説タブを選び、novels の取得が未解決のまま世界観タブへ切替える
+    // (PublicItemListはtabをkeyに再マウントされる)。
+    fireEvent.click(screen.getByText('小説'));
     fireEvent.click(screen.getByText('世界観'));
     await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
 
@@ -522,6 +535,7 @@ describe('Gallery', () => {
     });
 
     renderWithAuth(<Gallery onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText('小説'));
     await waitFor(() => expect(screen.getByText('Item A')).toBeInTheDocument());
 
     // Aを開く(未解決のまま)。
@@ -572,6 +586,7 @@ describe('Gallery', () => {
     vi.useFakeTimers();
     try {
       renderWithAuth(<Gallery onClose={vi.fn()} />);
+      fireEvent.click(screen.getByText('小説'));
       await act(async () => {
         await Promise.resolve();
       });
@@ -602,5 +617,32 @@ describe('Gallery', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('starters tab', () => {
+    it('shows the starters tab first and renders pack cards there', async () => {
+      vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
+        packs: [{ packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null, moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館' }],
+        seededAt: 1,
+      });
+      renderWithAuth(<Gallery onClose={vi.fn()} onStartStarter={vi.fn()} />);
+      expect(screen.getByText('おすすめ')).toBeInTheDocument();
+      expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
+    });
+
+    it('swaps the pack cards for the public item list when another tab is chosen', async () => {
+      vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
+        packs: [{ packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null, moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館' }],
+        seededAt: 1,
+      });
+      vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
+      renderWithAuth(<Gallery onClose={vi.fn()} onStartStarter={vi.fn()} />);
+      expect(await screen.findByText('この冒険を始める')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('小説'));
+
+      await waitFor(() => expect(screen.queryByText('この冒険を始める')).not.toBeInTheDocument());
+      expect(screen.queryByText('アーカム 1920s')).not.toBeInTheDocument();
+    });
   });
 });

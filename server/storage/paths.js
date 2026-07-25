@@ -169,3 +169,9 @@ export function publishNovelMapKey(userId, sessionId) {
 export function publishNovelListPrefix(userId) {
   return `users/${userId}/publish/sessions`;
 }
+
+// スターターパックのマニフェスト。publicIdはシード時に採番されるためクライアント側の
+// 静的な定数表では持てず、シードの出力としてここに置く。
+export function starterManifestKey() {
+  return 'public/starters';
+}

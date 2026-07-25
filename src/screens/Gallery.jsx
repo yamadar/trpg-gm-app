@@ -4,11 +4,12 @@ import Button from '../components/ui/Button.jsx';
 import { getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
+import StarterPackList from '../components/share/StarterPackList.jsx';
 import { navigateToUser } from '../router/useHashRoute.js';
-import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
+import { GALLERY_TABS as TABS } from '../constants/publicContent.js';
 
-export default function Gallery({ onClose }) {
-  const [tab, setTab] = useState('novels');
+export default function Gallery({ onClose, onStartStarter }) {
+  const [tab, setTab] = useState('starters');
 
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
   const [detail, setDetail] = useState(null);
@@ -73,39 +74,47 @@ export default function Gallery({ onClose }) {
         ))}
       </div>
 
-      <PublicItemList
-        key={tab}
-        type={tab}
-        active={viewMode === 'list'}
-        onOpenDetail={openDetail}
-        onAuthorClick={(ownerId) => navigateToUser(ownerId)}
-      />
+      {/* starters は公開アイテムの一覧/詳細ではなく「まとめて取り込む単位」なので、
+          /api/public/:type の TYPES にも属さない。ここだけ別コンポーネントを描画する。 */}
+      {tab === 'starters' ? (
+        <StarterPackList onImported={onStartStarter} />
+      ) : (
+        <>
+          <PublicItemList
+            key={tab}
+            type={tab}
+            active={viewMode === 'list'}
+            onOpenDetail={openDetail}
+            onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+          />
 
-      {viewMode !== 'list' &&
-        (detailLoading ? (
-          <div>
-            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-              ← 一覧に戻る
-            </Button>
-            <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-          </div>
-        ) : detailError ? (
-          <div>
-            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-              ← 一覧に戻る
-            </Button>
-            <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-          </div>
-        ) : (
-          detail && (
-            <PublicItemDetail
-              type={tab}
-              item={detail}
-              onBack={backToList}
-              onAuthorClick={(ownerId) => navigateToUser(ownerId)}
-            />
-          )
-        ))}
+          {viewMode !== 'list' &&
+            (detailLoading ? (
+              <div>
+                <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
+                  ← 一覧に戻る
+                </Button>
+                <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
+              </div>
+            ) : detailError ? (
+              <div>
+                <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
+                  ← 一覧に戻る
+                </Button>
+                <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
+              </div>
+            ) : (
+              detail && (
+                <PublicItemDetail
+                  type={tab}
+                  item={detail}
+                  onBack={backToList}
+                  onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+                />
+              )
+            ))}
+        </>
+      )}
     </div>
   );
 }

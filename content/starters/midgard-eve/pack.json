@@ -1,0 +1,11 @@
+{
+  "id": "midgard-eve",
+  "title": "ミッドガルド 終焉前夜",
+  "tagline": "終わりは予言されている。角笛が鳴るまでに、果たすべき誓いがある。",
+  "source": "北欧神話(パブリックドメイン)",
+  "moods": ["ファンタジー", "シリアス"],
+  "recommendedRuleset": "simple",
+  "scenario": { "id": "the-horn-of-heimdall", "title": "ヘイムダルの角笛" },
+  "pc": ["skadi", "heidr"],
+  "npc": ["the-messenger", "one-eyed-traveler"]
+}

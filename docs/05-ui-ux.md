@@ -59,6 +59,8 @@
 
 ライブラリWorld由来のセッション(`worldId`あり)のカードにはさらに「次の章へ」ボタンが表示され(2026-07-24追加、02-data-model.md 3.5節参照)、押下で`advanceCampaignPc`が引き継ぎPCシートを生成→Campaignメタを作成/更新(`PUT /api/worlds/:worldId/campaigns/:id`)→World/PC/Rulesetを前埋めした次章のSetupへ遷移し、xp・worldId・campaignIdを引き継いだ新セッションを作る。このとき現在のセッションにも`endedAt`(未設定なら現在時刻)を書き込み、その章を終了扱いにする(2026-07-25追加、`chapters[].endedAt`と整合させる。02-data-model.md 3.5節参照)。さらにSP2(2026-07-25追加)で、`campaignId`を持つセッションはキャンペーンのタイトル見出し(全N章)配下にグループ表示される(タイトルは登場`worldId`ごとに`listCampaigns`で解決。解決できない`campaignId`は「続きから再開」の非グループ一覧にフォールバック)。章一覧・改名・削除は素材ライブラリのCampaignタブで行う(14.3節)。
 
+**スターターパック(実装済み2026-07-25)**: ログイン済みでセッションが0件のとき、Homeのボタン列の上に「はじめての冒険を選ぶ」セクションが出る(`src/components/share/StarterPackList.jsx`)。カードは公式サンプル7パックで、「この冒険を始める」で World / Scenario / PC2体 / NPC2体 を一括インポートし、World・Scenario・Rulesetが選択済みのSetup(PC選択のstep 3、14.2節)へ遷移する。PCまで自動選択しないのは、どちらを演じるかが初回ユーザーの最初の選択であり、「PCはWorldに属していて選ぶもの」という構造を最短で伝えるため。マニフェスト(`GET /api/starters`)が取得できない/空のときはセクションごと描画しない。公開ギャラリー(14.4節)の先頭タブ「おすすめ」からも同じ`StarterPackList`に到達でき、2周目以降のユーザーが別の世界観を取りに行ける。パックの内訳・権利方針は06-content-generation.md「スターターコンテンツ」節参照。
+
 ### 14.2 新規プレイ作成フロー(`src/screens/Setup.jsx`)
 5ステップのウィザード(ステップインジケータに「1. 世界観 / 2. シナリオ / 3. ルール / 4. PC / 5. 確認」を表示):
 ```
@@ -86,9 +88,10 @@ World/Character(PC・NPC)/Scenario/Campaign/Rulesetの5タブ(Campaignタブは2
 
 ### 14.4 公開ギャラリー画面(`src/screens/Gallery.jsx`)
 
-Phase 2で追加。ホーム画面から遷移し、「小説」「世界観」「キャラクター」「シナリオ」の4タブでユーザーが公開した素材を横断的に閲覧できる。
+Phase 2で追加。ホーム画面から遷移し、「おすすめ」「小説」「世界観」「キャラクター」「シナリオ」の5タブ(`src/constants/publicContent.js`の`GALLERY_TABS`)でコンテンツを横断的に閲覧できる。
 
-- 一覧は各タブ共通の`PublicItemList`コンポーネント(`src/components/share/PublicItemList.jsx`)が担い、`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼んで公開日時降順のカードを表示する(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
+- 先頭の「おすすめ」タブのみ他の4タブと構造が異なる: `GET /api/public/:type`が受け付ける`type`(`worlds`/`characters`/`scenarios`/`novels`)に`starters`は含まれず、`PublicItemList`/`PublicItemDetail`を経由しない。14.1節のスターターパックと同じ`StarterPackList`コンポーネントをそのまま描画し、「この冒険を始める」で選んだパックをWorld/Scenario/Ruleset選択済みのSetupへ直接渡す(一覧/詳細の状態機械には乗らない)。ユーザーページ(14.5節)の共有タブ定数`PUBLIC_TABS`には`starters`を含めていない(`GET /api/public/starters?ownerId=...`は未知の`type`として404になるため)。
+- 残り4タブは共通の`PublicItemList`コンポーネント(`src/components/share/PublicItemList.jsx`)が担い、`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼んで公開日時降順のカードを表示する(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
 - 検索・絞り込みUI: 上部にタイトル・作者名の自由文字列検索ボックスがあり、入力から300ms(デバウンス)後に実効クエリへ反映される(連続入力中は再取得しない)。その下にworlds/scenariosタブのみ雰囲気チップ(`MOODS`固定8種)が並び、クリックで複数選択のトグル(選択分はOR条件で絞り込み)。scenariosタブのみさらに推奨ルールの単一選択ドロップダウン(`RULESETS`+「すべて」)がある。worlds/scenarios以外(characters/novels)のタブではチップ・ドロップダウンとも非表示。
 - タブ切り替え・検索語(デバウンス後)・雰囲気チップ・ルールセット・(ユーザーページの場合)`ownerId`のいずれかが変わるたびoffset=0で一覧を取り直し、既存の表示を置き換える。カード末尾に**「もっと見る」**ボタンがあり(APIレスポンスの`hasMore`がtrueの間だけ表示)、クリックで次ページ(`offset + 20`件目以降)を末尾に追記取得する。取得中は「読み込み中…」表示になりボタンは無効化される。取得リクエストには連番ガード(`reqRef`)があり、フィルタ変更等で新しい取得が始まった場合、古い取得の応答が後から返っても無視される(stale response guard)。
 - 空状態は2パターンに分かれる: 検索語・雰囲気・ルールセットのいずれも指定していない状態で0件なら「まだ公開されたものがありません」、何か条件を指定した状態で0件なら「条件に合う公開物がありません」+「条件をクリア」ボタン(検索語・雰囲気・ルールセットを一括リセット)を表示する。
@@ -102,15 +105,25 @@ Phase 2で追加。ホーム画面から遷移し、「小説」「世界観」�
 URLのハッシュ`#/u/{userId}`で表示される、特定ユーザーの公開プロフィール+公開素材一覧画面。`src/router/useHashRoute.js`の`useHashRoute()`がハッシュを監視し、`App.jsx`は`routeUserId`が非nullの間、通常の画面遷移(home/setup/library/gallery/play)を素通りしてこのページのみを表示する(通常画面のstateは保持されたまま裏に残る)。未ログインでも認証不要APIのみで完結するため閲覧でき、URLをそのまま共有・ブックマークできる。
 
 - 遷移経路: 公開ギャラリー画面(14.4節)のカードに表示される公開者名をクリックすると`navigateToUser(ownerId)`(`useHashRoute.js`)が呼ばれ`#/u/{ownerId}`に遷移する。
-- 表示内容: `GET /api/users/:userId`(`displayName`・`avatarUrl`・`bio`)を取得し、上部にアバター(未設定時はイニシャル1文字のプレースホルダ)・表示名・`bio`(未設定なら非表示)を表示する。下の「小説」「世界観」「キャラクター」「シナリオ」の4タブ(タブ構成はGallery画面と共通)の公開素材一覧は、Galleryと同じ`PublicItemList`コンポーネントに`ownerId={userId}`を渡して描画する(検索ボックス・雰囲気チップ・ルールセットドロップダウン・「もっと見る」・空状態の出し分けもGalleryと同一挙動、14.4節参照)。タブごとに`GET /api/public/:type?ownerId={userId}`を呼んでそのユーザーの公開素材のみに絞り込む。**旧`GET /api/users/:userId/public`一括APIは廃止済み**で、現在はこの`ownerId`絞り込みに一本化されている。一覧のカードをクリックすると`GET /api/public/:type/:publicId`で詳細を取得し、Gallery画面と共通の`PublicItemDetail`コンポーネント(`src/components/share/PublicItemDetail.jsx`)で本文を表示する。
+- 表示内容: `GET /api/users/:userId`(`displayName`・`avatarUrl`・`bio`)を取得し、上部にアバター(未設定時はイニシャル1文字のプレースホルダ)・表示名・`bio`(未設定なら非表示)を表示する。下の「小説」「世界観」「キャラクター」「シナリオ」の4タブ(`PUBLIC_TABS`。Gallery画面の「おすすめ」を除く4タブと共通)の公開素材一覧は、Galleryと同じ`PublicItemList`コンポーネントに`ownerId={userId}`を渡して描画する(検索ボックス・雰囲気チップ・ルールセットドロップダウン・「もっと見る」・空状態の出し分けもGalleryと同一挙動、14.4節参照)。ユーザーページに「おすすめ」タブは無い(スターターパックは特定ユーザーの公開物ではなく公式アカウント`usr_official`が一括配布するもののため、06-content-generation.md「スターターコンテンツ」節参照)。タブごとに`GET /api/public/:type?ownerId={userId}`を呼んでそのユーザーの公開素材のみに絞り込む。**旧`GET /api/users/:userId/public`一括APIは廃止済み**で、現在はこの`ownerId`絞り込みに一本化されている。一覧のカードをクリックすると`GET /api/public/:type/:publicId`で詳細を取得し、Gallery画面と共通の`PublicItemDetail`コンポーネント(`src/components/share/PublicItemDetail.jsx`)で本文を表示する。
 - ユーザーが存在しない場合(`404`)は「ユーザーが見つかりません」、その他の取得失敗時はエラーメッセージを表示し、いずれも「← 戻る」ボタン(`clearHash()`でハッシュを除去し通常画面に戻る)を出す。
 - `bio`はAuthBar(`src/components/auth/AuthBar.jsx`)のプロフィール編集フォームから自分で設定でき、`PATCH /api/me`経由で保存した内容が自分のユーザーページにも反映される。
 
 ### 14.6 エンディング図鑑画面(`src/screens/EndingGallery.jsx`、実装済み2026-07-25)
 
-URLのハッシュ`#/endings`で表示される。`src/router/useHashRoute.js`の`parseHash`は`{ userId, endings }`を返すよう拡張されており(`endings`は`hash === '#/endings'`のbool)、`navigateToEndings()`が`#/endings`へ遷移させる。`App.jsx`は14.5節のユーザーページと同じ流儀で、このルートの間は通常の画面遷移を素通りしてこの画面のみを表示する。遷移経路はホーム画面のボタン行(14.1節、`+ 新規プレイ`/`素材ライブラリ`/`公開ギャラリー`の並びに「エンディング図鑑」ボタンが追加されている)。
+URLのハッシュ`#/endings`で表示される。`src/router/useHashRoute.js`の`parseHash`は`{ userId, endings, achievements }`を返す(`endings`/`achievements`はそれぞれ`hash === '#/endings'`/`hash === '#/achievements'`のbool、後者は14.7節)、`navigateToEndings()`が`#/endings`へ遷移させる。`App.jsx`は14.5節のユーザーページと同じ流儀で、このルートの間は通常の画面遷移を素通りしてこの画面のみを表示する。遷移経路はホーム画面のボタン行(14.1節、`+ 新規プレイ`/`素材ライブラリ`/`公開ギャラリー`の並びに「エンディング図鑑」ボタンが追加されている)。
 
-- 上部に「実績」を横並びで表示する。`src/engine/achievements.js`の`evaluateAchievements(endings)`が返す8種すべて(獲得/未獲得問わず)を`Badge`(獲得は`brass`、未獲得は`faint`+`opacity: 0.45`)で並べ、下に説明文(`description`)を常時表示する(ホバー等の隠し情報にはしない)。
+- 上部は実績の進捗サマリー(実装済み2026-07-25、実績が50件に増えたため全件を並べる形から変更)。`src/engine/achievements.js`の`evaluateAchievements(endings)`の戻り値から`実績 N / 50`のテキストと`AchievementProgressBar`の進捗バーを表示し、右に「すべて見る →」ボタン(`navigateToAchievements()`で`#/achievements`へ、14.7節)を置く。その下に、獲得済みのうち`earnedAt`降順で最大3件を`AchievementTile`のグリッドで表示する(1件も獲得していなければ「まだ実績がありません。物語を結末まで進めると集まります。」を表示)。全件の一覧はこの画面には無く、次節の実績一覧画面に任せている。
 - 下部に「到達したエンディング」一覧(`GET /api/endings`、`endedAt`降順)。各カードはエンディングタイトル・完結日・セッションタイトル・`moods`チップ・総括・判定統計(`RollStatsLine`、7章参照)を表示し、「改名」(入力欄に切り替えて`PATCH /api/endings/:id`)・「削除」(`ConfirmModal`で確認後`DELETE /api/endings/:id`)ができる。
 - 未ログイン時は一覧を取得せず「エンディング図鑑の閲覧にはログインが必要です」の案内のみ表示する。記録が0件の空状態には「まだエンディングの記録がありません。物語を結末まで進めて『この物語を終える』を押すと記録されます。」を表示する。
 - **記録し直しは手動(意図的な仕様)**: 一度記録が作られると、Home画面はそのセッションの「エンディングを記録する」ボタンを隠し(14.1節)、Play画面も完結カードを再度出さない。そのため`endedAt`確定後にセッションを続行してエンディング内容が変わっても、自動では記録が更新されない。最新の状態で記録し直したい場合は、この画面で該当の記録を「削除」してからHome画面の「エンディングを記録する」で改めて記録する。
+
+### 14.7 実績一覧画面(`src/screens/AchievementList.jsx`、実装済み2026-07-25)
+
+URLのハッシュ`#/achievements`で表示される。14.5節・14.6節と同じ流儀で、`App.jsx`はこのルートの間は通常の画面遷移を素通りしてこの画面のみを表示する。**入口はエンディング図鑑(14.6節)の「すべて見る →」だけで、ホーム画面からの直接の導線は無い**(実績は図鑑の内容物という位置づけであり、並列の機能として独立させないため)。画面右上に「図鑑へ」(`navigateToEndings()`)と「ホームへ」の2つの戻り導線を置く。
+
+- 上部に`evaluateAchievements(endings)`の全件に対する`N / 50`の件数と進捗バーを表示する。この件数は下記の絞り込みの影響を受けない、カタログ全体に対する数(取得済み/未取得を切り替えても、カテゴリを絞っても動かない)。
+- 「取得済み」「未取得」「すべて」の単一選択セグメントと、カテゴリ(到達・世界・雰囲気・判定・運命・生還・軌跡、`src/engine/achievementCatalog.js`の`CATEGORIES`)の単一選択チップで絞り込む。各セグメントのラベル横にも同じくカタログ全体に対する件数を添える。
+- カテゴリごとにセクションを分けて表示し、絞り込みの結果0件になったセクションは表示しない。セクション内はティア昇順(銅→銀→金)、同ティア内はカタログの定義順。
+- 各行(`AchievementRow`)はアイコン・ラベル・説明文と、右端に状態のテキスト(獲得済みなら獲得日、未獲得で進捗のある実績なら`3 / 10`のような`current / target`、進捗を持たない実績なら「未取得」)を表示する。未獲得かつ進捗を持つ実績には、行の下に幅180pxの`AchievementProgressBar`も添える。
+- ティアは色だけに頼らず`AchievementIcon`の枠(リング)で表す: 銅=細い実線、銀=太い実線、金=朱色の二重線(紙に押した印の見立て)、未取得はいずれのティアも同じ破線。右端のテキストと合わせ、色弱環境や拡大表示でも状態を判別できるようにしている。

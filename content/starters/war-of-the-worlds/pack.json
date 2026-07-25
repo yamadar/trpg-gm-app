@@ -1,0 +1,11 @@
+{
+  "id": "war-of-the-worlds",
+  "title": "宇宙戦争 — 1898年ロンドン",
+  "tagline": "火星の円筒が落ちた。三脚機と黒煙に囲まれた町から、生きて川まで辿り着く。",
+  "source": "H.G.ウェルズ『宇宙戦争』に基づく(パブリックドメイン)",
+  "moods": ["SF", "ホラー"],
+  "recommendedRuleset": "gurps",
+  "scenario": { "id": "escape-from-woking", "title": "ウォーキングからの脱出" },
+  "pc": ["hargreaves", "samuel-bly"],
+  "npc": ["the-curate", "the-artilleryman"]
+}

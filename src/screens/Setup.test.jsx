@@ -8,6 +8,7 @@ import * as characterLibraryClient from '../api/characterLibraryClient.js';
 import * as sessionApi from '../api/session.js';
 import * as rulesetLibraryClient from '../api/rulesetLibraryClient.js';
 import * as characterSheetCache from '../api/characterSheetCache.js';
+import { COLORS } from '../theme.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -45,6 +46,13 @@ describe('Setup', () => {
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
     await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalledWith('w1'));
+  });
+
+  it('points the empty world state at the gallery', async () => {
+    vi.spyOn(worldLibraryClient, 'listWorlds').mockResolvedValue([]);
+    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    expect(await screen.findByText(/公開ギャラリーの「おすすめ」/)).toBeInTheDocument();
   });
 
   it('disables the Scenario "既存を選ぶ" button until a World is selected', () => {
@@ -427,5 +435,83 @@ describe('Setup', () => {
     expect(onStart).not.toHaveBeenCalled();
     // busy解除でボタン文言が"ゲーム開始"へ戻る(準備中…のままにならない)
     expect(screen.getByText('ゲーム開始')).toBeInTheDocument();
+  });
+
+  describe('starterContext', () => {
+    const STARTER = {
+      world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界本文' },
+      scenario: {
+        id: 'photo-studio-on-the-hill', worldId: 'arkham-1920s', title: '丘の上の写真館',
+        recommendedRuleset: 'coc7e', moods: ['ホラー'], raw: '# シナリオ本文',
+      },
+      rulesetId: 'coc7e',
+    };
+
+    it('opens on the PC step with world, scenario and ruleset already chosen', async () => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+        { name: 'howard-kane' }, { name: 'mabel-thorne' },
+      ]);
+      // マウント時点でworldIdが既に埋まっているため、[worldId]のuseEffectが即listScenariosを
+      // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
+      // 既存テストの慣習(Worldが決まっている状態では必ずモックする)に倣う。
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
+      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
+
+      // ステップ表示バーは常に5段すべてのラベルを描くため現在地の証拠にならない。
+      // PCステップでしか描かれないField labelで判定する。
+      expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
+      // PC一覧が選択済みWorldから取れている
+      await waitFor(() => expect(characterLibraryClient.listCharacters).toHaveBeenCalledWith('arkham-1920s', 'pc'));
+      expect(await screen.findByText('howard-kane')).toBeInTheDocument();
+    });
+
+    // worldId が最初から埋まっているので、マウント時に走る useEffect が選択を消してはいけない
+    it('keeps the preselected scenario after mount', async () => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([]);
+      // Scenarioステップの一覧はlistScenarios(worldId)の結果から描画されるため、既存テストの
+      // 慣習(Worldが決まっている状態でScenarioステップへ進むテストは必ずモックする)に倣う。
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
+      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
+
+      fireEvent.click(await screen.findByText('戻る')); // → ルール
+      fireEvent.click(screen.getByText('戻る')); // → シナリオ
+      // 一覧のタイトル文字列はlistScenariosのモック結果から誰でも描画されてしまい、
+      // selectedScenarioがnullでも一致してしまう(=マウント時リセットのバグを検知できない)。
+      // selectedScenarioがある場合にのみ変わるCardのborderColor(選択時COLORS.brass /
+      // 未選択時COLORS.line)で検証することで、実際に選択状態が保持されていることを確かめる。
+      const scenarioCard = (await screen.findByText('丘の上の写真館')).parentElement;
+      expect(scenarioCard).toHaveStyle({ borderColor: COLORS.brass });
+    });
+
+    it('starts a session carrying the starter world, scenario, moods and ruleset', async () => {
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([{ name: 'howard-kane' }]);
+      vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({ name: 'howard-kane', raw: 'PC名: ハワード' });
+      // マウント時点でworldIdが既に埋まっているため、[worldId]のuseEffectが即listScenariosを
+      // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
+      // 既存テストの慣習(Worldが決まっている状態では必ずモックする)に倣う。
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
+      const onStart = vi.fn();
+      render(<Setup onStart={onStart} onCancel={vi.fn()} starterContext={STARTER} />);
+
+      fireEvent.click(await screen.findByText('howard-kane'));
+      fireEvent.click(screen.getByText('次へ')); // → 確認
+      fireEvent.click(await screen.findByText('ゲーム開始'));
+
+      await waitFor(() => expect(onStart).toHaveBeenCalled());
+      const session = onStart.mock.calls[0][0];
+      expect(session.worldId).toBe('arkham-1920s');
+      expect(session.world.summary).toBe('# 世界本文');
+      expect(session.scenario.raw).toBe('# シナリオ本文');
+      expect(session.moods).toEqual(['ホラー']);
+      expect(session.rulesetId).toBe('coc7e');
+      expect(session.title).toContain('丘の上の写真館');
+    });
+
+    it('behaves exactly as before when starterContext is absent', () => {
+      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+      // 0段目でしか描かれないField labelで、PCステップから開いていないことを示す。
+      expect(screen.getByText('Worldの用意方法')).toBeInTheDocument();
+      expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();
+    });
   });
 });
