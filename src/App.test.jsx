@@ -114,9 +114,10 @@ describe('App', () => {
     }
   });
 
-  it('clears the starter context when the plain new-session button is used', async () => {
-    // 「+ 新規プレイ」から入った Setup が、直前のスターター選択を引きずらないこと
-    // (引きずると World/Scenario が勝手に選択済みになる)。
+  it('does not carry a previously imported starter pack into a later plain new-session wizard', async () => {
+    // スターターパックを取り込んでウィザードを一度離れたあと、改めて「+ 新規プレイ」で
+    // 入り直した場合に、直前のWorld/Scenarioが残っていないこと。残っていると
+    // 無関係な世界観・シナリオが気づかれないまま選択済みになり、ユーザーが混乱する。
     // 「+ 新規プレイ」はログイン必須で無効化されるため、/api/me はログイン済みユーザーを返す。
     vi.stubGlobal(
       'fetch',
@@ -124,15 +125,63 @@ describe('App', () => {
         if (String(url).includes('/api/me')) {
           return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
         }
+        // World一覧/Scenario一覧/PC一覧など、他のAPI呼び出しは空配列でよい。
         return Promise.resolve({ ok: true, json: async () => [] });
       })
     );
-    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: [], seededAt: null });
+    const PACKS = [
+      {
+        packId: 'arkham-1920s',
+        title: 'アーカム 1920s',
+        tagline: '港町。',
+        source: null,
+        moods: ['ホラー'],
+        recommendedRuleset: 'coc7e',
+        scenarioTitle: '丘の上の写真館',
+      },
+    ];
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+    vi.spyOn(starterClient, 'importStarterPack').mockResolvedValue({
+      world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界' },
+      scenario: {
+        id: 'sc',
+        worldId: 'arkham-1920s',
+        title: '丘の上の写真館',
+        recommendedRuleset: 'coc7e',
+        moods: ['ホラー'],
+        raw: '# シナリオ',
+      },
+      pcs: [],
+      npcs: [],
+    });
+
     render(<App />);
     const newButton = await screen.findByText('+ 新規プレイ');
     await waitFor(() => expect(newButton).not.toBeDisabled()); // ログイン確認が終わるまで待つ
-    fireEvent.click(newButton);
+
+    fireEvent.click(await screen.findByText('この冒険を始める'));
+
+    // 取り込みが実際に効いていれば、WizardはPCステップ(4段目)からプリフィルされて開く。
+    // ここを確認しないと、取り込みが裏で失敗してstarterContextが空のままでも
+    // 後段の「引き継がれない」検証が意味もなく成立してしまう。
+    expect(await screen.findByText('4. PC')).toBeInTheDocument();
+
+    // ウィザードを「やめる」で離脱する(やめるボタンは0段目にしか無いため、まず戻る)。
+    fireEvent.click(screen.getByText('戻る'));
+    fireEvent.click(screen.getByText('戻る'));
+    fireEvent.click(screen.getByText('戻る'));
+    fireEvent.click(screen.getByText('やめる'));
+    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+
+    // 改めて「+ 新規プレイ」から入り直す。
+    const newButton2 = await screen.findByText('+ 新規プレイ');
+    await waitFor(() => expect(newButton2).not.toBeDisabled());
+    fireEvent.click(newButton2);
+
+    // クリーンな0段目で開き、Worldも未選択(空欄のまま進める)のままであること。
     expect(await screen.findByText('1. 世界観')).toBeInTheDocument();
+    expect(screen.getByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
+
     vi.unstubAllGlobals();
   });
 });
