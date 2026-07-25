@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
-import Home, { sanitizeFilename } from './Home.jsx';
+import Home, { sanitizeFilename, collectJobEvents } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as shareClient from '../api/shareClient.js';
 import * as sessionApi from '../api/session.js';
@@ -556,6 +556,124 @@ describe('Home', () => {
     }
   });
 
+  it('does not show the completion block for novels that were already done on first load', async () => {
+    // 過去に生成済みの全セッションに「できました」が並ばないこと。
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説をDL')).toBeInTheDocument();
+    expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
+  });
+
+  it('shows the completion block and a toast on a running → done transition', async () => {
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
+    });
+    listSpy.mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+    });
+    const sessions = [{ id: 's1', title: '黄昏の塔の契約', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(screen.getByText('小説ができました')).toBeInTheDocument();
+      expect(screen.getByText('「黄昏の塔の契約」の小説ができました')).toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows a toast but no completion block on a running → error transition', async () => {
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
+    });
+    listSpy.mockResolvedValue({
+      s1: { status: 'error', error: '時間内に完了しませんでした。', elapsedMs: null, hasNovel: false, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(screen.getByText('「A」の小説化に失敗しました')).toBeInTheDocument();
+      expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
+      // 正規表現で引くと祖先要素にも一致して「複数見つかった」で落ちるため、完全一致で引く。
+      expect(screen.getByText('小説化に失敗した: 時間内に完了しませんでした。')).toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the completion block once the novel is downloaded', async () => {
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:x'), revokeObjectURL: vi.fn() });
+    vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '本文' });
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
+    });
+    listSpy.mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(screen.getByText('小説ができました')).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('小説をDL'));
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('offers download buttons when the server reports a finished novel', async () => {
     vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
       s1: { status: 'done', error: null, hasNovel: true, stale: false },
@@ -713,5 +831,41 @@ describe('Home', () => {
     });
 
     expect(await screen.findByText('エンディングを記録する')).toBeInTheDocument();
+  });
+});
+
+describe('collectJobEvents', () => {
+  const titleOf = (id) => ({ s1: 'A', s2: 'B' })[id] ?? '';
+
+  it('reports a done transition only when the previous state was running', () => {
+    const prev = { s1: { status: 'running' } };
+    const next = { s1: { status: 'done' } };
+    expect(collectJobEvents(prev, next, titleOf)).toEqual([{ id: 's1', kind: 'done', title: 'A' }]);
+  });
+
+  it('ignores sessions that were already done before (regression: no notification on first load)', () => {
+    // マウント時の初回取得では前状態が空。ここで発火すると過去の全セッションが
+    // 「できました」になる。
+    expect(collectJobEvents({}, { s1: { status: 'done' } }, titleOf)).toEqual([]);
+    expect(collectJobEvents({ s1: { status: 'done' } }, { s1: { status: 'done' } }, titleOf)).toEqual([]);
+  });
+
+  it('reports an error transition', () => {
+    const prev = { s1: { status: 'running' } };
+    const next = { s1: { status: 'error', error: 'boom' } };
+    expect(collectJobEvents(prev, next, titleOf)).toEqual([{ id: 's1', kind: 'error', title: 'A' }]);
+  });
+
+  it('ignores a job that is still running', () => {
+    expect(collectJobEvents({ s1: { status: 'running' } }, { s1: { status: 'running' } }, titleOf)).toEqual([]);
+  });
+
+  it('reports every session that finished in the same poll', () => {
+    const prev = { s1: { status: 'running' }, s2: { status: 'running' } };
+    const next = { s1: { status: 'done' }, s2: { status: 'error' } };
+    expect(collectJobEvents(prev, next, titleOf)).toEqual([
+      { id: 's1', kind: 'done', title: 'A' },
+      { id: 's2', kind: 'error', title: 'B' },
+    ]);
   });
 });

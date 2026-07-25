@@ -4,6 +4,7 @@ import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
 import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
+import ToastStack from '../components/ui/Toast.jsx';
 import {
   novelizeSession,
   getNovel,
@@ -42,6 +43,19 @@ export function sanitizeFilename(title) {
   return trimmed.length > 0 ? cleaned : 'session';
 }
 
+// 小説化ジョブの状態遷移から通知イベントを取り出す。
+// 直前がrunningだったものだけを対象にすることで、マウント時の初回取得(前状態が空)で
+// 既に完了済みのセッションを一斉に「できました」と通知してしまうのを防ぐ。
+export function collectJobEvents(prev, next, titleOf) {
+  const events = [];
+  for (const [id, job] of Object.entries(next)) {
+    if (prev[id]?.status !== 'running') continue;
+    if (job.status === 'done') events.push({ id, kind: 'done', title: titleOf(id) });
+    else if (job.status === 'error') events.push({ id, kind: 'error', title: titleOf(id) });
+  }
+  return events;
+}
+
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
   const { user } = useAuth();
   const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale }
@@ -51,6 +65,12 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   // 経過時間の補間の起点。ポーリング応答を受け取った時刻(クライアント時計)を控える。
   // 差分にしか使わないため、サーバーとの時計ずれの影響を受けない。
   const jobsReceivedAtRef = useRef(0);
+  // novelJobsの直前の値。applyNovelJobs内で遷移を判定するために持つ。
+  // setNovelJobsのupdater引数の中で通知を積むと、Reactがupdaterを複数回実行した際に
+  // トーストが重複する。副作用はupdaterの外で行い、比較元はこのrefから読む。
+  const novelJobsRef = useRef({});
+  const [toasts, setToasts] = useState([]); // [{ id, text, tone }]
+  const [finishedIds, setFinishedIds] = useState(() => new Set()); // 完了ブロックを出すセッション
   const [pollNonce, setPollNonce] = useState(0);
   const [novelizeError, setNovelizeError] = useState({});
   const [publishedNovelIds, setPublishedNovelIds] = useState({});
@@ -62,11 +82,41 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   const [endingBusy, setEndingBusy] = useState({});
 
   // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
-  // hasRunningRefを常に最新の状態と一致させる。
+  // hasRunningRefを常に最新の状態と一致させる。状態遷移(running→done/error)の
+  // 検知もここに集約する。
   function applyNovelJobs(updater) {
-    setNovelJobs((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      hasRunningRef.current = Object.values(next).some((j) => j.status === 'running');
+    const prev = novelJobsRef.current;
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    const events = collectJobEvents(prev, next, (id) => sessions.find((s) => s.id === id)?.title ?? '');
+
+    novelJobsRef.current = next;
+    hasRunningRef.current = Object.values(next).some((j) => j.status === 'running');
+    setNovelJobs(next);
+
+    if (events.length === 0) return;
+    setFinishedIds((prevSet) => {
+      const nextSet = new Set(prevSet);
+      for (const ev of events) {
+        if (ev.kind === 'done') nextSet.add(ev.id);
+      }
+      return nextSet;
+    });
+    setToasts((prevToasts) => [
+      ...prevToasts,
+      ...events.map((ev) => ({
+        id: makeId(),
+        text: ev.kind === 'done' ? `「${ev.title}」の小説ができました` : `「${ev.title}」の小説化に失敗しました`,
+        tone: ev.kind === 'done' ? 'success' : 'error',
+      })),
+    ]);
+  }
+
+  // 完了ブロックを消す。目的を果たした(DL)か、やり直す(再生成)ときに呼ぶ。
+  function clearFinished(sessionId) {
+    setFinishedIds((prev) => {
+      if (!prev.has(sessionId)) return prev;
+      const next = new Set(prev);
+      next.delete(sessionId);
       return next;
     });
   }
@@ -250,6 +300,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   async function handleNovelize(e, session) {
     e.stopPropagation();
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    clearFinished(session.id);
     // 押した直後から「小説化中…」にする。以降はポーリング結果で上書きされる。
     applyNovelJobs((prev) => ({
       ...prev,
@@ -270,6 +321,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   async function handleDownloadNovel(e, session) {
     e.stopPropagation();
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    clearFinished(session.id);
     try {
       const { text } = await getNovel(session.id);
       downloadMarkdown(`${sanitizeFilename(session.title)}.md`, text);
@@ -281,6 +333,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   async function handleDownloadIllustrated(e, session) {
     e.stopPropagation();
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    clearFinished(session.id);
     try {
       const { markdown } = await getIllustratedNovel(session.id);
       downloadMarkdown(`${sanitizeFilename(session.title)}-挿絵付き.md`, markdown);
@@ -433,6 +486,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
           </div>
         )}
         {running && <NovelizeProgress elapsedMs={elapsedMs} />}
+        {!running && finishedIds.has(s.id) && <NovelizeProgress done />}
 
         {/* 操作層 */}
         <div
@@ -539,6 +593,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px' }}>
+      <ToastStack items={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
       <h1
         style={{
           fontFamily: F_DISPLAY,
