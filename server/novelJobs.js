@@ -1,5 +1,10 @@
 import crypto from 'node:crypto';
-import { sessionNovelDocPath, sessionNovelMetaKey, sessionNovelJobKey } from './storage/paths.js';
+import {
+  sessionNovelDocPath,
+  sessionNovelMetaKey,
+  sessionNovelJobKey,
+  sessionNovelNoticeKey,
+} from './storage/paths.js';
 import { buildTranscriptWithMarkers } from './novelMarkers.js';
 import { generateNovel, NOVELIZE_UPSTREAM_TIMEOUT_MS, NOVELIZE_MAX_CONTINUATIONS } from './novelGeneration.js';
 
@@ -78,6 +83,10 @@ export function createNovelJobRunner({
         imageIds,
         truncated,
       });
+      // 生成できたことをユーザーがまだ受け取っていない、という印。
+      // 「既読の記録が無い=未読」と定義すると、この機能の投入時に過去の小説が
+      // 一斉に未読になってしまう。成功時に立てて受け取り時に降ろす形にする。
+      await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: true });
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
     } catch (e) {
       try {

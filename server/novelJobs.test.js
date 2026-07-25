@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
-import { sessionNovelJobKey } from './storage/paths.js';
+import { sessionNovelJobKey, sessionNovelNoticeKey } from './storage/paths.js';
 import {
   createNovelJobRunner,
   makeBootId,
@@ -293,6 +293,40 @@ describe('createNovelJobRunner', () => {
 
     const out = await runner.read('u1', 's1');
     expect(out.status).toBe('error');
+  });
+
+  it('marks the novel as unread when generation succeeds', async () => {
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl: okFetch(), bootId: 'b1' });
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.pending.get('u1/s1');
+
+    expect(await dataStore.get(sessionNovelNoticeKey('u1', 's1'))).toEqual({ unread: true });
+  });
+
+  it('does not mark anything unread when generation fails', async () => {
+    // 失敗は status:'error' とエラー行がサーバー状態として残るため、
+    // 永続通知は要らない。noticeを書くと消せない通知になってしまう。
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.pending.get('u1/s1');
+
+    expect(await dataStore.get(sessionNovelNoticeKey('u1', 's1'))).toBeNull();
+  });
+
+  it('marks the novel as unread even when it was truncated', async () => {
+    // 末尾が欠けていても「小説ができた」ことに変わりはない。欠落は別途警告される。
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }),
+    });
+    const runner = createNovelJobRunner({
+      dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1',
+    });
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.pending.get('u1/s1');
+
+    expect(await dataStore.get(sessionNovelNoticeKey('u1', 's1'))).toEqual({ unread: true });
   });
 });
 

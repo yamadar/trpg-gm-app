@@ -18,6 +18,10 @@ export function sessionNovelJobKey(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/novelJob`;
 }
 
+export function sessionNovelNoticeKey(userId, sessionId) {
+  return `users/${userId}/sessions/${sessionId}/novelNotice`;
+}
+
 export function endingKey(userId, sessionId) {
   return `users/${userId}/endings/${sessionId}`;
 }
