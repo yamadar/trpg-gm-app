@@ -5,12 +5,17 @@ import Button from '../ui/Button.jsx';
 import Badge from '../ui/Badge.jsx';
 import { RULESETS } from '../../data/rulesets.js';
 import { listStarters, importStarterPack } from '../../api/starterClient.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 function rulesetLabel(id) {
   return RULESETS.find((r) => r.id === id)?.label ?? id;
 }
 
 export default function StarterPackList({ onImported }) {
+  // ギャラリーはログイン無しで閲覧できる設計だが、取り込み先のAPIは認証必須。
+  // 未ログインのまま押させて401を踏ませるより、ここで先にボタンを隠す
+  // (PublicItemDetailと同じ判断・同じ認証情報源)
+  const { user } = useAuth();
   const [packs, setPacks] = useState([]);
   // 複数カードを並行して操作できるので、busy/errors はどちらも packId をキーにした
   // オブジェクトで持つ(単一スカラーだと他カードの操作でこのカードの状態が上書きされる)。
@@ -81,9 +86,15 @@ export default function StarterPackList({ onImported }) {
           )}
 
           <div style={{ marginTop: 12 }}>
-            <Button variant="brass" onClick={() => start(pack)} disabled={!!busy[pack.packId]}>
-              {busy[pack.packId] ? '取り込み中…' : 'この冒険を始める'}
-            </Button>
+            {user ? (
+              <Button variant="brass" onClick={() => start(pack)} disabled={!!busy[pack.packId]}>
+                {busy[pack.packId] ? '取り込み中…' : 'この冒険を始める'}
+              </Button>
+            ) : (
+              <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
+                追加にはログインが必要です(右上からログイン)
+              </div>
+            )}
           </div>
 
           {errors[pack.packId] && (

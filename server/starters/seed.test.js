@@ -72,6 +72,9 @@ describe('seedStarters', () => {
       moods: ['ホラー'],
       recommendedRuleset: 'coc7e',
       scenarioTitle: 'テストシナリオ',
+      // pack.jsonが宣言したscenario.idをそのままマニフェストに残す。無いと
+      // 取り込み側がslugify(title)頼りになり、日本語タイトルは'untitled'に潰れる
+      scenarioId: 'test-scenario',
     });
     expect(entry.worldPublicId).toMatch(/^pub_/);
     expect(entry.scenarioPublicId).toMatch(/^pub_/);

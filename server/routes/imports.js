@@ -62,7 +62,12 @@ export function createImportsRouter({ dataStore, textStore }) {
     }
     const worldId = world.meta.id;
 
-    const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId);
+    // preferredId には manifest 側の scenarioId を渡す(worldと同じ理由)。
+    // scenarioId を持たない旧マニフェストも有り得るので、その場合は従来の
+    // slugify(title)フォールバックにそのまま任せる
+    const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId, {
+      preferredId: pack.scenarioId,
+    });
     if (!scenario.ok) {
       res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
       return;

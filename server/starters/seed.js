@@ -82,6 +82,9 @@ async function seedPack(dataStore, textStore, owner, pack) {
     moods: pack.moods,
     recommendedRuleset: pack.recommendedRuleset,
     scenarioTitle: pack.scenario.title,
+    // インポート時にimportScenarioへpreferredIdとして渡す。無いとslugify(title)頼りになり
+    // 日本語タイトルは'untitled'に潰れる(importWorldがpack.idを使うのと同じ理由)
+    scenarioId: pack.scenario.id,
     worldPublicId,
     scenarioPublicId,
     pcPublicIds: characterIds.pc,

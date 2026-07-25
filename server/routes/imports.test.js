@@ -270,6 +270,24 @@ describe('imports routes', () => {
       expect(res.body.world.id).toBe('hyakki-yagyo');
     });
 
+    // manifestのscenarioIdをimportScenarioへpreferredIdとして渡す
+    // (worldがpackIdを使うのと同じ理由。無いと日本語タイトルはslugifyで'untitled'に潰れる)
+    it('uses the manifest scenarioId as the scenario id instead of slugify(title)', async () => {
+      await seedOnePack({ scenarioId: 'hyakki-on-suzaku-oji' });
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(res.status).toBe(201);
+      expect(res.body.scenario.id).toBe('hyakki-on-suzaku-oji');
+    });
+
+    // 既存デプロイのマニフェストはscenarioIdを持たない可能性がある。新フィールドが
+    // 欠けていてもクラッシュせず、従来どおりslugify(title)にフォールバックする
+    it('falls back to slugify(title) for the scenario id when the manifest predates scenarioId', async () => {
+      await seedOnePack();
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(res.status).toBe(201);
+      expect(res.body.scenario.id).toBe('untitled');
+    });
+
     it('suffixes the world id when the same pack is imported twice', async () => {
       await seedOnePack();
       await request(app).post('/api/starters/hyakki-yagyo/import');

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import StarterPackList from './StarterPackList.jsx';
 import * as starterClient from '../../api/starterClient.js';
+import { renderWithAuth } from '../../test/renderWithAuth.jsx';
 
 // 未settleのPromiseをテストから任意のタイミングでresolve/rejectするためのヘルパー。
 // 「フェッチが完了した後の状態」を確実に観測するために使う(初回同期レンダーの
@@ -44,7 +45,7 @@ beforeEach(() => {
 describe('StarterPackList', () => {
   it('renders a card per pack with tagline, moods, ruleset label and source', async () => {
     vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
-    render(<StarterPackList onImported={vi.fn()} />);
+    renderWithAuth(<StarterPackList onImported={vi.fn()} />);
 
     expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
     expect(screen.getByText(/禁書と魔女裁判/)).toBeInTheDocument();
@@ -59,7 +60,7 @@ describe('StarterPackList', () => {
   it('renders nothing once the manifest resolves as empty', async () => {
     const { promise, resolve } = deferred();
     vi.spyOn(starterClient, 'listStarters').mockReturnValue(promise);
-    const { container } = render(<StarterPackList onImported={vi.fn()} />);
+    const { container } = renderWithAuth(<StarterPackList onImported={vi.fn()} />);
 
     expect(starterClient.listStarters).toHaveBeenCalled();
 
@@ -74,7 +75,7 @@ describe('StarterPackList', () => {
   it('renders nothing and shows no error text when the manifest fetch fails', async () => {
     const { promise, reject } = deferred();
     vi.spyOn(starterClient, 'listStarters').mockReturnValue(promise);
-    const { container } = render(<StarterPackList onImported={vi.fn()} />);
+    const { container } = renderWithAuth(<StarterPackList onImported={vi.fn()} />);
 
     expect(starterClient.listStarters).toHaveBeenCalled();
 
@@ -97,7 +98,7 @@ describe('StarterPackList', () => {
       npcs: [],
     });
     const onImported = vi.fn();
-    render(<StarterPackList onImported={onImported} />);
+    renderWithAuth(<StarterPackList onImported={onImported} />);
 
     fireEvent.click((await screen.findAllByText('この冒険を始める'))[0]);
 
@@ -113,13 +114,25 @@ describe('StarterPackList', () => {
   it('shows the error on the failing card and leaves the other card usable', async () => {
     vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
     vi.spyOn(starterClient, 'importStarterPack').mockRejectedValue(new Error('boom'));
-    render(<StarterPackList onImported={vi.fn()} />);
+    renderWithAuth(<StarterPackList onImported={vi.fn()} />);
 
     const buttons = await screen.findAllByText('この冒険を始める');
     fireEvent.click(buttons[0]);
 
     expect(await screen.findByText(/取り込みに失敗した/)).toBeInTheDocument();
     expect(screen.getAllByText('この冒険を始める')[1].closest('button')).not.toBeDisabled();
+  });
+
+  // 公開ギャラリーはログイン無しで閲覧できる設計なので、ログアウト状態では
+  // 認証必須のインポートAPIを叩く前にボタン自体を消して案内文にする
+  // (PublicItemDetailの「ログインが必要です」と同じ扱い)
+  it('hides the start button and shows a login prompt when logged out', async () => {
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+    renderWithAuth(<StarterPackList onImported={vi.fn()} />, { user: null });
+
+    expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
+    expect(screen.queryByText('この冒険を始める')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/ログインが必要/)).toHaveLength(PACKS.length);
   });
 
   it('keeps a card disabled while its import is pending, even after a second import starts', async () => {
@@ -129,7 +142,7 @@ describe('StarterPackList', () => {
     vi.spyOn(starterClient, 'importStarterPack')
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise);
-    render(<StarterPackList onImported={vi.fn()} />);
+    renderWithAuth(<StarterPackList onImported={vi.fn()} />);
 
     const buttons = await screen.findAllByText('この冒険を始める');
     fireEvent.click(buttons[0]);

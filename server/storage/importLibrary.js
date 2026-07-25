@@ -48,11 +48,14 @@ export async function importCharacter(dataStore, textStore, userId, publicId, ta
   return { ok: true, meta: character };
 }
 
-export async function importScenario(dataStore, textStore, userId, publicId, targetWorldId) {
+// preferredId: importWorldと同じ逃げ道。スターターパックのシナリオは pack.json で
+// 意味のあるidを宣言しているが、指定が無ければ従来どおりslugify(title)に潰れる。
+export async function importScenario(dataStore, textStore, userId, publicId, targetWorldId, { preferredId } = {}) {
   const pub = await getPublicItem(dataStore, textStore, 'scenarios', publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   if ((await dataStore.get(worldMetaKey(userId, targetWorldId))) === null) return { ok: false, reason: 'target_not_found' };
-  const id = await findAvailable(slugify(pub.title), async (c) => (await dataStore.get(scenarioMetaKey(userId, targetWorldId, c))) !== null);
+  const base = typeof preferredId === 'string' && preferredId.length > 0 ? preferredId : slugify(pub.title);
+  const id = await findAvailable(base, async (c) => (await dataStore.get(scenarioMetaKey(userId, targetWorldId, c))) !== null);
   const scenario = await saveScenario(dataStore, textStore, userId, {
     worldId: targetWorldId,
     id,
