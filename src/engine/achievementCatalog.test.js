@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { CATALOG, CATEGORIES, MOOD_ENTRIES, FORMULAS } from './achievementCatalog.js';
 import { MOODS } from '../constants/moods.js';
 import { RULESETS } from '../data/rulesets.js';
+import { ICONS } from '../components/achievements/AchievementIcon.jsx';
 
 const CATEGORY_KEYS = CATEGORIES.map((c) => c.key);
 
@@ -59,5 +60,11 @@ describe('the finished catalogue', () => {
   it('keeps the formula list in step with the shipped rulesets', () => {
     // 判定式が増えたらここで落ちる。四つの流儀のラベルと目標値を見直すため。
     expect([...FORMULAS].sort()).toEqual([...new Set(RULESETS.map((r) => r.formula))].sort());
+  });
+
+  it('only names glyphs that AchievementIcon actually draws', () => {
+    for (const a of CATALOG) {
+      expect(Object.keys(ICONS), a.id).toContain(a.icon);
+    }
   });
 });
