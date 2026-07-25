@@ -133,6 +133,6 @@ state注入だけでは「参照されるが活かされない」問題が起き
 
 シードは冪等: `shareLibrary.js`の`resolvePublicId`が公開元→`publicId`のマッピング(`users/{userId}/publish/...`)を見て、既にマッピングがあればその`publicId`を再利用し、無ければ新規採番する(通常の再公開と同じ仕組み)。そのため、素材の文面を直して再シードすると公開済みの内容だけが更新され、既にインポート済みのユーザーの手元(独立コピー)は変わらない。
 
-パックの一括インポート(`POST /api/starters/:packId/import`、`server/routes/imports.js`)はサーバー側の1呼び出しにまとめてある。クライアントから`/api/import/*`を個別に(World→Scenario→PC×2→NPC×2の計5回)叩く実装だと、途中で失敗したときに「Worldだけできて中身が無い」状態が残り、リトライで`-2`付きの重複IDが生えてしまうため。`importWorld`には`{ preferredId: pack.packId }`を渡し、日本語タイトルが`slugify`で`untitled`に潰れる問題を避けて意味のあるWorld idにする(02-data-model.md「`importWorld`の`preferredId`」参照)。
+パックの一括インポート(`POST /api/starters/:packId/import`、`server/routes/imports.js`)はサーバー側の1呼び出しにまとめてある。クライアントから`/api/import/*`を個別に(World→Scenario→PC×2→NPC×2の計6回)叩く実装だと、途中で失敗したときに「Worldだけできて中身が無い」状態が残り、リトライで`-2`付きの重複IDが生えてしまうため。`importWorld`には`{ preferredId: pack.packId }`を渡し、日本語タイトルが`slugify`で`untitled`に潰れる問題を避けて意味のあるWorld idにする(02-data-model.md「`importWorld`の`preferredId`」参照)。
 
 **権利方針**: 実在の世界観を下敷きにしたパックはパブリックドメイン作品のみ(クトゥルフ神話・北欧神話・日本の伝承・E.R.バローズの火星シリーズ・H.G.ウェルズ『宇宙戦争』)。フォーゴトン・レルム系やサイバーパンク作品のような権利者のいる既存世界観は使わず、同ジャンルのオリジナル世界観(アルデン辺境領・臨海特区ネオヨコハマ)で代替している。PD由来のパックは`pack.json`の`source`に出典を持ち、`StarterPackList`のカード下部にそのまま表示される。バローズ作品由来のパックは「バルスーム」「ジョン・カーター」等の商標を避け、パック名を「死にゆく火星」とし登場人物もオリジナルにしている。

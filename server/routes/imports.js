@@ -42,7 +42,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     sendImport(res, await importScenario(dataStore, textStore, req.userId, req.params.publicId, target));
   }));
 
-  // 一括インポート。クライアントから /api/import/* を7回叩くと途中で失敗したときに
+  // 一括インポート。クライアントから /api/import/* を6回(World→Scenario→PC×2→NPC×2)叩くと途中で失敗したときに
   // 「Worldだけできて中身が無い」状態が残り、リトライで -2 付きの重複が生える。
   // サーバー側の1呼び出しにまとめて、失敗はエラー1つで返す。
   router.post('/starters/:packId/import', asyncHandler(async (req, res) => {
