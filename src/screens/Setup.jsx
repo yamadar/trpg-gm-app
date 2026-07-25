@@ -9,6 +9,7 @@ import { listCharacters, getCharacter, putCharacter } from '../api/characterLibr
 import { makeId } from '../utils/makeId.js';
 import { listRulesets } from '../api/rulesetLibraryClient.js';
 import { getOrParseCharacter } from '../api/characterSheetCache.js';
+import { getAdapter } from '../engine/rulesetAdapters.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Field from '../components/ui/Field.jsx';
@@ -238,6 +239,10 @@ export default function Setup({ onStart, onCancel, campaignContext = null }) {
       }
 
       const resolvedRuleset = allRulesets.find((r) => r.id === rulesetId) || RULESETS[0];
+      const adapter = getAdapter(resolvedRuleset.formula);
+      const resources = Object.fromEntries(
+        adapter.resourceDefs.map((d) => [d.key, { value: d.initial, max: d.max }])
+      );
 
       const session = {
         id: 'sess_' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
@@ -260,6 +265,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null }) {
           desc: resolvedRuleset.desc,
           hint: resolvedRuleset.hint,
           growthUnit: resolvedRuleset.growthUnit || '経験値',
+          formula: resolvedRuleset.formula,
         },
         pc: { raw: pc, goal: pcGoal, bonds: pcBonds },
         state: {
@@ -269,6 +275,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null }) {
           recent_log: [],
           turn_count: 0,
           xp: campaignContext?.xp || 0,
+          ...(Object.keys(resources).length ? { resources } : {}),
         },
         log: [],
         updatedAt: Date.now(),

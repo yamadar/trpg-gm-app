@@ -97,6 +97,8 @@ describe('Setup', () => {
     expect(session.ruleset.label).toBe('CoC7e風');
     expect(session.ruleset.growthUnit).toBe('経験値');
     expect(session.state.xp).toBe(0);
+    expect(session.ruleset.formula).toBe('coc7e');
+    expect(session.state.resources).toEqual({ san: { value: 60, max: 99 } });
   });
 
   it('既存World選択時はWorldのmoodsがsession.moodsへ継承される(Scenarioより優先)', async () => {
@@ -183,6 +185,8 @@ describe('Setup', () => {
     expect(session.rulesetId).not.toBe('coc7e');
     expect(session.ruleset.id).toBe('simple');
     expect(session.ruleset.label).toBe('シンプル');
+    expect(session.ruleset.formula).toBe('simple');
+    expect('resources' in session.state).toBe(false);
   });
 
   it('creates a new World in the library and starts the session with the split summary', async () => {
