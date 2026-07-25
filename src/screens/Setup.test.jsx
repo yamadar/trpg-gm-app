@@ -8,6 +8,7 @@ import * as characterLibraryClient from '../api/characterLibraryClient.js';
 import * as sessionApi from '../api/session.js';
 import * as rulesetLibraryClient from '../api/rulesetLibraryClient.js';
 import * as characterSheetCache from '../api/characterSheetCache.js';
+import { COLORS } from '../theme.js';
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -443,6 +444,10 @@ describe('Setup', () => {
       vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
         { name: 'howard-kane' }, { name: 'mabel-thorne' },
       ]);
+      // マウント時点でworldIdが既に埋まっているため、[worldId]のuseEffectが即listScenariosを
+      // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
+      // 既存テストの慣習(Worldが決まっている状態では必ずモックする)に倣う。
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
       render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
 
       // ステップ表示が「4. PC」を選択中にしている
@@ -462,12 +467,21 @@ describe('Setup', () => {
 
       fireEvent.click(await screen.findByText('戻る')); // → ルール
       fireEvent.click(screen.getByText('戻る')); // → シナリオ
-      expect(await screen.findByText('丘の上の写真館')).toBeInTheDocument();
+      // 一覧のタイトル文字列はlistScenariosのモック結果から誰でも描画されてしまい、
+      // selectedScenarioがnullでも一致してしまう(=マウント時リセットのバグを検知できない)。
+      // selectedScenarioがある場合にのみ変わるCardのborderColor(選択時COLORS.brass /
+      // 未選択時COLORS.line)で検証することで、実際に選択状態が保持されていることを確かめる。
+      const scenarioCard = (await screen.findByText('丘の上の写真館')).parentElement;
+      expect(scenarioCard).toHaveStyle({ borderColor: COLORS.brass });
     });
 
     it('starts a session carrying the starter world, scenario, moods and ruleset', async () => {
       vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([{ name: 'howard-kane' }]);
       vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({ name: 'howard-kane', raw: 'PC名: ハワード' });
+      // マウント時点でworldIdが既に埋まっているため、[worldId]のuseEffectが即listScenariosを
+      // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
+      // 既存テストの慣習(Worldが決まっている状態では必ずモックする)に倣う。
+      vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
       const onStart = vi.fn();
       render(<Setup onStart={onStart} onCancel={vi.fn()} starterContext={STARTER} />);
 
