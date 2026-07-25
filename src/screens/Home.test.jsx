@@ -7,6 +7,7 @@ import * as sessionApi from '../api/session.js';
 import * as campaignClient from '../api/campaignClient.js';
 import * as storage from '../storage/index.js';
 import * as endingClient from '../api/endingClient.js';
+import * as starterClient from '../api/starterClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 beforeEach(() => {
@@ -638,5 +639,49 @@ describe('Home', () => {
     });
 
     expect(await screen.findByText('エンディングを記録する')).toBeInTheDocument();
+  });
+
+  describe('starter packs', () => {
+    const PACKS = [{
+      packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null,
+      moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館',
+    }];
+
+    it('offers starter packs when there are no sessions', async () => {
+      vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={vi.fn()} />);
+      expect(await screen.findByText('はじめての冒険を選ぶ')).toBeInTheDocument();
+      expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
+    });
+
+    it('does not offer starter packs once a session exists', async () => {
+      vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+      const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: { current_scene: '森', turn_count: 1 }, log: [] }];
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={vi.fn()} />);
+      await waitFor(() => expect(screen.getByText('セッションA')).toBeInTheDocument());
+      expect(screen.queryByText('はじめての冒険を選ぶ')).not.toBeInTheDocument();
+    });
+
+    it('still renders the action buttons when the manifest cannot be fetched', async () => {
+      vi.spyOn(starterClient, 'listStarters').mockRejectedValue(new Error('offline'));
+      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={vi.fn()} />);
+      expect(await screen.findByText('+ 新規プレイ')).toBeInTheDocument();
+    });
+
+    it('passes the starterContext up when a pack is started', async () => {
+      vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+      vi.spyOn(starterClient, 'importStarterPack').mockResolvedValue({
+        world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界' },
+        scenario: { id: 'sc', worldId: 'arkham-1920s', title: '丘の上の写真館', recommendedRuleset: 'coc7e', moods: ['ホラー'], raw: '# シナリオ' },
+        pcs: [], npcs: [],
+      });
+      const onStartStarter = vi.fn();
+      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={onStartStarter} />);
+
+      fireEvent.click(await screen.findByText('この冒険を始める'));
+
+      await waitFor(() => expect(onStartStarter).toHaveBeenCalled());
+      expect(onStartStarter.mock.calls[0][0].rulesetId).toBe('coc7e');
+    });
   });
 });
