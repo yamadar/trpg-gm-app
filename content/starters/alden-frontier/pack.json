@@ -1,0 +1,11 @@
+{
+  "id": "alden-frontier",
+  "title": "アルデン辺境領",
+  "tagline": "街道の途切れた先に古代帝国が沈んでいる。村の井戸が、一夜で涸れた。",
+  "source": null,
+  "moods": ["ファンタジー", "冒険"],
+  "recommendedRuleset": "dnd5e",
+  "scenario": { "id": "the-dry-well", "title": "涸れた井戸の底" },
+  "pc": ["gareth-dowe", "ilmina-vess"],
+  "npc": ["tobias", "serika"]
+}
