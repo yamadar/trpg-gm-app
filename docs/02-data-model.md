@@ -175,7 +175,7 @@ sessions/{session_id}/
   "rulesetId": "coc7e",
   "formula": "coc7e",
   "moods": ["ホラー", "ミステリー"],
-  "stats": { "total": 24, "successes": 14, "successRate": 0.583, "byDegree": { "fumble": 1, "fail": 8, "success": 9, "hard": 5, "extreme": 0, "critical": 1 }, "degrees": ["fumble", "fail", "success", "hard", "extreme", "critical"], "resources": { "san": { "label": "正気度", "value": 12, "max": 99 } } }
+  "stats": { "total": 24, "successes": 15, "successRate": 0.625, "byDegree": { "fumble": 1, "fail": 8, "success": 9, "hard": 5, "extreme": 0, "critical": 1 }, "degrees": ["fumble", "fail", "success", "hard", "extreme", "critical"], "resources": { "san": { "label": "正気度", "value": 12, "max": 99 } } }
 }
 ```
 - `sessionTitle`/`worldId`/`campaignId`/`rulesetId`/`formula`(`session.ruleset?.formula`)/`moods`はセッション本体からのスナップショット。`endingTitle`/`summary`はサーバーの1回のAI呼び出し(structured outputs)が生成する。
