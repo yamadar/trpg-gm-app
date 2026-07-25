@@ -7,9 +7,13 @@ afterEach(() => {
 });
 
 describe('ToastStack', () => {
-  it('renders nothing when there are no items', () => {
-    const { container } = render(<ToastStack items={[]} onDismiss={vi.fn()} />);
-    expect(container.firstChild).toBeNull();
+  it('keeps the live region mounted with no children when there are no items', () => {
+    // ライブリージョンはDOMに既に存在していないとテキスト変化を検知できないため、
+    // items が空でもコンテナ自体は消さない(空配列でnullを返す旧仕様からの意図的な変更)。
+    render(<ToastStack items={[]} onDismiss={vi.fn()} />);
+    const region = screen.getByRole('status');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region).toBeEmptyDOMElement();
   });
 
   it('renders one entry per item inside a polite live region', () => {

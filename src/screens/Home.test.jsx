@@ -8,6 +8,15 @@ import * as campaignClient from '../api/campaignClient.js';
 import * as storage from '../storage/index.js';
 import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+import { AuthContext } from '../auth/AuthContext.jsx';
+
+function rerenderWithAuth(rerender, ui, user) {
+  rerender(
+    <AuthContext.Provider value={{ user, loading: false, refresh: async () => {}, logout: async () => {} }}>
+      {ui}
+    </AuthContext.Provider>
+  );
+}
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -628,6 +637,50 @@ describe('Home', () => {
       expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
       // 正規表現で引くと祖先要素にも一致して「複数見つかった」で落ちるため、完全一致で引く。
       expect(screen.getByText('小説化に失敗した: 時間内に完了しませんでした。')).toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the completion block and toast on logout (the DL button DONE_NOTE points to unmounts along with the job)', async () => {
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
+    });
+    listSpy.mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(screen.getByText('小説ができました')).toBeInTheDocument();
+      expect(screen.getByText('「A」の小説ができました')).toBeInTheDocument();
+
+      await act(async () => {
+        rerenderWithAuth(
+          view.rerender,
+          <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />,
+          null
+        );
+        await Promise.resolve();
+      });
+
+      // ログアウトでDLボタンごと消えるので、完了ブロックとトーストも残してはいけない。
+      expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
+      expect(screen.queryByText('「A」の小説ができました')).not.toBeInTheDocument();
     } finally {
       view?.unmount();
       vi.useRealTimers();

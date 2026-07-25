@@ -57,7 +57,7 @@
   - `resolveJobStatus(job, { bootId, now })` → `{ status: 'idle'|'running'|'done'|'error', error: string|null, elapsedMs: number|null }`。`elapsedMs` は `status === 'running'` のときだけ数値、それ以外は `null`。
   - `GET /api/novel-jobs` のレスポンス: `{ [sessionId]: { status, error, elapsedMs, hasNovel, stale, truncated } }`
 
-- [ ] **Step 1: 既存テストを新しい戻り値の形に更新する(失敗させる)**
+- [x] **Step 1: 既存テストを新しい戻り値の形に更新する(失敗させる)**
 
 `server/novelJobs.test.js` の `describe('resolveJobStatus', ...)` ブロック(47〜81行目)を丸ごと次で置き換える。既存の3つの `toEqual` は `elapsedMs` が増えることで必ず落ちるため、ここで一緒に直す。
 
@@ -111,13 +111,13 @@ describe('resolveJobStatus', () => {
 });
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `npx vitest run server/novelJobs.test.js`
 Expected: FAIL。`resolveJobStatus` の戻り値に `elapsedMs` が無いため `toEqual` が
 `- Expected + Received` の差分で `elapsedMs: null` の欠落を報告する。
 
-- [ ] **Step 3: `resolveJobStatus` に `elapsedMs` を足す**
+- [x] **Step 3: `resolveJobStatus` に `elapsedMs` を足す**
 
 `server/novelJobs.js` の `resolveJobStatus`(19〜29行目)を次で置き換える。
 
@@ -145,12 +145,12 @@ export function resolveJobStatus(job, { bootId, now }) {
 }
 ```
 
-- [ ] **Step 4: テストを実行して通ることを確認する**
+- [x] **Step 4: テストを実行して通ることを確認する**
 
 Run: `npx vitest run server/novelJobs.test.js`
 Expected: PASS(全テスト)
 
-- [ ] **Step 5: ルートのテストを書く(失敗させる)**
+- [x] **Step 5: ルートのテストを書く(失敗させる)**
 
 `server/routes/sessions.test.js` の import に `sessionNovelJobKey` を追加する。13行目の import 文を次で置き換える。
 
@@ -193,12 +193,12 @@ import { sessionImagePath, sessionNovelJobKey } from '../storage/paths.js';
   });
 ```
 
-- [ ] **Step 6: テストを実行して失敗を確認する**
+- [x] **Step 6: テストを実行して失敗を確認する**
 
 Run: `npx vitest run server/routes/sessions.test.js -t elapsedMs`
 Expected: FAIL。`expected undefined to be 4000` — ルートがまだ `elapsedMs` を返していない。
 
-- [ ] **Step 7: ルートのレスポンスに `elapsedMs` を載せる**
+- [x] **Step 7: ルートのレスポンスに `elapsedMs` を載せる**
 
 `server/routes/sessions.js` の 38行目と 42〜49行目を次で置き換える。
 
@@ -219,12 +219,12 @@ Expected: FAIL。`expected undefined to be 4000` — ルートがまだ `elapsed
       };
 ```
 
-- [ ] **Step 8: テストを実行して通ることを確認する**
+- [x] **Step 8: テストを実行して通ることを確認する**
 
 Run: `npx vitest run server/routes/sessions.test.js server/novelJobs.test.js`
 Expected: PASS(全テスト)
 
-- [ ] **Step 9: コミット**
+- [x] **Step 9: コミット**
 
 ```bash
 git add server/novelJobs.js server/routes/sessions.js server/novelJobs.test.js server/routes/sessions.test.js
@@ -253,7 +253,7 @@ EOF
   - `export function formatElapsed(ms: number): string` — ミリ秒を `m:ss` にする。負値は `0:00`。
   - `export default function NovelizeProgress({ done?: boolean, elapsedMs?: number })` — `done` が真なら完了ブロック、偽なら待機ブロック。`elapsedMs` は待機時のみ使う。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 Create `src/components/ui/NovelizeProgress.test.jsx`:
 
@@ -319,12 +319,12 @@ describe('NovelizeProgress', () => {
 });
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `npx vitest run src/components/ui/NovelizeProgress.test.jsx`
 Expected: FAIL。`Failed to resolve import "./NovelizeProgress.jsx"` — ファイルがまだ無い。
 
-- [ ] **Step 3: コンポーネントを実装する**
+- [x] **Step 3: コンポーネントを実装する**
 
 Create `src/components/ui/NovelizeProgress.jsx`:
 
@@ -428,12 +428,12 @@ export default function NovelizeProgress({ done = false, elapsedMs = 0 }) {
 }
 ```
 
-- [ ] **Step 4: テストを実行して通ることを確認する**
+- [x] **Step 4: テストを実行して通ることを確認する**
 
 Run: `npx vitest run src/components/ui/NovelizeProgress.test.jsx`
-Expected: PASS(10テスト)
+Expected: PASS(7テスト)
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/components/ui/NovelizeProgress.jsx src/components/ui/NovelizeProgress.test.jsx
@@ -462,7 +462,7 @@ EOF
   - `export const TOAST_TIMEOUT_MS = 6000`
   - `export default function ToastStack({ items, onDismiss })`。`items` は `{ id: string, text: string, tone?: 'success'|'error' }` の配列。`onDismiss(id)` は自動消滅時と `×` 押下時に呼ばれる。`items` が空なら何も描画しない。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 Create `src/components/ui/Toast.test.jsx`:
 
@@ -538,12 +538,12 @@ describe('ToastStack', () => {
 });
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `npx vitest run src/components/ui/Toast.test.jsx`
 Expected: FAIL。`Failed to resolve import "./Toast.jsx"` — ファイルがまだ無い。
 
-- [ ] **Step 3: コンポーネントを実装する**
+- [x] **Step 3: コンポーネントを実装する**
 
 Create `src/components/ui/Toast.jsx`:
 
@@ -656,12 +656,12 @@ export default function ToastStack({ items, onDismiss }) {
 }
 ```
 
-- [ ] **Step 4: テストを実行して通ることを確認する**
+- [x] **Step 4: テストを実行して通ることを確認する**
 
 Run: `npx vitest run src/components/ui/Toast.test.jsx`
 Expected: PASS(5テスト)
 
-- [ ] **Step 5: コミット**
+- [x] **Step 5: コミット**
 
 ```bash
 git add src/components/ui/Toast.jsx src/components/ui/Toast.test.jsx
@@ -688,7 +688,7 @@ EOF
 - Consumes: `NovelizeProgress`(Task 2)、`GET /api/novel-jobs` の `elapsedMs`(Task 1)
 - Produces: `running` のセッションカードに待機ブロックが出る状態。Task 5 はここに完了ブロックとトーストを足す。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `src/screens/Home.test.jsx` の `describe('Home', ...)` の中、既存の
 `shows 小説化中… and disables the button while the server reports a running job` テストの直後に追加する。
@@ -770,12 +770,12 @@ EOF
   });
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `npx vitest run src/screens/Home.test.jsx -t 経過`
 Expected: FAIL。`Unable to find an element with the text: 1:24 経過 ・ 目安 2〜5分`
 
-- [ ] **Step 3: `Home.jsx` に import を足す**
+- [x] **Step 3: `Home.jsx` に import を足す**
 
 `src/screens/Home.jsx` の 5行目(`import Badge ...`)の直後に追加する。
 
@@ -783,7 +783,7 @@ Expected: FAIL。`Unable to find an element with the text: 1:24 経過 ・ 目�
 import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
 ```
 
-- [ ] **Step 4: 受信時刻の ref と1秒タイマーを足す**
+- [x] **Step 4: 受信時刻の ref と1秒タイマーを足す**
 
 `src/screens/Home.jsx` の 49〜50行目、`hasRunningRef` の宣言の直後に次を挿入する。
 
@@ -809,7 +809,7 @@ import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
   }, [anyRunning]);
 ```
 
-- [ ] **Step 5: ポーリング成功時に受信時刻を記録する**
+- [x] **Step 5: ポーリング成功時に受信時刻を記録する**
 
 `src/screens/Home.jsx` のポーリング内、155〜156行目を次で置き換える。
 
@@ -819,7 +819,7 @@ import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
         jobsReceivedAtRef.current = Date.now();
 ```
 
-- [ ] **Step 6: カードに待機ブロックを描画する**
+- [x] **Step 6: カードに待機ブロックを描画する**
 
 `renderSessionCard` 内、`const running = job.status === 'running';` の行の直後に次を挿入する。
 
@@ -836,12 +836,12 @@ import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
         {running && <NovelizeProgress elapsedMs={elapsedMs} />}
 ```
 
-- [ ] **Step 7: テストを実行して通ることを確認する**
+- [x] **Step 7: テストを実行して通ることを確認する**
 
 Run: `npx vitest run src/screens/Home.test.jsx`
 Expected: PASS(既存テストを含む全テスト)
 
-- [ ] **Step 8: コミット**
+- [x] **Step 8: コミット**
 
 ```bash
 git add src/screens/Home.jsx src/screens/Home.test.jsx
@@ -869,7 +869,7 @@ EOF
 - Produces:
   - `export function collectJobEvents(prev, next, titleOf)` → `{ id: string, kind: 'done'|'error', title: string }[]`。`prev[id].status === 'running'` だったものだけを対象にする。
 
-- [ ] **Step 1: 失敗するテストを書く**
+- [x] **Step 1: 失敗するテストを書く**
 
 `src/screens/Home.test.jsx` の import 行(3行目)を次で置き換える。
 
@@ -1039,12 +1039,12 @@ describe('collectJobEvents', () => {
   });
 ```
 
-- [ ] **Step 2: テストを実行して失敗を確認する**
+- [x] **Step 2: テストを実行して失敗を確認する**
 
 Run: `npx vitest run src/screens/Home.test.jsx -t collectJobEvents`
 Expected: FAIL。`collectJobEvents is not a function` — まだ export されていない。
 
-- [ ] **Step 3: `collectJobEvents` を追加する**
+- [x] **Step 3: `collectJobEvents` を追加する**
 
 `src/screens/Home.jsx` の `sanitizeFilename` の定義(38〜42行目)の直後に追加する。
 
@@ -1063,12 +1063,12 @@ export function collectJobEvents(prev, next, titleOf) {
 }
 ```
 
-- [ ] **Step 4: テストを実行して純粋関数のテストが通ることを確認する**
+- [x] **Step 4: テストを実行して純粋関数のテストが通ることを確認する**
 
 Run: `npx vitest run src/screens/Home.test.jsx -t collectJobEvents`
 Expected: PASS(5テスト)
 
-- [ ] **Step 5: `Home.jsx` に import と state を足す**
+- [x] **Step 5: `Home.jsx` に import と state を足す**
 
 Task 4 で足した `import NovelizeProgress ...` の直後に追加する。
 
@@ -1087,7 +1087,7 @@ import ToastStack from '../components/ui/Toast.jsx';
   const [finishedIds, setFinishedIds] = useState(() => new Set()); // 完了ブロックを出すセッション
 ```
 
-- [ ] **Step 6: `applyNovelJobs` を遷移検知つきに書き換える**
+- [x] **Step 6: `applyNovelJobs` を遷移検知つきに書き換える**
 
 `src/screens/Home.jsx` の `applyNovelJobs` 関数の定義を丸ごと次で置き換える(Task 4 で
 その直後に `anyRunning` と1秒タイマーを足しているので、行番号ではなく関数の範囲で見ること。
@@ -1135,7 +1135,7 @@ import ToastStack from '../components/ui/Toast.jsx';
   }
 ```
 
-- [ ] **Step 7: DL と再生成で完了ブロックを消す**
+- [x] **Step 7: DL と再生成で完了ブロックを消す**
 
 `handleNovelize` / `handleDownloadNovel` / `handleDownloadIllustrated` の先頭、
 `setNovelizeError(...)` の行の直後にそれぞれ次の1行を挿入する。
@@ -1144,7 +1144,7 @@ import ToastStack from '../components/ui/Toast.jsx';
     clearFinished(session.id);
 ```
 
-- [ ] **Step 8: 完了ブロックとトーストを描画する**
+- [x] **Step 8: 完了ブロックとトーストを描画する**
 
 Task 4 で挿入した `{running && <NovelizeProgress elapsedMs={elapsedMs} />}` の行を次で置き換える。
 
@@ -1159,17 +1159,17 @@ Task 4 で挿入した `{running && <NovelizeProgress elapsedMs={elapsedMs} />}`
       <ToastStack items={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
 ```
 
-- [ ] **Step 9: テストを実行して通ることを確認する**
+- [x] **Step 9: テストを実行して通ることを確認する**
 
 Run: `npx vitest run src/screens/Home.test.jsx`
 Expected: PASS(既存テストを含む全テスト)
 
-- [ ] **Step 10: 全テストを実行して回帰がないことを確認する**
+- [x] **Step 10: 全テストを実行して回帰がないことを確認する**
 
 Run: `npm test`
 Expected: PASS(全ファイル)
 
-- [ ] **Step 11: コミット**
+- [x] **Step 11: コミット**
 
 ```bash
 git add src/screens/Home.jsx src/screens/Home.test.jsx

@@ -58,7 +58,7 @@ export function collectJobEvents(prev, next, titleOf) {
 
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
   const { user } = useAuth();
-  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale }
+  const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated }
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
   // setNovelJobsは非同期に反映されるため、tick()内の同期チェックにはrefを用いる。
   const hasRunningRef = useRef(false);
@@ -95,10 +95,12 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
 
     if (events.length === 0) return;
     setFinishedIds((prevSet) => {
+      const doneIds = events.filter((ev) => ev.kind === 'done');
+      // エラーのみのイベント(doneが1件もない)では中身が同じでも新しいSetを
+      // 返すと無駄な再描画を招くため、追加が無ければ前回の参照をそのまま返す。
+      if (doneIds.length === 0) return prevSet;
       const nextSet = new Set(prevSet);
-      for (const ev of events) {
-        if (ev.kind === 'done') nextSet.add(ev.id);
-      }
+      for (const ev of doneIds) nextSet.add(ev.id);
       return nextSet;
     });
     setToasts((prevToasts) => [
@@ -212,6 +214,11 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   useEffect(() => {
     if (!user) {
       applyNovelJobs({});
+      // ローカルセッション(IndexedDB由来)はuserと無関係に残るため、完了ブロックや
+      // トーストを消さずにいると「下の「小説をDL」から取り出せます」のように、
+      // ログアウトでボタンごと消えた操作を指す案内が残ってしまう。
+      setFinishedIds(new Set());
+      setToasts([]);
       return;
     }
     let cancelled = false;
@@ -485,8 +492,11 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
             小説が出力上限に達したため、末尾が欠けている可能性があります。
           </div>
         )}
-        {running && <NovelizeProgress elapsedMs={elapsedMs} />}
-        {!running && finishedIds.has(s.id) && <NovelizeProgress done />}
+        {/* running/doneで別要素を出し分けるとrole="status"のDOMノードが差し替わり、
+            スクリーンリーダーは「変化」を検知できない(要素は生成時から存在している必要がある)。
+            1つのノードを維持しdoneだけ切り替える。handleNovelizeがclearFinishedを
+            running設定前に呼ぶため、両条件が同時に真になることはない。 */}
+        {(running || finishedIds.has(s.id)) && <NovelizeProgress done={!running} elapsedMs={elapsedMs} />}
 
         {/* 操作層 */}
         <div

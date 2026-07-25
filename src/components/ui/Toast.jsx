@@ -79,8 +79,12 @@ function ToastItem({ item, onDismiss }) {
 }
 
 // 画面上部に積む通知。キューの管理(いつ足すか)は呼び出し側の責務。
+//
+// ライブリージョンはDOMに既に存在していて初めてテキストの「変化」を検知できるため、
+// items が空でもコンテナ自体は常に描画し続ける(中身の有無だけを切り替える)。
+// なお中身が無いときは width: max-content により箱の大きさが0になるため、
+// position: fixed で常駐してもページ上のクリックを奪うことはない。
 export default function ToastStack({ items, onDismiss }) {
-  if (!items.length) return null;
   return (
     <div
       role="status"
