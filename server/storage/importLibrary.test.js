@@ -106,6 +106,40 @@ describe('importWorld', () => {
     const imported = await getWorld(dataStore, textStore, 'usr_b', result.meta.id);
     expect(imported.moods).toEqual(['ホラー', '冒険']);
   });
+
+  describe('importWorld preferredId', () => {
+    it('uses preferredId as the base id when given', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: '百鬼夜行 — 平安京', raw: '# 本文' });
+      const { meta: pub } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+
+      const res = await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { preferredId: 'hyakki-yagyo' });
+
+      expect(res.ok).toBe(true);
+      expect(res.meta.id).toBe('hyakki-yagyo');
+      expect(res.meta.title).toBe('百鬼夜行 — 平安京');
+    });
+
+    it('suffixes preferredId on collision', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: '百鬼夜行 — 平安京', raw: '# 本文' });
+      const { meta: pub } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+
+      await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { preferredId: 'hyakki-yagyo' });
+      const second = await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { preferredId: 'hyakki-yagyo' });
+
+      expect(second.meta.id).toBe('hyakki-yagyo-2');
+    });
+
+    it('falls back to slugify(title) when preferredId is absent or empty', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: 'Ruins Of Alden', raw: '# 本文' });
+      const { meta: pub } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+
+      const noArg = await importWorld(dataStore, textStore, 'usr_b', pub.publicId);
+      expect(noArg.meta.id).toBe('ruinsofalden');
+
+      const empty = await importWorld(dataStore, textStore, 'usr_c', pub.publicId, { preferredId: '' });
+      expect(empty.meta.id).toBe('ruinsofalden');
+    });
+  });
 });
 
 describe('importCharacter', () => {
@@ -267,6 +301,66 @@ describe('importScenario', () => {
     expect(imported.moods).toEqual(['ミステリー', '日常']);
   });
 });
+
+  describe('importScenario preferredId', () => {
+    it('uses preferredId as the base id when given', async () => {
+      await seedWorld('usr_a', 'w1', 'テスト世界');
+      await saveScenario(dataStore, textStore, 'usr_a', {
+        worldId: 'w1',
+        id: 'sc1',
+        title: '朱雀大路の百鬼夜行',
+        raw: '## シナリオ概要',
+      });
+      const { meta: pub } = await publishScenario(dataStore, textStore, 'usr_a', 'w1', 'sc1', OWNER);
+      await saveWorld(dataStore, textStore, 'usr_b', { id: 'target', title: '受け入れ先', raw: 'r' });
+
+      const result = await importScenario(dataStore, textStore, 'usr_b', pub.publicId, 'target', {
+        preferredId: 'hyakki-on-suzaku-oji',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.meta.id).toBe('hyakki-on-suzaku-oji');
+      expect(result.meta.title).toBe('朱雀大路の百鬼夜行');
+    });
+
+    it('suffixes preferredId on collision', async () => {
+      await seedWorld('usr_a', 'w1', 'テスト世界');
+      await saveScenario(dataStore, textStore, 'usr_a', {
+        worldId: 'w1',
+        id: 'sc1',
+        title: '朱雀大路の百鬼夜行',
+        raw: '## シナリオ概要',
+      });
+      const { meta: pub } = await publishScenario(dataStore, textStore, 'usr_a', 'w1', 'sc1', OWNER);
+      await saveWorld(dataStore, textStore, 'usr_b', { id: 'target', title: '受け入れ先', raw: 'r' });
+
+      await importScenario(dataStore, textStore, 'usr_b', pub.publicId, 'target', { preferredId: 'hyakki-on-suzaku-oji' });
+      const second = await importScenario(dataStore, textStore, 'usr_b', pub.publicId, 'target', {
+        preferredId: 'hyakki-on-suzaku-oji',
+      });
+
+      expect(second.meta.id).toBe('hyakki-on-suzaku-oji-2');
+    });
+
+    it('falls back to slugify(title) when preferredId is absent or empty', async () => {
+      await seedWorld('usr_a', 'w1', 'テスト世界');
+      await saveScenario(dataStore, textStore, 'usr_a', {
+        worldId: 'w1',
+        id: 'sc1',
+        title: 'Stolen Well',
+        raw: '## シナリオ概要',
+      });
+      const { meta: pub } = await publishScenario(dataStore, textStore, 'usr_a', 'w1', 'sc1', OWNER);
+      await saveWorld(dataStore, textStore, 'usr_b', { id: 'target-b', title: '受け入れ先b', raw: 'r' });
+      await saveWorld(dataStore, textStore, 'usr_b', { id: 'target-c', title: '受け入れ先c', raw: 'r' });
+
+      const noArg = await importScenario(dataStore, textStore, 'usr_b', pub.publicId, 'target-b');
+      expect(noArg.meta.id).toBe('stolenwell');
+
+      const empty = await importScenario(dataStore, textStore, 'usr_b', pub.publicId, 'target-c', { preferredId: '' });
+      expect(empty.meta.id).toBe('stolenwell');
+    });
+  });
 
 describe('import is a snapshot', () => {
   it('keeps the imported copy after the source is unpublished', async () => {

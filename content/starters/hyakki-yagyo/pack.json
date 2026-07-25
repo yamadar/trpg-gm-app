@@ -1,0 +1,11 @@
+{
+  "id": "hyakki-yagyo",
+  "title": "百鬼夜行 — 平安京",
+  "tagline": "夜の大路を異形が渡る。その列に、生きた人間が一人混ざっている。",
+  "source": "日本の古典・民間伝承(パブリックドメイン)",
+  "moods": ["ホラー", "ファンタジー"],
+  "recommendedRuleset": "coc7e",
+  "scenario": { "id": "hyakki-on-suzaku-oji", "title": "朱雀大路の百鬼" },
+  "pc": ["abe-shigure", "fujiwara-tsunechika"],
+  "npc": ["rajomon-no-rojin", "kita-no-tai-no-hime"]
+}

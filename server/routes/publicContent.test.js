@@ -470,6 +470,22 @@ describe('publicContent routes — authentication-free gallery read', () => {
       expect(res.body).toBeDefined();
     });
   });
+
+  describe('GET /api/starters', () => {
+    it('returns an empty manifest before seeding (not a 404)', async () => {
+      const res = await request(app).get('/api/starters');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ packs: [], seededAt: null });
+    });
+
+    it('returns the seeded manifest', async () => {
+      await dataStore.set('public/starters', { packs: [{ packId: 'p1', title: 'パック1' }], seededAt: 123 });
+      const res = await request(app).get('/api/starters');
+      expect(res.status).toBe(200);
+      expect(res.body.packs).toEqual([{ packId: 'p1', title: 'パック1' }]);
+      expect(res.body.seededAt).toBe(123);
+    });
+  });
 });
 
 describe('public user profile', () => {

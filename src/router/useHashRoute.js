@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 
 const USER_HASH_RE = /^#\/u\/([A-Za-z0-9._-]+)$/;
 const ENDINGS_HASH = '#/endings';
+const ACHIEVEMENTS_HASH = '#/achievements';
 
 export function parseHash(hash) {
   const h = hash || '';
   const m = USER_HASH_RE.exec(h);
-  return { userId: m ? m[1] : null, endings: h === ENDINGS_HASH };
+  return { userId: m ? m[1] : null, endings: h === ENDINGS_HASH, achievements: h === ACHIEVEMENTS_HASH };
 }
 
 function notify() {
@@ -20,6 +21,11 @@ export function navigateToUser(userId) {
 
 export function navigateToEndings() {
   window.location.hash = ENDINGS_HASH;
+  notify(); // jsdom/一部環境ではhash代入がイベントを発火しないため明示的に通知
+}
+
+export function navigateToAchievements() {
+  window.location.hash = ACHIEVEMENTS_HASH;
   notify(); // jsdom/一部環境ではhash代入がイベントを発火しないため明示的に通知
 }
 

@@ -1,0 +1,11 @@
+{
+  "id": "neo-yokohama",
+  "title": "臨海特区ネオヨコハマ",
+  "tagline": "闇市に流れた中古の義手が、持ち主でない誰かの記憶を再生する。",
+  "source": null,
+  "moods": ["SF", "シリアス"],
+  "recommendedRuleset": "gurps",
+  "scenario": { "id": "memory-of-a-prosthetic", "title": "義体の記憶" },
+  "pc": ["kuroda", "doc-shiba"],
+  "npc": ["mimi", "hunt"]
+}

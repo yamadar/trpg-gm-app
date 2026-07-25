@@ -8,6 +8,7 @@ import Library from './screens/Library.jsx';
 import Gallery from './screens/Gallery.jsx';
 import UserPage from './screens/UserPage.jsx';
 import EndingGallery from './screens/EndingGallery.jsx';
+import AchievementList from './screens/AchievementList.jsx';
 import { useHashRoute, clearHash } from './router/useHashRoute.js';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
@@ -32,8 +33,9 @@ function AppInner() {
   const [authError, setAuthError] = useState(false);
   const [uploadingSessions, setUploadingSessions] = useState(false);
   const [campaignContext, setCampaignContext] = useState(null);
+  const [starterContext, setStarterContext] = useState(null);
   const takeover = useSessionTakeover();
-  const { userId: routeUserId, endings: routeEndings } = useHashRoute();
+  const { userId: routeUserId, endings: routeEndings, achievements: routeAchievements } = useHashRoute();
 
   useEffect(() => {
     (async () => {
@@ -103,6 +105,21 @@ function AppInner() {
     );
   }
 
+  if (routeAchievements) {
+    return (
+      <div
+        style={{
+          background: COLORS.paper,
+          minHeight: '100vh',
+          color: COLORS.ink,
+        }}
+      >
+        <AuthBar />
+        <AchievementList onClose={clearHash} />
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -147,12 +164,21 @@ function AppInner() {
           <Home
             sessions={sessions}
             storageOk={storageOk}
-            onNew={() => setView('setup')}
+            // 「+ 新規プレイ」から入ったSetupが直前のスターター選択を引きずると、
+            // World/Scenarioが勝手に選択済みになる
+            onNew={() => {
+              setStarterContext(null);
+              setView('setup');
+            }}
             onContinue={handleContinue}
             onOpenLibrary={() => setView('library')}
             onOpenGallery={() => setView('gallery')}
             onNextChapter={(ctx) => {
               setCampaignContext(ctx);
+              setView('setup');
+            }}
+            onStartStarter={(ctx) => {
+              setStarterContext(ctx);
               setView('setup');
             }}
           />
@@ -161,17 +187,28 @@ function AppInner() {
         <Setup
           onStart={(s) => {
             setCampaignContext(null);
+            setStarterContext(null);
             handleStart(s);
           }}
           onCancel={() => {
             setCampaignContext(null);
+            setStarterContext(null);
             setView('home');
           }}
           campaignContext={campaignContext}
+          starterContext={starterContext}
         />
       )}
       {view === 'library' && <Library onClose={() => setView('home')} />}
-      {view === 'gallery' && <Gallery onClose={() => setView('home')} />}
+      {view === 'gallery' && (
+        <Gallery
+          onClose={() => setView('home')}
+          onStartStarter={(ctx) => {
+            setStarterContext(ctx);
+            setView('setup');
+          }}
+        />
+      )}
       {view === 'play' && session && (
         <Play session={session} setSession={setSession} onExit={handleExit} />
       )}

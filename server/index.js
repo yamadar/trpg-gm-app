@@ -17,6 +17,7 @@ import { createImportsRouter } from './routes/imports.js';
 import { createConfigRouter } from './routes/config.js';
 import { createSceneImagesRouter } from './routes/sceneImages.js';
 import { createNovelJobRunner } from './novelJobs.js';
+import { seedStarters } from './starters/seed.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 import { createFsImageStore } from './storage/imageStore.js';
@@ -121,7 +122,15 @@ export function createApp({
 
 if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 8787;
-  createApp().listen(port, () => {
-    console.log(`server listening on port ${port}`);
-  });
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  // server/data/ はgitignore対象でデプロイ先では空から始まりうる。冪等なので毎回走らせて復元する。
+  // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
+  seedStarters(createFsDataStore(dataDir), createFsTextStore(dataDir))
+    .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
+    .catch((e) => console.error('starter seed failed', e))
+    .finally(() => {
+      createApp().listen(port, () => {
+        console.log(`server listening on port ${port}`);
+      });
+    });
 }

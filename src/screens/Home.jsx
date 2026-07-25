@@ -5,6 +5,7 @@ import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
 import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
 import ToastStack from '../components/ui/Toast.jsx';
+import StarterPackList from '../components/share/StarterPackList.jsx';
 import {
   novelizeSession,
   getNovel,
@@ -79,7 +80,7 @@ export function collectUnreadIds(jobs, announced, knownIds) {
     .map(([id]) => id);
 }
 
-export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
+export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter, onStartStarter }) {
   const { user } = useAuth();
   const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated, unread }
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
@@ -683,6 +684,18 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
           }}
         >
           この環境では保存機能(IndexedDB)が使えていない。「続きから再開」は動作せず、ページを離れると進行が失われる。ブラウザのコンソールにエラー詳細が出ている。
+        </div>
+      )}
+
+      {user && sessions.length === 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontFamily: F_DISPLAY, fontSize: 16, color: COLORS.ink, marginBottom: 4 }}>
+            はじめての冒険を選ぶ
+          </div>
+          <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, marginBottom: 12 }}>
+            世界観・シナリオ・登場人物が揃った一式を取り込んで、そのまま遊び始められる。取り込んだ素材は素材ライブラリに入るので、あとから自由に書き換えられる。
+          </div>
+          <StarterPackList onImported={onStartStarter} />
         </div>
       )}
 
