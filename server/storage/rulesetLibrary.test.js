@@ -60,4 +60,9 @@ describe('Ruleset library functions', () => {
     expect(await getRuleset(dataStore, 'usr_2', 'r1')).toBeNull();
     expect(await listRulesets(dataStore, 'usr_2')).toEqual([]);
   });
+
+  it('persists the formula field', async () => {
+    await saveRuleset(dataStore, 'usr_test', { id: 'r1', label: 'L', desc: '', hint: '', growthUnit: '', formula: 'gurps' });
+    expect((await getRuleset(dataStore, 'usr_test', 'r1')).formula).toBe('gurps');
+  });
 });

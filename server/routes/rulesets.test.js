@@ -62,4 +62,26 @@ describe('rulesets routes', () => {
     const get = await request(app).get('/api/rulesets/a');
     expect(get.status).toBe(404);
   });
+
+  it('persists a known formula', async () => {
+    await request(app)
+      .put('/api/rulesets/homebrew')
+      .send({ label: '自作', desc: '', hint: '', growthUnit: '', formula: 'coc7e' });
+    const res = await request(app).get('/api/rulesets/homebrew');
+    expect(res.body.formula).toBe('coc7e');
+  });
+
+  it('rounds an unknown formula down to simple', async () => {
+    await request(app)
+      .put('/api/rulesets/homebrew')
+      .send({ label: '自作', desc: '', hint: '', formula: 'my-custom-dice' });
+    const res = await request(app).get('/api/rulesets/homebrew');
+    expect(res.body.formula).toBe('simple');
+  });
+
+  it('defaults a missing formula to simple', async () => {
+    await request(app).put('/api/rulesets/homebrew').send({ label: '自作', desc: '', hint: '' });
+    const res = await request(app).get('/api/rulesets/homebrew');
+    expect(res.body.formula).toBe('simple');
+  });
 });

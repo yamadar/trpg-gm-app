@@ -3,6 +3,9 @@ import { saveRuleset, getRuleset, listRulesets, deleteRuleset } from '../storage
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
+// 判定式の既知値。クライアントのsrc/engine/rulesetAdapters.jsと対応(未知値はsimpleへ丸める)。
+const KNOWN_FORMULAS = ['simple', 'coc7e', 'dnd5e', 'gurps'];
+
 export function createRulesetsRouter({ dataStore }) {
   const router = Router();
   router.param('id', idParamGuard);
@@ -31,6 +34,7 @@ export function createRulesetsRouter({ dataStore }) {
       desc: req.body.desc,
       hint: req.body.hint,
       growthUnit: req.body.growthUnit,
+      formula: KNOWN_FORMULAS.includes(req.body.formula) ? req.body.formula : 'simple',
     });
     res.json(ruleset);
   }));
