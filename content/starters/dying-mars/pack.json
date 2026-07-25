@@ -1,0 +1,11 @@
+{
+  "id": "dying-mars",
+  "title": "死にゆく火星",
+  "tagline": "海は干上がり、大気は薄れていく。墜ちた飛空艇の乗員が、館の「客人」にされている。",
+  "source": "E.R.バローズの火星シリーズに基づく(パブリックドメイン)。登場人物・地名は本作独自のもの",
+  "moods": ["SF", "冒険"],
+  "recommendedRuleset": "simple",
+  "scenario": { "id": "guests-of-the-canal-city", "title": "運河都市の囚われ人" },
+  "pc": ["john-everett", "tara-solan"],
+  "npc": ["orvak", "zedar"]
+}
