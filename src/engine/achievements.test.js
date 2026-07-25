@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateAchievements } from './achievements.js';
+import { CATALOG } from './achievementCatalog.js';
 
 function ending(overrides = {}) {
   return {
@@ -18,14 +19,14 @@ function find(list, id) {
 describe('evaluateAchievements', () => {
   it('returns the whole catalogue unearned for an empty collection', () => {
     const result = evaluateAchievements([]);
-    expect(result.length).toBe(8);
+    expect(result.length).toBe(CATALOG.length);
     expect(result.every((a) => a.earned === false)).toBe(true);
     expect(result.every((a) => a.earnedAt === null && a.sessionId === null)).toBe(true);
     expect(result.every((a) => typeof a.label === 'string' && typeof a.description === 'string')).toBe(true);
   });
 
   it('tolerates a null collection', () => {
-    expect(evaluateAchievements(null).length).toBe(8);
+    expect(evaluateAchievements(null).length).toBe(CATALOG.length);
   });
 
   it('earns 初めての結末 on the first ending', () => {
@@ -130,5 +131,15 @@ describe('evaluateAchievements', () => {
     expect(find(result, 'first-ending').earned).toBe(true);
     expect(find(result, 'flawless').earned).toBe(false);
     expect(find(result, 'brink').earned).toBe(false);
+  });
+
+  it('carries the catalogue metadata through to the result', () => {
+    const result = evaluateAchievements([]);
+    const first = result.find((a) => a.id === 'first-ending');
+    expect(first).toMatchObject({ category: 'arrival', tier: 1, icon: 'flag', progress: null });
+  });
+
+  it('returns entries in catalogue order', () => {
+    expect(evaluateAchievements([]).map((a) => a.id)).toEqual(CATALOG.map((a) => a.id));
   });
 });
