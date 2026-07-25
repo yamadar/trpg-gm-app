@@ -72,12 +72,17 @@ button[data-variant='brass']:focus-visible {
 }
 
 /* オーバーレイ自体は透明で領域を持たないため、フォーカスリングはタイトル文字の
- * 周りにだけ出る。カード全体を囲う方が分かりやすいのでリングを付け替える。 */
-.card-primary-action:focus-visible {
-  outline: none !important;
-}
+ * 周りにだけ出る。カード全体を囲う方が分かりやすいのでリングを付け替える。
+ *
+ * ただし :has() 非対応ブラウザでは親への付け替えができないため、outline を消さない。
+ */
+@supports selector(.card-actionable:has(.card-primary-action:focus-visible)) {
+  .card-primary-action:focus-visible {
+    outline: none !important;
+  }
 
-.card-actionable:has(.card-primary-action:focus-visible) {
-  outline: 2px solid #1f2a38;
-  outline-offset: 2px;
+  .card-actionable:has(.card-primary-action:focus-visible) {
+    outline: 2px solid #1f2a38;
+    outline-offset: 2px;
+  }
 }
