@@ -184,5 +184,6 @@ sessions/{session_id}/
   - `total`/`successes`/`successRate`: ログのGMエントリが持つ`roll`の集計数・成功数・成功率(`total===0`なら`0`)
   - `byDegree`/`degrees`: 判定式アダプタ(`resolveAdapter`、本節冒頭・3.5.1節参照)の`degrees`語彙のキーのみを持つ。`simple`/`dnd5e`/`gurps`は`['fumble','fail','success','critical']`、`coc7e`だけが`['fumble','fail','success','hard','extreme','critical']`を持つため、ハード成功・イクストリーム成功はCoC7e風の記録にだけ現れる
   - `resources`: セッションが実際に持つ`state.resources`のキーのみ(旧セッションや`resourceDefs`を持たないルールセットは空`{}`)。CoC7e風なら`{ san: { label: '正気度', value, max } }`
+  - **信頼境界の注記**: `stats`はクライアントの自己申告値であり、サーバーは形(オブジェクトかどうか)のみ検証し中身を再計算しない(`server/routes/endings.js`)。エンディング記録が現状ユーザー本人にしか見えない(公開・ユーザー間比較の機能が無い)間はこれで許容できるが、将来エンディングを公開したりユーザー間で比較する機能を作る場合は、`stats`をサーバー側でログから再計算するか、自己申告であることを示す明示的なマーカーを持たせる必要がある。
 
 **実績は保存を持たない**。`src/engine/achievements.js`の`evaluateAchievements(endings)`が、エンディング記録のコレクションだけから実績を都度導出する純関数(固定8種カタログ、ユーザー定義は非対象)。未獲得のものも`earned: false`で返し(図鑑側でグレー表示)、`earnedAt`/`sessionId`は条件を最初に満たした記録のもの。実績専用の永続化が無いため、定義を後から足しても過去の記録に遡って反映される。実績一覧・条件は08-feature-ideas.md 2章、UIは05-ui-ux.mdを参照。
