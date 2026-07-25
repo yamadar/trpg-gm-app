@@ -276,6 +276,51 @@ describe('Home', () => {
       expect(ctx.xp).toBe(7);
       expect(ctx.campaignId).toBeTruthy();
     });
+
+    it('既にcampaignIdを持つセッションで「次の章へ」を押しても、そのcampaignIdを保ったままendedAtを刻んで保存する', async () => {
+      vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '更新シート', xp: 9 });
+      vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue({
+        id: 'cp1',
+        worldId: 'w1',
+        title: '既存キャンペーン',
+        carriedPc: null,
+        chapters: [{ sessionId: 's0', title: '第一章', endedAt: 1 }],
+      });
+      const putCampaignSpy = vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({});
+      vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]);
+      const putSessionSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+      const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+      const onNextChapter = vi.fn();
+      const sessions = [
+        {
+          id: 's1',
+          title: '第二章',
+          updatedAt: 1,
+          worldId: 'w1',
+          campaignId: 'cp1',
+          world: { raw: 'r', summary: 'sum' },
+          rulesetId: 'simple',
+          moods: [],
+          pc: { raw: '元' },
+          state: { xp: 9, flags: {}, recent_log: [] },
+          log: [{ role: 'gm', text: 'x' }],
+        },
+      ];
+      renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onNextChapter={onNextChapter} />
+      );
+      fireEvent.click(screen.getByText('次の章へ'));
+
+      await waitFor(() => expect(putCampaignSpy).toHaveBeenCalled());
+      await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+      const saved = saveSpy.mock.calls.at(-1)[0];
+      expect(saved.campaignId).toBe('cp1'); // 既存のcampaignIdが新規採番で上書きされない
+      expect(typeof saved.endedAt).toBe('number');
+
+      await waitFor(() => expect(putSessionSpy).toHaveBeenCalled());
+      await waitFor(() => expect(onNextChapter).toHaveBeenCalled());
+      expect(onNextChapter.mock.calls[0][0].campaignId).toBe('cp1');
+    });
   });
 
   describe('キャンペーングルーピング', () => {
@@ -345,6 +390,79 @@ describe('Home', () => {
     const button = await screen.findByText('小説化中…');
     expect(button).toBeDisabled();
     expect(screen.queryByText('小説化する')).not.toBeInTheDocument();
+  });
+
+  it('re-polls via the scheduled 5s timer and reflects a running → done transition without user action', async () => {
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({ s1: { status: 'running', error: null, hasNovel: false, stale: false } });
+    listSpy.mockResolvedValueOnce({ s1: { status: 'done', error: null, hasNovel: true, stale: false } });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      // マウント時の初回取得(実タイマーではないPromiseチェーン)を流す。
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText('小説化中…')).toBeInTheDocument();
+      expect(listSpy).toHaveBeenCalledTimes(1);
+
+      // 5秒後にスケジュールされた再ポーリング(setTimeout経由)を進める。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(listSpy).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText('小説化中…')).not.toBeInTheDocument();
+      expect(screen.getByText('小説を再生成')).toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps retrying on the 5s timer after a poll rejects while a job is running (regression: a single failed poll must not leave 小説化中… stuck forever)', async () => {
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({ s1: { status: 'running', error: null, hasNovel: false, stale: false } });
+    listSpy.mockRejectedValueOnce(new Error('network blip'));
+    listSpy.mockResolvedValueOnce({ s1: { status: 'done', error: null, hasNovel: true, stale: false } });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText('小説化中…')).toBeInTheDocument();
+
+      // 1回目の再ポーリングが通信断で失敗する。旧実装ではここでポーリングの
+      // 再帰チェーンが完全に止まり、「小説化中…」のまま固まっていた。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(listSpy).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('小説化中…')).toBeInTheDocument(); // まだ固まっていない(エラー表示にもならない)
+
+      // 失敗後もさらに5秒後に自動で再試行され、doneへ到達する。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(listSpy).toHaveBeenCalledTimes(3);
+      expect(screen.getByText('小説を再生成')).toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it('offers download buttons when the server reports a finished novel', async () => {

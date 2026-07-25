@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
@@ -41,12 +41,25 @@ export function sanitizeFilename(title) {
 export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter }) {
   const { user } = useAuth();
   const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale }
+  // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
+  // setNovelJobsは非同期に反映されるため、tick()内の同期チェックにはrefを用いる。
+  const hasRunningRef = useRef(false);
   const [pollNonce, setPollNonce] = useState(0);
   const [novelizeError, setNovelizeError] = useState({});
   const [publishedNovelIds, setPublishedNovelIds] = useState({});
   const [publishBusy, setPublishBusy] = useState({});
   const [advancing, setAdvancing] = useState({});
   const [campaignMap, setCampaignMap] = useState({}); // campaignId -> { title, chapterCount }
+
+  // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
+  // hasRunningRefを常に最新の状態と一致させる。
+  function applyNovelJobs(updater) {
+    setNovelJobs((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      hasRunningRef.current = Object.values(next).some((j) => j.status === 'running');
+      return next;
+    });
+  }
 
   useEffect(() => {
     const worldIds = [...new Set(sessions.filter((s) => s.campaignId && s.worldId).map((s) => s.worldId))];
@@ -99,7 +112,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   // 維持されるよう、マウント時に取得し、実行中のジョブがある間だけ定期的に追う。
   useEffect(() => {
     if (!user) {
-      setNovelJobs({});
+      applyNovelJobs({});
       return;
     }
     let cancelled = false;
@@ -112,12 +125,15 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         // 再始動するため(下のhandleNovelize参照)、サーバーがまだジョブ開始を
         // 記録し切っていないタイミングでこのポーリングが先に返ってくることがある。
         // そこで空扱いのセッションを丸ごと消さず、応答に含まれる分だけ上書きする。
-        setNovelJobs((prev) => ({ ...prev, ...jobs }));
+        applyNovelJobs((prev) => ({ ...prev, ...jobs }));
         if (Object.values(jobs).some((j) => j.status === 'running')) {
           timer = setTimeout(tick, NOVEL_POLL_MS);
         }
       } catch {
-        // 取得に失敗してもホーム自体は使えるようにする(次の操作で再試行される)
+        // 一時的な通信断でポーリングが止まると「小説化中…」のまま固まるため、
+        // 実行中とみなしている間は再試行を続ける(セッション一覧を離れて
+        // 戻る・リロードするまで待たせない)。
+        if (!cancelled && hasRunningRef.current) timer = setTimeout(tick, NOVEL_POLL_MS);
       }
     })();
     return () => {
@@ -185,14 +201,14 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     e.stopPropagation();
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
     // 押した直後から「小説化中…」にする。以降はポーリング結果で上書きされる。
-    setNovelJobs((prev) => ({
+    applyNovelJobs((prev) => ({
       ...prev,
       [session.id]: { ...(prev[session.id] || {}), status: 'running', error: null },
     }));
     try {
       await novelizeSession(session.id);
     } catch (err) {
-      setNovelJobs((prev) => ({
+      applyNovelJobs((prev) => ({
         ...prev,
         [session.id]: { ...(prev[session.id] || {}), status: 'error', error: err.message },
       }));
