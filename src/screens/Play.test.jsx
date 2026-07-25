@@ -5,6 +5,7 @@ import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
 import * as sceneImageClient from '../api/sceneImageClient.js';
+import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 // 既定 imageGen:false。getConfig をモックすることで、既存テストで挿絵UIが描画されず、
@@ -665,5 +666,46 @@ describe('resource side effects', () => {
 
     await waitFor(() => expect(saveSpy).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(/セッションの保存に失敗した/)).not.toBeInTheDocument();
+  });
+
+  it('records the ending after the player finishes the story', async () => {
+    vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    const recordSpy = vi.spyOn(endingClient, 'recordEnding').mockResolvedValue({
+      sessionId: 's1',
+      endingTitle: '灰は星を数えない',
+      summary: '彼女は坑道を出た。',
+      stats: { total: 1, successes: 1, successRate: 1, byDegree: { fumble: 0, fail: 0, success: 1, critical: 0 }, degrees: ['fumble', 'fail', 'success', 'critical'], resources: {} },
+    });
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。', roll: { degree: 'success', success: true } }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('この物語を終える'));
+
+    await waitFor(() => expect(recordSpy).toHaveBeenCalledWith('s1', expect.objectContaining({ total: 1 })));
+    expect(await screen.findByText('灰は星を数えない')).toBeInTheDocument();
+    expect(screen.getByText('彼女は坑道を出た。')).toBeInTheDocument();
+  });
+
+  it('keeps the session finished and offers a retry when recording fails', async () => {
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    const recordSpy = vi.spyOn(endingClient, 'recordEnding').mockRejectedValue(new Error('boom'));
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('この物語を終える'));
+
+    expect(await screen.findByText(/エンディングの記録に失敗した/)).toBeInTheDocument();
+    expect(typeof saveSpy.mock.calls.at(-1)[0].endedAt).toBe('number'); // 完結自体は取り消さない
+    expect(screen.getByText('完結')).toBeInTheDocument();
+
+    recordSpy.mockResolvedValue({ sessionId: 's1', endingTitle: '再試行の題', summary: '', stats: null });
+    fireEvent.click(screen.getByText('エンディングを記録する'));
+    expect(await screen.findByText('再試行の題')).toBeInTheDocument();
   });
 });

@@ -13,6 +13,9 @@ import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
 import Badge from '../components/ui/Badge.jsx';
+import RollStatsLine from '../components/ui/RollStatsLine.jsx';
+import { recordEnding } from '../api/endingClient.js';
+import { summarizeRolls } from '../engine/rollStats.js';
 
 export default function Play({ session, setSession, onExit }) {
   const { user, loading: authLoading } = useAuth();
@@ -25,6 +28,9 @@ export default function Play({ session, setSession, onExit }) {
   const [imageGen, setImageGen] = useState(false);
   const [generatingIndex, setGeneratingIndex] = useState(null);
   const [imageError, setImageError] = useState(null); // { index, message } | null
+  const [ending, setEnding] = useState(null); // 記録済みのエンディング(この画面で確定した場合のみ)
+  const [endingBusy, setEndingBusy] = useState(false);
+  const [endingError, setEndingError] = useState('');
   const logEndRef = useRef(null);
   const hasStartedRef = useRef(false);
   // 常に最新のセッションを指すref。非同期処理(挿絵生成・ターン)の完了時に
@@ -204,9 +210,26 @@ export default function Play({ session, setSession, onExit }) {
     putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
   }
 
-  function finishStory() {
+  // エンディングの記録。命名はサーバー側でAIが行い、統計はここで集計して送る
+  // (サーバーはsrc/をimportできないため、集計ロジックをサーバーへ複製しない)。
+  async function recordEndingNow() {
     const current = sessionRef.current;
-    persistSession({ ...current, endedAt: Date.now(), updatedAt: Date.now() });
+    setEndingBusy(true);
+    setEndingError('');
+    try {
+      setEnding(await recordEnding(current.id, summarizeRolls(current)));
+    } catch (e) {
+      setEndingError('エンディングの記録に失敗した: ' + e.message);
+    } finally {
+      setEndingBusy(false);
+    }
+  }
+
+  async function finishStory() {
+    const current = sessionRef.current;
+    // 先に完結を確定させる。記録に失敗しても完結は取り消さない。
+    await persistSession({ ...current, endedAt: Date.now(), updatedAt: Date.now() });
+    await recordEndingNow();
   }
 
   // AIの誤検知で完結扱いにしないための逃げ道。次のターンで再度trueが返れば案内は戻る。
@@ -392,6 +415,30 @@ export default function Play({ session, setSession, onExit }) {
                 まだ続ける
               </Button>
             </div>
+          </Card>
+        )}
+        {session.endedAt && endingBusy && (
+          <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>エンディングを記録しています…</div>
+        )}
+        {session.endedAt && !endingBusy && ending && (
+          <Card style={{ borderColor: COLORS.brass }}>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink, marginBottom: 8 }}>
+              {ending.endingTitle}
+            </div>
+            {ending.summary && (
+              <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.inkSoft, lineHeight: 1.8, marginBottom: 10 }}>
+                {ending.summary}
+              </div>
+            )}
+            <RollStatsLine stats={ending.stats} />
+          </Card>
+        )}
+        {session.endedAt && !endingBusy && !ending && endingError && (
+          <Card style={{ borderColor: COLORS.stamp }}>
+            <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.stamp, marginBottom: 10 }}>{endingError}</div>
+            <Button variant="ghost" onClick={recordEndingNow}>
+              エンディングを記録する
+            </Button>
           </Card>
         )}
         {busy && (
