@@ -264,15 +264,26 @@ describe('sessions routes', () => {
     expect(res.status).toBe(400);
   });
 
-  it('does not see sessions of another user', async () => {
-    await request(app).put('/api/sessions/s1').send({ title: 'A' }); // usr_test として保存
-    // 別ユーザーでappを作り直す
+  it('does not see sessions or novel-jobs of another user', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }),
+    });
+    buildApp({ fetchImpl });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: {} }); // usr_test として保存
+    await request(app).post('/api/sessions/s1/novelize');
+    await waitForJob('s1');
+    expect((await request(app).get('/api/novel-jobs')).body.s1.status).toBe('done'); // usr_test自身には見える
+
+    // 別ユーザーでappを作り直す(/novel-jobsも叩けるようnovelJobsも渡す)
+    const otherRunner = createNovelJobRunner({ dataStore, textStore, apiKey: 'test-key' });
     app = express();
     app.use(express.json());
     app.use((req, res, next) => { req.userId = 'usr_other'; next(); });
-    app.use('/api', createSessionsRouter({ dataStore, textStore, apiKey: 'test-key' }));
+    app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey: 'test-key', novelJobs: otherRunner }));
     expect((await request(app).get('/api/sessions/s1')).status).toBe(404);
     expect((await request(app).get('/api/sessions')).body).toEqual([]);
+    expect((await request(app).get('/api/novel-jobs')).body).toEqual({}); // usr_testの完了ジョブが漏れない
   });
 
   it('returns an empty map from /novel-jobs when there are no sessions', async () => {

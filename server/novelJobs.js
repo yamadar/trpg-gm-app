@@ -104,7 +104,15 @@ export function createNovelJobRunner({
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
     } catch (e) {
       try {
-        await write(userId, sessionId, { status: 'error', startedAt, updatedAt: now(), error: e.message, bootId });
+        // Error以外の値がthrowされてもe.messageがundefinedにならないようにする
+        // (カードにエラー理由が出ない状態を避けるため)。
+        await write(userId, sessionId, {
+          status: 'error',
+          startedAt,
+          updatedAt: now(),
+          error: String(e?.message || e),
+          bootId,
+        });
       } catch (writeErr) {
         // ここでの書き込み失敗(ディスクI/Oエラー等)を握りつぶすとrun()のPromiseが
         // rejectしてしまい、start()側で誰も待っていないため未処理rejectionでプロセスが
@@ -116,9 +124,12 @@ export function createNovelJobRunner({
 
   // ジョブをrunningで記録してからバックグラウンド実行を始める。生成の完了は待たない。
   async function start(userId, sessionId, session, pov) {
+    const key = `${userId}/${sessionId}`;
+    // 同じセッションに対する二重startで生成が2回走らないようにする
+    // (利用枠の二重消費を防ぐのはルート側の責務であり、ここでは扱わない)。
+    if (pending.has(key)) return;
     const startedAt = now();
     await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
-    const key = `${userId}/${sessionId}`;
     const p = run(userId, sessionId, session, pov, startedAt).finally(() => pending.delete(key));
     pending.set(key, p);
   }

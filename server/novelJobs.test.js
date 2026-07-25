@@ -203,6 +203,38 @@ describe('createNovelJobRunner', () => {
     expect((await runner.read('u1', 's1')).status).toBe('error');
   });
 
+  it('ignores a concurrent start() for the same user/session while one is already pending', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      await gate;
+      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.start('u1', 's1', SESSION, 'third'); // 実行中に同じキーへ二重start
+
+    release();
+    await runner.pending.get('u1/s1');
+    expect(fetchImpl).toHaveBeenCalledTimes(1); // 生成が2回走っていない
+  });
+
+  it('records a usable error message even when a non-Error value is thrown', async () => {
+    const fetchImpl = vi.fn().mockImplementation(() => {
+      throw 'boom-string'; // Errorではない値を投げるケース
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.pending.get('u1/s1');
+
+    const out = await runner.read('u1', 's1');
+    expect(out.status).toBe('error');
+    expect(out.error).toBe('boom-string'); // undefinedにならない
+  });
+
   it('removes the pending entry once the job settles', async () => {
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl: okFetch(), bootId: 'b1' });
     await runner.start('u1', 's1', SESSION, 'third');
