@@ -668,6 +668,40 @@ describe('resource side effects', () => {
     expect(screen.queryByText(/セッションの保存に失敗した/)).not.toBeInTheDocument();
   });
 
+  it('サーバー同期の完了を待ってからrecordEndingを呼ぶ(順序保証)', async () => {
+    vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    let resolvePut;
+    const putSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockReturnValue(
+      new Promise((res) => {
+        resolvePut = res;
+      })
+    );
+    const recordSpy = vi.spyOn(endingClient, 'recordEnding').mockResolvedValue({
+      sessionId: 's1',
+      endingTitle: '完結の題',
+      summary: '',
+      stats: null,
+    });
+    const session = makeSession({
+      state: { current_scene: '結末', flags: {}, history_summary: '', recent_log: [], turn_count: 5, ending_reached: true },
+      log: [{ role: 'gm', text: '物語は終わった。' }],
+    });
+    renderWithAuth(<Harness initialSession={session} onExit={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('この物語を終える'));
+
+    // サーバー同期(putSessionToServer)が解決するまでは、recordEndingを呼んではいけない。
+    // サーバー側のエンディング記録はストア済みセッションのendedAtを読むため、
+    // 先にPUTが届いていないと「session has not ended」で400になり得る。
+    await waitFor(() => expect(putSpy).toHaveBeenCalled());
+    expect(recordSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolvePut({});
+    });
+    await waitFor(() => expect(recordSpy).toHaveBeenCalledWith('s1', expect.any(Object)));
+  });
+
   it('records the ending after the player finishes the story', async () => {
     vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
     const recordSpy = vi.spyOn(endingClient, 'recordEnding').mockResolvedValue({

@@ -207,7 +207,17 @@ export default function Play({ session, setSession, onExit }) {
     } else {
       setSaveWarning('');
     }
-    putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
+    // サーバー同期の完了をここで待つ。finishStoryはこの直後にrecordEndingNowを呼ぶが、
+    // サーバー側のエンディング記録はストア済みセッションを読んでendedAtの有無を判定するため、
+    // PUTが先に届いていないと「session has not ended」で400になり得る
+    // (PUTはログ込みの大きいペイロード、POSTは小さく先着し得るため、fire-and-forgetのままでは
+    // 到着順が保証されない)。同期失敗はこれまでどおりUIをブロックしない: console.errorのみに留め、
+    // 例外は投げない。
+    try {
+      await putSessionToServer(updated);
+    } catch (e) {
+      console.error('session server sync failed', e);
+    }
   }
 
   // エンディングの記録。命名はサーバー側でAIが行い、統計はここで集計して送る
