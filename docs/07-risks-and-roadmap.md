@@ -36,14 +36,16 @@
 | 論点 | 決定 |
 |---|---|
 | 入力方式 | 自由記述を主とする。GMが選択を絞りたい場面のみ「AとBどちら?」「Yes/No?」等の形で問いかける(選択肢ボタンは補助) |
-| ルールシステム | システム非依存を志向していたが、**実装は全Ruleset共通のd100成功率%判定に統一**(`src/engine/dice.js`)。Ruleset(D&D5e/CoC/GURPS風等)による差は演出hintのみで、判定式そのものを切り替えるアダプタ方式(10.1節)は未実装 |
+| ルールシステム | **実装済み(2026-07-25)**。判定式アダプタ(`src/engine/rulesetAdapters.js`、`getAdapter`)により`formula`ごとにsimple(旧来のd100成功率%判定)/coc7e(ハード・イクストリーム成功、SAN副作用)/dnd5e(固定5%クリティカル・96+ファンブル)/gurps(同左+margin付与)を切り替え。未知の`formula`は`simple`にフォールバック。詳細は10.1節 |
 | GM専用情報の漏洩対策 | 一旦プロンプト設計のみで対応。2段階検証(別AIによる出力フィルタ)は必要になった時点でPhase以降に追加 |
 | セッション長 | シナリオ依存で可変(15分〜3時間)。固定のターン数設計はせず、要約トリガーを時間ではなくターン数/トークン量ベースで動作させる |
 
-### 10.1 ルールシステム非依存化の実装方針(未実装・将来案)
-**現状は未実装**。実装では全Rulesetが`roll_check`ツール経由でAIが設定した`success_percent`に対する`d100 <= success_percent`判定式を共通で使い(`src/engine/dice.js`)、Ruleset差(CoC7e風/D&D5e風/GURPS風等)は system prompt内の`hint`による演出指定のみに留まる(03-gm-logic.mdの5章、02-data-model.mdの3.5.1節参照)。以下は将来、判定式自体をルールごとに切り替えたくなった場合の設計案として残す。
+### 10.1 ルールシステム非依存化の実装方針(実装済み)
+**実装済み(2026-07-25)**。判定式は`formula`ベースでアダプタ化されている(`src/engine/rulesetAdapters.js`の`getAdapter`)。各アダプタは`degrees`(成功度語彙: fumble/fail/success/hard/extreme/critical)・`evaluate(successPercent, rng)`・`resourceDefs`・`sideEffectKinds`・`sideEffect(kind, degree, rng)`・`promptText`を持つ。simpleは旧来の`evaluateRoll`(`src/engine/dice.js`)委譲、coc7eは出目1でcritical/100または(p<50かつ96+)でfumble/ceil(p/5)でextreme/ceil(p/2)でhard、dnd5e/gurpsは成功率によらず固定5%critical・96+fumbleを成功判定より先に評価する(gurpsはさらにmargin=成功率-出目をAIに渡す)。未対応の`formula`は`simple`にフォールバック(サーバー書き込み時にも丸められる)。ビルトインRulesetは`formula`を持ち、カスタムRulesetもライブラリのRulesetタブで基準式を選択できる。
 
-判定式をアダプタ化する。成功率だけでなく、成功度の扱いと副作用トリガーも持たせる(単純な確率変換だけでは「成功度」や「判定に伴う副作用」を再現できないため)。
+当初案との差分は2点。(1) `side_effect_triggers`はシナリオ側がイベントにタグを振る方式ではなく、`roll_check`ツールに追加した`check_kind`(副作用kindを持つアダプタのみ)をAIが判定時に指定することで発火し、減少量自体はエンジン側(`sideEffect`)が決定論的に計算して`san_loss`/`san_now`としてAIへ返す方式にした(`src/api/prompts.js`, `src/api/session.js`)。(2) リソースはSAN(正気度、coc7eのみ、`max: 99, initial: 60`)の1種類のみを実装し、HP等の追加リソースやSANをPOW等の能力値から導出する仕組み・回復ルール・狂乱表・SAN0での強制的なPCロスは対象外とした(SAN0はAIに狂気の描写を指示するのみで、ゲーム的なセッション終了処理は行わない)。取得したSANはセッション作成時に`session.state.resources`へ初期化され、`CharacterPanel`に表示、`takeTurn`が返す`resourceChange`を`Play.jsx`側でstateへマージする(セッションをエンジン内で直接変更しない設計)。
+
+以下は当初の設計案(判定式アダプタ化の出発点になったJSON)を経緯として残す。
 ```json
 {
   "ruleset": "coc7e",
