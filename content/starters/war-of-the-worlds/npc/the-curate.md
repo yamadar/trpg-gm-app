@@ -1,4 +1,4 @@
-NPC名: 牧師ネイサン
+NPC名: 副牧師
 立場: ウォーキングの教区牧師
 revealed: false
 

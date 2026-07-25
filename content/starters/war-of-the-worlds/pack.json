@@ -7,5 +7,5 @@
   "recommendedRuleset": "gurps",
   "scenario": { "id": "escape-from-woking", "title": "ウォーキングからの脱出" },
   "pc": ["hargreaves", "samuel-bly"],
-  "npc": ["nathan", "the-artilleryman"]
+  "npc": ["the-curate", "the-artilleryman"]
 }
