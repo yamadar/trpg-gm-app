@@ -6,6 +6,7 @@ import * as shareClient from '../api/shareClient.js';
 import * as sessionApi from '../api/session.js';
 import * as campaignClient from '../api/campaignClient.js';
 import * as storage from '../storage/index.js';
+import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 
 beforeEach(() => {
@@ -561,5 +562,40 @@ describe('Home', () => {
 
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
     expect(typeof saveSpy.mock.calls.at(-1)[0].endedAt).toBe('number');
+  });
+
+  it('navigates to the ending gallery', async () => {
+    renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onOpenGallery={vi.fn()} />);
+    fireEvent.click(screen.getByText('エンディング図鑑'));
+    expect(window.location.hash).toBe('#/endings');
+    window.location.hash = '';
+  });
+
+  it('shows the recorded ending title on a finished session', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([{ sessionId: 's1', endingTitle: '灰は星を数えない' }]);
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 500, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    expect(await screen.findByText(/灰は星を数えない/)).toBeInTheDocument();
+    expect(screen.queryByText('エンディングを記録する')).not.toBeInTheDocument();
+  });
+
+  it('offers to record an ending for a finished session that has none', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
+    const recordSpy = vi.spyOn(endingClient, 'recordEnding').mockResolvedValue({ sessionId: 's1', endingTitle: '後から付けた題' });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 500, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('エンディングを記録する'));
+
+    await waitFor(() => expect(recordSpy).toHaveBeenCalledWith('s1', expect.objectContaining({ total: 0 })));
+    expect(await screen.findByText(/後から付けた題/)).toBeInTheDocument();
+  });
+
+  it('does not offer to record an ending for a session still in progress', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    await screen.findByText('小説化する');
+    expect(screen.queryByText('エンディングを記録する')).not.toBeInTheDocument();
   });
 });

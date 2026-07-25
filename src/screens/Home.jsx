@@ -13,9 +13,12 @@ import {
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
 import { advanceCampaignPc } from '../api/session.js';
 import { getCampaign, putCampaign, listCampaigns } from '../api/campaignClient.js';
+import { listEndings, recordEnding } from '../api/endingClient.js';
 import { saveSession } from '../storage/index.js';
 import { makeId } from '../utils/makeId.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { summarizeRolls } from '../engine/rollStats.js';
+import { navigateToEndings } from '../router/useHashRoute.js';
 
 const NOVEL_POLL_MS = 5000;
 
@@ -50,6 +53,8 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   const [publishBusy, setPublishBusy] = useState({});
   const [advancing, setAdvancing] = useState({});
   const [campaignMap, setCampaignMap] = useState({}); // campaignId -> { title, chapterCount }
+  const [endingMap, setEndingMap] = useState({}); // sessionId -> エンディング記録
+  const [endingBusy, setEndingBusy] = useState({});
 
   // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
   // hasRunningRefを常に最新の状態と一致させる。
@@ -101,6 +106,25 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         if (!cancelled) setPublishedNovelIds(map);
       } catch {
         // 公開状態の取得に失敗してもホーム画面自体は使えるようにする(黙って無視する)
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setEndingMap({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listEndings();
+        if (!cancelled) setEndingMap(Object.fromEntries(list.map((e) => [e.sessionId, e])));
+      } catch {
+        // 記録の取得に失敗してもホーム自体は使えるようにする(黙って無視する)
       }
     })();
     return () => {
@@ -292,8 +316,28 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     }
   }
 
+  // Play画面での確定時に記録できなかった場合(命名失敗・旧データ)の受け皿。
+  async function handleRecordEnding(e, session) {
+    e.stopPropagation();
+    setEndingBusy((prev) => ({ ...prev, [session.id]: true }));
+    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
+    try {
+      const ending = await recordEnding(session.id, summarizeRolls(session));
+      setEndingMap((prev) => ({ ...prev, [session.id]: ending }));
+    } catch (err) {
+      setNovelizeError((prev) => ({ ...prev, [session.id]: 'エンディングの記録に失敗した: ' + err.message }));
+    } finally {
+      setEndingBusy((prev) => {
+        const next = { ...prev };
+        delete next[session.id];
+        return next;
+      });
+    }
+  }
+
   function renderSessionCard(s) {
     const job = novelJobs[s.id] || {};
+    const ending = endingMap[s.id];
     const running = job.status === 'running';
     const hasNovel = job.status === 'done' || !!job.hasNovel;
     const badges = [];
@@ -335,6 +379,12 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         {/* 状態バッジ層。押せる要素と混同されないようボタン行とは分ける。 */}
         {badges.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>{badges}</div>
+        )}
+
+        {ending && (
+          <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.brassDark, marginTop: 8 }}>
+            エンディング: {ending.endingTitle}
+          </div>
         )}
 
         {(novelizeError[s.id] || (job.status === 'error' && job.error)) && (
@@ -388,6 +438,16 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
               style={ACTION_BTN}
             >
               {advancing[s.id] ? '準備中…' : '次の章へ'}
+            </Button>
+          )}
+          {s.endedAt && !ending && (
+            <Button
+              variant="ghost"
+              onClick={(e) => handleRecordEnding(e, s)}
+              disabled={!!endingBusy[s.id] || !user}
+              style={ACTION_BTN}
+            >
+              {endingBusy[s.id] ? '記録中…' : 'エンディングを記録する'}
             </Button>
           )}
           {user &&
@@ -490,6 +550,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
         </Button>
         <Button variant="ghost" onClick={onOpenGallery}>
           公開ギャラリー
+        </Button>
+        <Button variant="ghost" onClick={navigateToEndings}>
+          エンディング図鑑
         </Button>
       </div>
 
