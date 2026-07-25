@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { CATALOG, CATEGORIES, MOOD_ENTRIES } from './achievementCatalog.js';
+import { CATALOG, CATEGORIES, MOOD_ENTRIES, FORMULAS } from './achievementCatalog.js';
 import { MOODS } from '../constants/moods.js';
+import { RULESETS } from '../data/rulesets.js';
 
 const CATEGORY_KEYS = CATEGORIES.map((c) => c.key);
 
@@ -41,5 +42,22 @@ describe('achievement catalogue', () => {
 describe('mood achievements', () => {
   it('covers every mood in MOODS exactly once', () => {
     expect(MOOD_ENTRIES.map((m) => m.mood).sort()).toEqual([...MOODS].sort());
+  });
+});
+
+describe('the finished catalogue', () => {
+  it('holds fifty achievements', () => {
+    expect(CATALOG.length).toBe(50);
+  });
+
+  it('fills every category', () => {
+    for (const c of CATEGORIES) {
+      expect(CATALOG.some((a) => a.category === c.key), c.key).toBe(true);
+    }
+  });
+
+  it('keeps the formula list in step with the shipped rulesets', () => {
+    // 判定式が増えたらここで落ちる。四つの流儀のラベルと目標値を見直すため。
+    expect([...FORMULAS].sort()).toEqual([...new Set(RULESETS.map((r) => r.formula))].sort());
   });
 });

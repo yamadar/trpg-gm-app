@@ -88,6 +88,62 @@ function hasMood(list, mood) {
 
 const moodVariety = (list) => MOODS.filter((m) => hasMood(list, m)).length;
 
+// 正気度は CoC7e風だけが持つ(他のルールセットは resourceDefs が空)。
+// 記録が持たなければ条件を満たさないだけで、判定式の分岐は実績側に持ち込まない。
+function sanOf(ending) {
+  const san = ending.stats?.resources?.san;
+  if (!san || typeof san.value !== 'number' || typeof san.max !== 'number' || san.max <= 0) return null;
+  return san;
+}
+
+function sanAtMost(ending, ratio) {
+  const san = sanOf(ending);
+  return san !== null && san.value <= san.max * ratio;
+}
+
+function sanAtLeast(ending, ratio) {
+  const san = sanOf(ending);
+  return san !== null && san.value >= san.max * ratio;
+}
+
+// 判定式は src/data/rulesets.js が配っているもの。増えたらカタログのテストが落ちるので、
+// そのとき「四つの流儀」のラベルと目標値を見直す。
+export const FORMULAS = ['simple', 'coc7e', 'dnd5e', 'gurps'];
+
+const formulaVariety = (list) => distinctCount(list, (e) => e.formula);
+
+function dayKey(d) {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// プレイヤーの体感時刻と一致させるため、日付の判定は全てローカルタイムゾーンで行う。
+function localDayKey(ms) {
+  return dayKey(new Date(ms));
+}
+
+function localMonthKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+function hourOf(ms) {
+  return new Date(ms).getHours();
+}
+
+function hasDayStreak(list, length) {
+  const days = new Set(list.map((e) => localDayKey(e.endedAt)));
+  for (const e of list) {
+    const start = new Date(e.endedAt);
+    let run = true;
+    for (let i = 1; i < length && run; i++) {
+      const next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      run = days.has(dayKey(next));
+    }
+    if (run) return true;
+  }
+  return false;
+}
+
 // 雰囲気タグごとの実績。MOODS と1対1で対応させ、カタログのテストで取りこぼしを検出する。
 export const MOOD_ENTRIES = [
   { mood: 'ホラー', id: 'mood-horror', icon: 'skull' },
@@ -402,8 +458,104 @@ export const CATALOG = [
     tier: 1,
     icon: 'heart',
     isEarnedBy: (list) => {
-      const value = last(list).stats?.resources?.san?.value;
-      return typeof value === 'number' && value <= 10;
+      const san = sanOf(last(list));
+      return san !== null && san.value <= 10;
     },
+  },
+  {
+    id: 'shaken',
+    label: '削られた精神',
+    description: '判定10回以上、正気度が最大の3割以下で完結した',
+    category: 'survival',
+    tier: 1,
+    icon: 'heart',
+    isEarnedBy: (list) => rollTotal(last(list)) >= 10 && sanAtMost(last(list), 0.3),
+  },
+  {
+    id: 'steady',
+    label: '揺るがぬ精神',
+    description: '判定10回以上、正気度が最大の6割以上で完結した',
+    category: 'survival',
+    tier: 2,
+    icon: 'shield',
+    isEarnedBy: (list) => rollTotal(last(list)) >= 10 && sanAtLeast(last(list), 0.6),
+  },
+  {
+    id: 'sanity-zero',
+    label: '正気の底',
+    description: '正気度0で完結した',
+    category: 'survival',
+    tier: 3,
+    icon: 'skull',
+    isEarnedBy: (list) => {
+      const san = sanOf(last(list));
+      return san !== null && san.value === 0;
+    },
+  },
+  {
+    id: 'formula-two',
+    label: '二つの流儀',
+    description: '2種類の判定式でエンディングに到達した',
+    category: 'trace',
+    tier: 1,
+    icon: 'scales',
+    ...counted(formulaVariety, 2),
+  },
+  {
+    id: 'formula-all',
+    label: '四つの流儀',
+    description: 'すべての判定式でエンディングに到達した',
+    category: 'trace',
+    tier: 3,
+    icon: 'crown',
+    ...counted(formulaVariety, FORMULAS.length),
+  },
+  {
+    id: 'night-owl',
+    label: '夜更かしの語り部',
+    description: '0時から4時台に物語を終えた',
+    category: 'trace',
+    tier: 1,
+    icon: 'moon',
+    isEarnedBy: (list) => hourOf(last(list).endedAt) <= 4,
+  },
+  {
+    id: 'dawn',
+    label: '夜明けの結末',
+    description: '5時から7時台に物語を終えた',
+    category: 'trace',
+    tier: 1,
+    icon: 'sunrise',
+    isEarnedBy: (list) => {
+      const h = hourOf(last(list).endedAt);
+      return h >= 5 && h <= 7;
+    },
+  },
+  {
+    id: 'same-day-two',
+    label: '一日二作',
+    description: '同じ日に2つのエンディングに到達した',
+    category: 'trace',
+    tier: 2,
+    icon: 'clock',
+    isEarnedBy: (list) => maxByKey(list, (e) => localDayKey(e.endedAt)) >= 2,
+  },
+  {
+    id: 'streak-three',
+    label: '三日連続',
+    description: '3日続けてエンディングに到達した',
+    category: 'trace',
+    tier: 2,
+    icon: 'calendar',
+    isEarnedBy: (list) => hasDayStreak(list, 3),
+  },
+  {
+    id: 'month-five',
+    label: '実り月',
+    description: '同じ月に5つのエンディングに到達した',
+    category: 'trace',
+    tier: 2,
+    icon: 'calendar',
+    isEarnedBy: (list) => maxByKey(list, (e) => localMonthKey(e.endedAt)) >= 5,
   },
 ];

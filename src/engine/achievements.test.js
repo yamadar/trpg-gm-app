@@ -316,3 +316,109 @@ describe('fate achievements', () => {
     });
   });
 });
+
+describe('survival achievements', () => {
+  function withSan(value, total = 20) {
+    return ending({ stats: { total, byDegree: {}, resources: { san: { label: '正気度', value, max: 99 } } } });
+  }
+
+  it('earns 瀬戸際の生還 at ten and not at eleven', () => {
+    expect(find(evaluateAchievements([withSan(11)]), 'brink').earned).toBe(false);
+    expect(find(evaluateAchievements([withSan(10)]), 'brink').earned).toBe(true);
+  });
+
+  it('earns 削られた精神 at three tenths of the maximum', () => {
+    expect(find(evaluateAchievements([withSan(30)]), 'shaken').earned).toBe(false);
+    expect(find(evaluateAchievements([withSan(29)]), 'shaken').earned).toBe(true);
+  });
+
+  it('needs ten rolls for 削られた精神 and 揺るがぬ精神', () => {
+    expect(find(evaluateAchievements([withSan(29, 9)]), 'shaken').earned).toBe(false);
+    expect(find(evaluateAchievements([withSan(90, 9)]), 'steady').earned).toBe(false);
+  });
+
+  it('earns 揺るがぬ精神 at six tenths of the maximum', () => {
+    expect(find(evaluateAchievements([withSan(59)]), 'steady').earned).toBe(false);
+    expect(find(evaluateAchievements([withSan(60)]), 'steady').earned).toBe(true);
+  });
+
+  it('earns 正気の底 only at zero', () => {
+    expect(find(evaluateAchievements([withSan(1)]), 'sanity-zero').earned).toBe(false);
+    expect(find(evaluateAchievements([withSan(0)]), 'sanity-zero').earned).toBe(true);
+  });
+
+  it('stays unearned for rulesets without the resource', () => {
+    const result = evaluateAchievements([ending({ stats: { total: 20, byDegree: {}, resources: {} } })]);
+    expect(result.filter((a) => a.category === 'survival').every((a) => a.earned === false)).toBe(true);
+  });
+});
+
+describe('trace achievements', () => {
+  // ローカルタイムゾーンで判定するので、テストもローカル時刻からミリ秒を組み立てる
+  function at(year, month, day, hour = 12) {
+    return new Date(year, month - 1, day, hour, 0, 0, 0).getTime();
+  }
+
+  it('earns 二つの流儀 from two distinct formulas', () => {
+    const one = [ending({ sessionId: 'a', endedAt: 1, formula: 'simple' })];
+    expect(find(evaluateAchievements(one), 'formula-two')).toMatchObject({
+      earned: false,
+      progress: { current: 1, target: 2 },
+    });
+
+    const two = [...one, ending({ sessionId: 'b', endedAt: 2, formula: 'coc7e' })];
+    expect(find(evaluateAchievements(two), 'formula-two')).toMatchObject({ earned: true, sessionId: 'b' });
+  });
+
+  it('earns 四つの流儀 only with every formula', () => {
+    const list = ['simple', 'coc7e', 'dnd5e', 'gurps'].map((f, i) =>
+      ending({ sessionId: f, endedAt: i + 1, formula: f })
+    );
+    expect(find(evaluateAchievements(list), 'formula-all')).toMatchObject({ earned: true, sessionId: 'gurps' });
+    expect(find(evaluateAchievements(list.slice(0, 3)), 'formula-all').earned).toBe(false);
+  });
+
+  it('earns 夜更かしの語り部 between midnight and five', () => {
+    expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 4) })]), 'night-owl').earned).toBe(true);
+    expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 5) })]), 'night-owl').earned).toBe(false);
+  });
+
+  it('earns 夜明けの結末 between five and eight', () => {
+    expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 5) })]), 'dawn').earned).toBe(true);
+    expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 8) })]), 'dawn').earned).toBe(false);
+  });
+
+  it('earns 一日二作 from two endings on the same local day', () => {
+    const apart = [
+      ending({ sessionId: 'a', endedAt: at(2026, 7, 1, 9) }),
+      ending({ sessionId: 'b', endedAt: at(2026, 7, 2, 9) }),
+    ];
+    expect(find(evaluateAchievements(apart), 'same-day-two').earned).toBe(false);
+
+    const together = [
+      ending({ sessionId: 'a', endedAt: at(2026, 7, 1, 9) }),
+      ending({ sessionId: 'b', endedAt: at(2026, 7, 1, 22) }),
+    ];
+    expect(find(evaluateAchievements(together), 'same-day-two').earned).toBe(true);
+  });
+
+  it('earns 三日連続 across a month boundary but not with a gap', () => {
+    const gap = [at(2026, 7, 1), at(2026, 7, 2), at(2026, 7, 4)].map((ms, i) =>
+      ending({ sessionId: `s${i}`, endedAt: ms })
+    );
+    expect(find(evaluateAchievements(gap), 'streak-three').earned).toBe(false);
+
+    const straddle = [at(2026, 7, 30), at(2026, 7, 31), at(2026, 8, 1)].map((ms, i) =>
+      ending({ sessionId: `s${i}`, endedAt: ms })
+    );
+    expect(find(evaluateAchievements(straddle), 'streak-three').earned).toBe(true);
+  });
+
+  it('earns 実り月 from five endings in the same month', () => {
+    const four = [1, 2, 3, 4].map((d) => ending({ sessionId: `s${d}`, endedAt: at(2026, 7, d) }));
+    expect(find(evaluateAchievements(four), 'month-five').earned).toBe(false);
+
+    const five = [...four, ending({ sessionId: 's5', endedAt: at(2026, 7, 20) })];
+    expect(find(evaluateAchievements(five), 'month-five').earned).toBe(true);
+  });
+});
