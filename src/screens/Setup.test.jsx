@@ -413,6 +413,87 @@ describe('Setup', () => {
     expect(screen.getByPlaceholderText('例: カイ・アーレンス')).toHaveValue('カイ(熟練)');
   });
 
+  it('carries the entered PC name into the session and prepends it to the sheet', async () => {
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'カイ' } });
+    fireEvent.change(screen.getByPlaceholderText(/能力値・スキル/), { target: { value: 'goal: 生き延びる' } });
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.name).toBe('カイ');
+    expect(session.pc.raw).toBe('PC名: カイ\ngoal: 生き延びる');
+  });
+
+  it('does not duplicate a PC名 line that the player already wrote in the sheet', async () => {
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'カイ' } });
+    fireEvent.change(screen.getByPlaceholderText(/能力値・スキル/), {
+      target: { value: 'PC名: ハワード\ngoal: 真相を暴く' },
+    });
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.raw).toBe('PC名: ハワード\ngoal: 真相を暴く');
+  });
+
+  it("takes the session PC name from the library sheet's parsed name when an existing PC is picked", async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    characterLibraryClient.listCharacters.mockResolvedValue([
+      { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
+    ]);
+    vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
+      raw: 'PC名: アリス',
+      revealed: null,
+      name: 'alice',
+    });
+    vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockResolvedValue({
+      name: 'アリス',
+      goal: '真相を暴く',
+      bonds: '姉との再会',
+    });
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('alice'));
+    await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalledWith('w1', 'pc', 'alice'));
+
+    fireEvent.click(screen.getByText('次へ')); // -> 確認
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    const session = onStart.mock.calls[0][0];
+    expect(session.pc.name).toBe('アリス');
+  });
+
   it('clears a previously selected Scenario when the World changes', async () => {
     worldLibraryClient.listWorlds.mockResolvedValue([
       { id: 'w1', title: 'World1', updatedAt: 1 },

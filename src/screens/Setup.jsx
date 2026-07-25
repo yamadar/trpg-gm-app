@@ -15,7 +15,7 @@ import Button from '../components/ui/Button.jsx';
 import Field from '../components/ui/Field.jsx';
 import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
-import { extractPcName } from '../utils/pcName.js';
+import { extractPcName, composePcRaw } from '../utils/pcName.js';
 
 export default function Setup({ onStart, onCancel, campaignContext = null, starterContext = null }) {
   // starterContext はスターターパックを一括インポートした直後の状態。World/Scenario/Ruleset を
@@ -228,6 +228,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
       }
 
       let pc;
+      let pcResolvedName = '';
       let pcGoal;
       let pcBonds;
       let pcLibraryName = null;
@@ -236,12 +237,17 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
         pc = selectedPC.raw;
         pcLibraryName = selectedPC.name;
       } else {
-        pc = pcRaw || '(自由記述なし)';
+        // 入力されたPC名をシート本文にも残す。ライブラリ原本とGMプロンプトの
+        // 「# PC設定」節の両方に名前が載り、プレイ中の地の文も名前で呼べるようになる。
+        pc = composePcRaw(pcName, pcRaw);
+        pcResolvedName = extractPcName(pc);
+        // 保存の条件は従来どおり「自由記述が書かれていること」。名前だけのPCを
+        // ライブラリに増やさないため、ここは広げない。
         if (resolvedWorldId && pcRaw) {
           const pcId = makeId('pc');
           let pcSaved = false;
           await trySaveToLibrary(async () => {
-            await putCharacter(resolvedWorldId, 'pc', pcId, { raw: pcRaw, revealed: undefined });
+            await putCharacter(resolvedWorldId, 'pc', pcId, { raw: pc, revealed: undefined });
             pcSaved = true;
           });
           if (pcSaved) {
@@ -255,8 +261,10 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
           const parsed = await getOrParseCharacter(resolvedWorldId, 'pc', pcLibraryName);
           pcGoal = parsed.goal;
           pcBonds = parsed.bonds;
+          // 既存PCを選んだ経路では、名前はここでしか得られない。
+          if (parsed.name) pcResolvedName = parsed.name;
         } catch (e) {
-          console.error('goal/bonds parse failed', e);
+          console.error('name/goal/bonds parse failed', e);
         }
       }
 
@@ -289,7 +297,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
           growthUnit: resolvedRuleset.growthUnit || '経験値',
           formula: resolvedRuleset.formula,
         },
-        pc: { raw: pc, goal: pcGoal, bonds: pcBonds },
+        pc: { name: pcResolvedName, raw: pc, goal: pcGoal, bonds: pcBonds },
         state: {
           current_scene: '冒頭',
           flags: {},
