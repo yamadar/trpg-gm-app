@@ -235,3 +235,84 @@ describe('mood achievements', () => {
     expect(find(evaluateAchievements(list), 'mood-horror').earned).toBe(false);
   });
 });
+
+describe('roll achievements', () => {
+  function withStats(stats, overrides = {}) {
+    return ending({ stats: { byDegree: {}, resources: {}, ...stats }, ...overrides });
+  }
+
+  it('earns 長編 at fifty rolls, not at forty-nine', () => {
+    expect(find(evaluateAchievements([withStats({ total: 49 })]), 'long-story').earned).toBe(false);
+    expect(find(evaluateAchievements([withStats({ total: 50 })]), 'long-story').earned).toBe(true);
+  });
+
+  it('sums rolls across endings for 百の判定 and caps the progress', () => {
+    const list = [
+      withStats({ total: 60 }, { sessionId: 'a', endedAt: 1 }),
+      withStats({ total: 39 }, { sessionId: 'b', endedAt: 2 }),
+    ];
+    expect(find(evaluateAchievements(list), 'rolls-100')).toMatchObject({
+      earned: false,
+      progress: { current: 99, target: 100 },
+    });
+
+    const third = [...list, withStats({ total: 1 }, { sessionId: 'c', endedAt: 3 })];
+    expect(find(evaluateAchievements(third), 'rolls-100')).toMatchObject({ earned: true, sessionId: 'c' });
+  });
+
+  it('earns 手練れ at a success rate of exactly 0.8 with enough rolls', () => {
+    expect(find(evaluateAchievements([withStats({ total: 10, successRate: 0.79 })]), 'adept').earned).toBe(false);
+    expect(find(evaluateAchievements([withStats({ total: 10, successRate: 0.8 })]), 'adept').earned).toBe(true);
+    // 判定が少ないうちは成功率が偶然に振れるので、10回に満たない記録では成立させない
+    expect(find(evaluateAchievements([withStats({ total: 9, successRate: 1 })]), 'adept').earned).toBe(false);
+  });
+
+  it('earns 苦難の道 at a success rate of exactly 0.3', () => {
+    expect(find(evaluateAchievements([withStats({ total: 10, successRate: 0.31 })]), 'ordeal').earned).toBe(false);
+    expect(find(evaluateAchievements([withStats({ total: 10, successRate: 0.3 })]), 'ordeal').earned).toBe(true);
+  });
+});
+
+describe('fate achievements', () => {
+  function withDegrees(byDegree, overrides = {}) {
+    return ending({ stats: { total: 30, byDegree, resources: {} }, ...overrides });
+  }
+
+  it('earns 完全なる旅路 only with thirty rolls and no fumble', () => {
+    expect(find(evaluateAchievements([withDegrees({ fumble: 0 })]), 'flawless-long').earned).toBe(true);
+    expect(
+      find(evaluateAchievements([ending({ stats: { total: 29, byDegree: { fumble: 0 }, resources: {} } })]), 'flawless-long')
+        .earned
+    ).toBe(false);
+    expect(find(evaluateAchievements([withDegrees({ fumble: 1 })]), 'flawless-long').earned).toBe(false);
+  });
+
+  it('earns 明暗 only when one ending has both three criticals and three fumbles', () => {
+    expect(find(evaluateAchievements([withDegrees({ critical: 3, fumble: 2 })]), 'tempest').earned).toBe(false);
+    expect(find(evaluateAchievements([withDegrees({ critical: 3, fumble: 3 })]), 'tempest').earned).toBe(true);
+  });
+
+  it('treats degrees missing from the ruleset as zero', () => {
+    // simple/dnd5e/gurps は byDegree に hard/extreme を持たないので、成立しないだけで壊れない
+    const result = evaluateAchievements([withDegrees({ fumble: 0, critical: 0 })]);
+    expect(find(result, 'hard-three').earned).toBe(false);
+    expect(find(result, 'extreme-one').earned).toBe(false);
+  });
+
+  it('earns 際どい成功 and 会心 from CoC7e-style degrees', () => {
+    const result = evaluateAchievements([withDegrees({ hard: 3, extreme: 1 })]);
+    expect(find(result, 'hard-three').earned).toBe(true);
+    expect(find(result, 'extreme-one').earned).toBe(true);
+  });
+
+  it('sums criticals across endings for 積み重なる幸運', () => {
+    const list = [
+      withDegrees({ critical: 20 }, { sessionId: 'a', endedAt: 1 }),
+      withDegrees({ critical: 4 }, { sessionId: 'b', endedAt: 2 }),
+    ];
+    expect(find(evaluateAchievements(list), 'criticals-25')).toMatchObject({
+      earned: false,
+      progress: { current: 24, target: 25 },
+    });
+  });
+});

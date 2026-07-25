@@ -30,6 +30,19 @@ function rollTotal(ending) {
   return ending.stats?.total ?? 0;
 }
 
+function successRate(ending) {
+  return ending.stats?.successRate ?? 0;
+}
+
+function sumOf(list, pick) {
+  let n = 0;
+  for (const e of list) n += pick(e);
+  return n;
+}
+
+const rollsTotal = (list) => sumOf(list, rollTotal);
+const criticalsTotal = (list) => sumOf(list, (e) => degreeCount(e, 'critical'));
+
 // 同じキーに何件集まっているかの最大値。worldId/campaignId が無い記録は数えない
 // (世界にもキャンペーンにも属さない単発セッションをまとめないため)。
 function maxByKey(list, keyOf) {
@@ -236,6 +249,61 @@ export const CATALOG = [
     },
   },
   {
+    id: 'long-story',
+    label: '長編',
+    description: '判定50回以上で完結した',
+    category: 'roll',
+    tier: 2,
+    icon: 'book',
+    isEarnedBy: (list) => rollTotal(last(list)) >= 50,
+  },
+  {
+    id: 'epic',
+    label: '大長編',
+    description: '判定100回以上で完結した',
+    category: 'roll',
+    tier: 3,
+    icon: 'library',
+    isEarnedBy: (list) => rollTotal(last(list)) >= 100,
+  },
+  {
+    id: 'rolls-100',
+    label: '百の判定',
+    description: '通算100回の判定を行った',
+    category: 'roll',
+    tier: 1,
+    icon: 'dice',
+    ...counted(rollsTotal, 100),
+  },
+  {
+    id: 'rolls-500',
+    label: '五百の判定',
+    description: '通算500回の判定を行った',
+    category: 'roll',
+    tier: 2,
+    icon: 'dice',
+    ...counted(rollsTotal, 500),
+  },
+  {
+    id: 'adept',
+    label: '手練れ',
+    description: '判定10回以上、成功率8割以上で完結した',
+    category: 'roll',
+    tier: 2,
+    icon: 'star',
+    // 判定が少ないうちは成功率が偶然に振れるので、10回の下限を置く
+    isEarnedBy: (list) => rollTotal(last(list)) >= 10 && successRate(last(list)) >= 0.8,
+  },
+  {
+    id: 'ordeal',
+    label: '苦難の道',
+    description: '判定10回以上、成功率3割以下で完結した',
+    category: 'roll',
+    tier: 2,
+    icon: 'hourglass',
+    isEarnedBy: (list) => rollTotal(last(list)) >= 10 && successRate(last(list)) <= 0.3,
+  },
+  {
     id: 'flawless',
     label: '無傷の旅路',
     description: 'ファンブルを1度も出さずに完結した',
@@ -243,6 +311,15 @@ export const CATALOG = [
     tier: 1,
     icon: 'shield',
     isEarnedBy: (list) => rollTotal(last(list)) >= 1 && degreeCount(last(list), 'fumble') === 0,
+  },
+  {
+    id: 'flawless-long',
+    label: '完全なる旅路',
+    description: '判定30回以上、ファンブルを1度も出さずに完結した',
+    category: 'fate',
+    tier: 3,
+    icon: 'shield',
+    isEarnedBy: (list) => rollTotal(last(list)) >= 30 && degreeCount(last(list), 'fumble') === 0,
   },
   {
     id: 'lucky',
@@ -254,6 +331,15 @@ export const CATALOG = [
     isEarnedBy: (list) => degreeCount(last(list), 'critical') >= 3,
   },
   {
+    id: 'lucky-five',
+    label: '天佑',
+    description: '1つの物語でクリティカルを5回以上出した',
+    category: 'fate',
+    tier: 2,
+    icon: 'sparkle',
+    isEarnedBy: (list) => degreeCount(last(list), 'critical') >= 5,
+  },
+  {
     id: 'cursed',
     label: '厄日',
     description: '1つの物語でファンブルを3回以上出した',
@@ -261,6 +347,52 @@ export const CATALOG = [
     tier: 1,
     icon: 'skull',
     isEarnedBy: (list) => degreeCount(last(list), 'fumble') >= 3,
+  },
+  {
+    id: 'cursed-five',
+    label: '呪われた日',
+    description: '1つの物語でファンブルを5回以上出した',
+    category: 'fate',
+    tier: 2,
+    icon: 'skull',
+    isEarnedBy: (list) => degreeCount(last(list), 'fumble') >= 5,
+  },
+  {
+    id: 'tempest',
+    label: '明暗',
+    description: '1つの物語でクリティカルとファンブルを3回ずつ出した',
+    category: 'fate',
+    tier: 2,
+    icon: 'scales',
+    isEarnedBy: (list) => degreeCount(last(list), 'critical') >= 3 && degreeCount(last(list), 'fumble') >= 3,
+  },
+  {
+    id: 'hard-three',
+    label: '際どい成功',
+    description: '1つの物語でハード成功を3回以上出した',
+    category: 'fate',
+    tier: 1,
+    icon: 'dice',
+    // hard/extreme を持たないルールセットでは degreeCount が0を返し、成立しないだけで壊れない
+    isEarnedBy: (list) => degreeCount(last(list), 'hard') >= 3,
+  },
+  {
+    id: 'extreme-one',
+    label: '会心',
+    description: 'イクストリーム成功を出した',
+    category: 'fate',
+    tier: 1,
+    icon: 'star',
+    isEarnedBy: (list) => degreeCount(last(list), 'extreme') >= 1,
+  },
+  {
+    id: 'criticals-25',
+    label: '積み重なる幸運',
+    description: '通算25回のクリティカルを出した',
+    category: 'fate',
+    tier: 2,
+    icon: 'sparkle',
+    ...counted(criticalsTotal, 25),
   },
   {
     id: 'brink',
