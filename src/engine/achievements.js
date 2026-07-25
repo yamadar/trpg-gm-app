@@ -36,7 +36,8 @@ export function evaluateAchievements(endings) {
       earned: Boolean(hit),
       earnedAt: hit ? hit.earnedAt : null,
       sessionId: hit ? hit.sessionId : null,
-      progress: null,
+      // 進捗は「いま何本持っているか」なので、判定に使う接頭辞ではなく全記録で数える。
+      progress: a.progress ? { current: Math.min(a.progress(all), a.target), target: a.target } : null,
     };
   });
 }

@@ -7,6 +7,7 @@ function ending(overrides = {}) {
     sessionId: 's1',
     endedAt: 1000,
     worldId: null,
+    campaignId: null,
     stats: { total: 20, byDegree: { fumble: 1, fail: 5, success: 13, critical: 1 }, resources: {} },
     ...overrides,
   };
@@ -135,11 +136,68 @@ describe('evaluateAchievements', () => {
 
   it('carries the catalogue metadata through to the result', () => {
     const result = evaluateAchievements([]);
+    // first-ending は Task 2 で計数対象になったので progress も検証する
+    // (未着手なら current: 0)。progress を持たない実績は別途 'brink' で確認する。
     const first = result.find((a) => a.id === 'first-ending');
-    expect(first).toMatchObject({ category: 'arrival', tier: 1, icon: 'flag', progress: null });
+    expect(first).toMatchObject({ category: 'arrival', tier: 1, icon: 'flag', progress: { current: 0, target: 1 } });
+    expect(find(result, 'brink').progress).toBeNull();
   });
 
   it('returns entries in catalogue order', () => {
     expect(evaluateAchievements([]).map((a) => a.id)).toEqual(CATALOG.map((a) => a.id));
+  });
+});
+
+describe('arrival achievements', () => {
+  function endings(n) {
+    return Array.from({ length: n }, (_, i) => ending({ sessionId: `s${i}`, endedAt: i + 1 }));
+  }
+
+  it('earns 十の結末 at the tenth ending, not the ninth', () => {
+    expect(find(evaluateAchievements(endings(9)), 'ten-endings').earned).toBe(false);
+    expect(find(evaluateAchievements(endings(10)), 'ten-endings')).toMatchObject({ earned: true, earnedAt: 10 });
+  });
+
+  it('reports progress toward the count and caps it at the target', () => {
+    expect(find(evaluateAchievements(endings(3)), 'ten-endings').progress).toEqual({ current: 3, target: 10 });
+    expect(find(evaluateAchievements(endings(12)), 'ten-endings').progress).toEqual({ current: 10, target: 10 });
+  });
+
+  it('leaves progress null for achievements that are not countable', () => {
+    expect(find(evaluateAchievements(endings(1)), 'flawless').progress).toBeNull();
+  });
+});
+
+describe('world achievements', () => {
+  it('earns 一つの世界の五つの結末 only on the fifth ending in the same world', () => {
+    const four = [1, 2, 3, 4].map((i) => ending({ sessionId: `s${i}`, endedAt: i, worldId: 'w1' }));
+    expect(find(evaluateAchievements(four), 'world-five').earned).toBe(false);
+    expect(find(evaluateAchievements(four), 'world-five').progress).toEqual({ current: 4, target: 5 });
+
+    const five = [...four, ending({ sessionId: 's5', endedAt: 5, worldId: 'w1' })];
+    expect(find(evaluateAchievements(five), 'world-five')).toMatchObject({ earned: true, sessionId: 's5' });
+  });
+
+  it('counts distinct worlds for 三つの世界 and ignores endings without a world', () => {
+    const list = [
+      ending({ sessionId: 'a', endedAt: 1, worldId: 'w1' }),
+      ending({ sessionId: 'b', endedAt: 2, worldId: 'w2' }),
+      ending({ sessionId: 'c', endedAt: 3, worldId: null }),
+    ];
+    expect(find(evaluateAchievements(list), 'worlds-three')).toMatchObject({
+      earned: false,
+      progress: { current: 2, target: 3 },
+    });
+
+    const withThird = [...list, ending({ sessionId: 'd', endedAt: 4, worldId: 'w3' })];
+    expect(find(evaluateAchievements(withThird), 'worlds-three')).toMatchObject({ earned: true, sessionId: 'd' });
+  });
+
+  it('groups by campaign for 章を重ねて', () => {
+    const one = [ending({ sessionId: 'a', endedAt: 1, campaignId: 'c1' })];
+    expect(find(evaluateAchievements(one), 'campaign-two').earned).toBe(false);
+
+    const two = [...one, ending({ sessionId: 'b', endedAt: 2, campaignId: 'c1' })];
+    expect(find(evaluateAchievements(two), 'campaign-two')).toMatchObject({ earned: true, sessionId: 'b' });
   });
 });

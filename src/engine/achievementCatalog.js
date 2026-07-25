@@ -28,6 +28,41 @@ function rollTotal(ending) {
   return ending.stats?.total ?? 0;
 }
 
+// 同じキーに何件集まっているかの最大値。worldId/campaignId が無い記録は数えない
+// (世界にもキャンペーンにも属さない単発セッションをまとめないため)。
+function maxByKey(list, keyOf) {
+  const counts = new Map();
+  let max = 0;
+  for (const e of list) {
+    const k = keyOf(e);
+    if (!k) continue;
+    const n = (counts.get(k) || 0) + 1;
+    counts.set(k, n);
+    if (n > max) max = n;
+  }
+  return max;
+}
+
+function distinctCount(list, keyOf) {
+  const set = new Set();
+  for (const e of list) {
+    const k = keyOf(e);
+    if (k) set.add(k);
+  }
+  return set.size;
+}
+
+// 数えれば現在地が出る実績は、同じ計数関数を判定と進捗の両方に使う。
+// 判定には接頭辞が、進捗には全記録が渡るが、関数の中身は同じでよい。
+function counted(count, target) {
+  return { isEarnedBy: (list) => count(list) >= target, progress: count, target };
+}
+
+const countOf = (list) => list.length;
+const worldGroup = (list) => maxByKey(list, (e) => e.worldId);
+const worldVariety = (list) => distinctCount(list, (e) => e.worldId);
+const campaignGroup = (list) => maxByKey(list, (e) => e.campaignId);
+
 export const CATALOG = [
   {
     id: 'first-ending',
@@ -36,7 +71,7 @@ export const CATALOG = [
     category: 'arrival',
     tier: 1,
     icon: 'flag',
-    isEarnedBy: (list) => list.length >= 1,
+    ...counted(countOf, 1),
   },
   {
     id: 'three-endings',
@@ -45,7 +80,43 @@ export const CATALOG = [
     category: 'arrival',
     tier: 1,
     icon: 'book',
-    isEarnedBy: (list) => list.length >= 3,
+    ...counted(countOf, 3),
+  },
+  {
+    id: 'five-endings',
+    label: '五つの結末',
+    description: '5つのエンディングに到達した',
+    category: 'arrival',
+    tier: 1,
+    icon: 'books',
+    ...counted(countOf, 5),
+  },
+  {
+    id: 'ten-endings',
+    label: '十の結末',
+    description: '10のエンディングに到達した',
+    category: 'arrival',
+    tier: 2,
+    icon: 'library',
+    ...counted(countOf, 10),
+  },
+  {
+    id: 'endings-25',
+    label: '二十五の結末',
+    description: '25のエンディングに到達した',
+    category: 'arrival',
+    tier: 3,
+    icon: 'library',
+    ...counted(countOf, 25),
+  },
+  {
+    id: 'endings-50',
+    label: '五十の結末',
+    description: '50のエンディングに到達した',
+    category: 'arrival',
+    tier: 3,
+    icon: 'crown',
+    ...counted(countOf, 50),
   },
   {
     id: 'world-trilogy',
@@ -54,15 +125,52 @@ export const CATALOG = [
     category: 'world',
     tier: 1,
     icon: 'globe',
-    isEarnedBy: (list) => {
-      const counts = {};
-      for (const e of list) {
-        if (!e.worldId) continue; // 世界に属さない単発セッションはまとめない
-        counts[e.worldId] = (counts[e.worldId] || 0) + 1;
-        if (counts[e.worldId] >= 3) return true;
-      }
-      return false;
-    },
+    ...counted(worldGroup, 3),
+  },
+  {
+    id: 'world-five',
+    label: '一つの世界の五つの結末',
+    description: '同じ世界で5つのエンディングに到達した',
+    category: 'world',
+    tier: 2,
+    icon: 'globe',
+    ...counted(worldGroup, 5),
+  },
+  {
+    id: 'worlds-three',
+    label: '三つの世界',
+    description: '3つの異なる世界でエンディングに到達した',
+    category: 'world',
+    tier: 1,
+    icon: 'map',
+    ...counted(worldVariety, 3),
+  },
+  {
+    id: 'worlds-five',
+    label: '五つの世界',
+    description: '5つの異なる世界でエンディングに到達した',
+    category: 'world',
+    tier: 2,
+    icon: 'map',
+    ...counted(worldVariety, 5),
+  },
+  {
+    id: 'campaign-two',
+    label: '章を重ねて',
+    description: '同じキャンペーンで2つのエンディングに到達した',
+    category: 'world',
+    tier: 1,
+    icon: 'compass',
+    ...counted(campaignGroup, 2),
+  },
+  {
+    id: 'campaign-four',
+    label: '長い年代記',
+    description: '同じキャンペーンで4つのエンディングに到達した',
+    category: 'world',
+    tier: 3,
+    icon: 'crown',
+    ...counted(campaignGroup, 4),
   },
   {
     id: 'short-story',
