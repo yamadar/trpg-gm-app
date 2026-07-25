@@ -385,6 +385,8 @@ describe('trace achievements', () => {
 
   it('earns 夜明けの結末 between five and eight', () => {
     expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 5) })]), 'dawn').earned).toBe(true);
+    // 7時台は取得できる最後の1時間。ここを見ないと上端がずれても気付けない
+    expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 7) })]), 'dawn').earned).toBe(true);
     expect(find(evaluateAchievements([ending({ endedAt: at(2026, 7, 1, 8) })]), 'dawn').earned).toBe(false);
   });
 
@@ -412,6 +414,17 @@ describe('trace achievements', () => {
       ending({ sessionId: `s${i}`, endedAt: ms })
     );
     expect(find(evaluateAchievements(straddle), 'streak-three').earned).toBe(true);
+  });
+
+  it('earns 三日連続 across a year boundary', () => {
+    // 年をまたぐと日キーの年も月も変わる。月境界とは別に固定しておく
+    const straddle = [at(2026, 12, 30), at(2026, 12, 31), at(2027, 1, 1)].map((ms, i) =>
+      ending({ sessionId: `s${i}`, endedAt: ms })
+    );
+    expect(find(evaluateAchievements(straddle), 'streak-three')).toMatchObject({
+      earned: true,
+      sessionId: 's2',
+    });
   });
 
   it('earns 実り月 from five endings in the same month', () => {

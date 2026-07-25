@@ -121,14 +121,24 @@ export default function AchievementList({ onClose }) {
             label="実績の取得状況"
           />
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '18px 0 8px' }}>
+          {/* 2列とも「すべて」で始まる/終わるチップを持つため、行に名前がないと
+              読み上げで順に辿ったときどちらの軸のチップか区別できない */}
+          <div
+            role="group"
+            aria-label="取得状況で絞り込み"
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '18px 0 8px' }}
+          >
             {SEGMENTS.map((s) => (
               <Chip key={s.key} selected={segment === s.key} onClick={() => setSegment(s.key)}>
                 {s.label} {segmentCounts[s.key]}
               </Chip>
             ))}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 24 }}>
+          <div
+            role="group"
+            aria-label="カテゴリで絞り込み"
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 24 }}
+          >
             <Chip selected={category === 'all'} onClick={() => setCategory('all')}>
               すべて
             </Chip>

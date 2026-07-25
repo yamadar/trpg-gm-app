@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import AchievementList from './AchievementList.jsx';
 import * as endingClient from '../api/endingClient.js';
@@ -33,14 +33,28 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+afterEach(() => {
+  // ハッシュを残すと他のテストへ漏れる
+  window.history.replaceState(null, '', window.location.pathname);
+});
+
 describe('AchievementList', () => {
   it('lists the whole catalogue', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
     renderWithAuth(<AchievementList onClose={vi.fn()} />);
     expect(await screen.findByText('初めての結末')).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('未取得').length).toBeGreaterThan(0));
-    expect(screen.getByText('五十の結末')).toBeInTheDocument();
-    expect(screen.getByText('三日連続')).toBeInTheDocument();
+    // 抜き取りで数件だけ見ると、カテゴリ1節が丸ごと落ちても気付けない。ラベルは全件で一意。
+    for (const a of CATALOG) {
+      expect(screen.getByText(a.label)).toBeInTheDocument();
+    }
+  });
+
+  it('returns to the ending gallery', async () => {
+    vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
+    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: '図鑑へ' }));
+    expect(window.location.hash).toBe('#/endings');
   });
 
   it('shows how many are earned out of the catalogue', async () => {
