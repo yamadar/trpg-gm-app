@@ -65,9 +65,10 @@ export async function analyzeScene({ narrative, registry = {}, pcRaw = '', apiKe
       .map((b) => b.text)
       .join('');
     const parsed = JSON.parse(text);
-    const presentNames = Array.isArray(parsed.present_names)
+    const presentNamesRaw = Array.isArray(parsed.present_names)
       ? parsed.present_names.filter((n) => typeof n === 'string')
       : [];
+    const presentNames = [...new Set(presentNamesRaw)];
     // その場にいない人物(言及されるだけ)の見た目は登録しない。
     // 挿絵プロンプトにも載らないため、ポートレート生成の消費だけが無駄になる。
     const present = new Set(presentNames);
