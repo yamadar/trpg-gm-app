@@ -408,6 +408,81 @@ describe('Home', () => {
     expect(screen.queryByText('小説化する')).not.toBeInTheDocument();
   });
 
+  it('shows the waiting block with the elapsed time while a job is running', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'running', error: null, elapsedMs: 84000, hasNovel: false, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('1:24 経過 ・ 目安 2〜5分')).toBeInTheDocument();
+    expect(
+      screen.getByText('長い記録ほど時間がかかります。このまま他の画面に移っても生成は続きます。')
+    ).toBeInTheDocument();
+  });
+
+  it('advances the elapsed time every second between polls', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'running', error: null, elapsedMs: 84000, hasNovel: false, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByText('1:24 経過 ・ 目安 2〜5分')).toBeInTheDocument();
+
+      // ポーリング(5秒)を待たずに数字が進むこと。止まって見えないための肝。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(screen.getByText('1:26 経過 ・ 目安 2〜5分')).toBeInTheDocument();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops the one-second interval once no job is running', async () => {
+    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
+    });
+    listSpy.mockResolvedValueOnce({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+
+    vi.useFakeTimers();
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+    let view;
+    try {
+      view = renderWithAuth(
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+      );
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(screen.queryByText(/経過/)).not.toBeInTheDocument();
+      expect(clearSpy).toHaveBeenCalled();
+    } finally {
+      view?.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it('re-polls via the scheduled 5s timer and reflects a running → done transition without user action', async () => {
     const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
     listSpy.mockResolvedValueOnce({ s1: { status: 'running', error: null, hasNovel: false, stale: false } });

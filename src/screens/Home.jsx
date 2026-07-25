@@ -3,6 +3,7 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
+import NovelizeProgress from '../components/ui/NovelizeProgress.jsx';
 import {
   novelizeSession,
   getNovel,
@@ -47,6 +48,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
   // setNovelJobsは非同期に反映されるため、tick()内の同期チェックにはrefを用いる。
   const hasRunningRef = useRef(false);
+  // 経過時間の補間の起点。ポーリング応答を受け取った時刻(クライアント時計)を控える。
+  // 差分にしか使わないため、サーバーとの時計ずれの影響を受けない。
+  const jobsReceivedAtRef = useRef(0);
   const [pollNonce, setPollNonce] = useState(0);
   const [novelizeError, setNovelizeError] = useState({});
   const [publishedNovelIds, setPublishedNovelIds] = useState({});
@@ -66,6 +70,18 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       return next;
     });
   }
+
+  const anyRunning = Object.values(novelJobs).some((j) => j.status === 'running');
+
+  // 実行中のジョブがある間だけ1秒ごとに再描画し、経過時間の表示を進める。
+  // ポーリング(5秒)の更新だけに任せると数字が5秒刻みで飛び、止まって見える。
+  // 値そのものは使わないため、setterだけを受け取る。
+  const [, setElapsedTick] = useState(0);
+  useEffect(() => {
+    if (!anyRunning) return;
+    const id = setInterval(() => setElapsedTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [anyRunning]);
 
   useEffect(() => {
     const worldIds = [...new Set(sessions.filter((s) => s.campaignId && s.worldId).map((s) => s.worldId))];
@@ -154,6 +170,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       try {
         const jobs = await listNovelJobs();
         if (cancelled) return;
+        jobsReceivedAtRef.current = Date.now();
         // 置き換えではなくマージする: 小説化ボタン押下直後はポーリングを即座に
         // 再始動するため(下のhandleNovelize参照)、サーバーがまだジョブ開始を
         // 記録し切っていないタイミングでこのポーリングが先に返ってくることがある。
@@ -348,6 +365,10 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     const job = novelJobs[s.id] || {};
     const ending = endingMap[s.id];
     const running = job.status === 'running';
+    // サーバーが返した経過時間に、受信からの実時間を足して補間する。
+    // 楽観的更新の直後(elapsedMs未取得)は0から始める。
+    const elapsedMs =
+      running && typeof job.elapsedMs === 'number' ? job.elapsedMs + (Date.now() - jobsReceivedAtRef.current) : 0;
     const hasNovel = job.status === 'done' || !!job.hasNovel;
     const badges = [];
     if (s.endedAt) badges.push(<Badge key="ended" variant="brass">完結</Badge>);
@@ -411,6 +432,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
             小説が出力上限に達したため、末尾が欠けている可能性があります。
           </div>
         )}
+        {running && <NovelizeProgress elapsedMs={elapsedMs} />}
 
         {/* 操作層 */}
         <div
