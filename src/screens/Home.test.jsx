@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
-import Home, { sanitizeFilename, collectJobEvents } from './Home.jsx';
+import Home, { sanitizeFilename, collectJobEvents, collectUnreadIds } from './Home.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as shareClient from '../api/shareClient.js';
 import * as sessionApi from '../api/session.js';
@@ -577,15 +577,44 @@ describe('Home', () => {
     expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
   });
 
-  it('shows the completion block and a toast on a running → done transition', async () => {
-    const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
-    listSpy.mockResolvedValueOnce({
-      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
-    });
-    listSpy.mockResolvedValue({
-      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+  it('announces an unread completion on mount and marks it seen', async () => {
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: '黄昏の塔の契約', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説ができました')).toBeInTheDocument();
+    expect(screen.getByText('「黄昏の塔の契約」の小説ができました')).toBeInTheDocument();
+    await waitFor(() => expect(seenSpy).toHaveBeenCalledWith('s1'));
+  });
+
+  it('does not announce a completion that is already read', async () => {
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: false },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説をDL')).toBeInTheDocument();
+    expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
+    expect(seenSpy).not.toHaveBeenCalled();
+  });
+
+  it('announces an unread completion only once even if a later poll still reports it unread', async () => {
+    // 既読化POSTがサーバーに届く前に次のポーリングが返る競合。s1がrunningなので
+    // ポーリングが継続し、s2のunreadが2回観測される。
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false, unread: false },
+      s2: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
+    });
+    const sessions = [
+      { id: 's1', title: 'A', updatedAt: 2, state: {}, log: [] },
+      { id: 's2', title: 'B', updatedAt: 1, state: {}, log: [] },
+    ];
 
     vi.useFakeTimers();
     let view;
@@ -601,12 +630,26 @@ describe('Home', () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
 
-      expect(screen.getByText('小説ができました')).toBeInTheDocument();
-      expect(screen.getByText('「黄昏の塔の契約」の小説ができました')).toBeInTheDocument();
+      expect(screen.getAllByText('「B」の小説ができました')).toHaveLength(1);
+      expect(seenSpy).toHaveBeenCalledTimes(1);
     } finally {
       view?.unmount();
       vi.useRealTimers();
     }
+  });
+
+  it('keeps the notification visible when marking it seen fails', async () => {
+    // 既読化に失敗してもユーザーには何も見せない(対処できることではない)。
+    // サーバーのフラグが残るので次にHomeを開いたときに再通知される。
+    vi.spyOn(sessionSyncClient, 'markNovelSeen').mockRejectedValue(new Error('offline'));
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
+    });
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説ができました')).toBeInTheDocument();
+    expect(screen.queryByText(/失敗/)).not.toBeInTheDocument();
   });
 
   it('shows a toast but no completion block on a running → error transition', async () => {
@@ -644,12 +687,13 @@ describe('Home', () => {
   });
 
   it('clears the completion block and toast on logout (the DL button DONE_NOTE points to unmounts along with the job)', async () => {
+    vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
     const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
     listSpy.mockResolvedValueOnce({
       s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
     });
     listSpy.mockResolvedValue({
-      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
 
@@ -690,12 +734,13 @@ describe('Home', () => {
   it('clears the completion block once the novel is downloaded', async () => {
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn().mockReturnValue('blob:x'), revokeObjectURL: vi.fn() });
     vi.spyOn(sessionSyncClient, 'getNovel').mockResolvedValue({ text: '本文' });
+    vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
     const listSpy = vi.spyOn(sessionSyncClient, 'listNovelJobs');
     listSpy.mockResolvedValueOnce({
       s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: false, stale: false },
     });
     listSpy.mockResolvedValue({
-      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
+      s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
 
@@ -890,35 +935,47 @@ describe('Home', () => {
 describe('collectJobEvents', () => {
   const titleOf = (id) => ({ s1: 'A', s2: 'B' })[id] ?? '';
 
-  it('reports a done transition only when the previous state was running', () => {
-    const prev = { s1: { status: 'running' } };
-    const next = { s1: { status: 'done' } };
-    expect(collectJobEvents(prev, next, titleOf)).toEqual([{ id: 's1', kind: 'done', title: 'A' }]);
-  });
-
-  it('ignores sessions that were already done before (regression: no notification on first load)', () => {
-    // マウント時の初回取得では前状態が空。ここで発火すると過去の全セッションが
-    // 「できました」になる。
-    expect(collectJobEvents({}, { s1: { status: 'done' } }, titleOf)).toEqual([]);
-    expect(collectJobEvents({ s1: { status: 'done' } }, { s1: { status: 'done' } }, titleOf)).toEqual([]);
-  });
-
   it('reports an error transition', () => {
     const prev = { s1: { status: 'running' } };
     const next = { s1: { status: 'error', error: 'boom' } };
     expect(collectJobEvents(prev, next, titleOf)).toEqual([{ id: 's1', kind: 'error', title: 'A' }]);
   });
 
+  it('no longer reports done transitions (completion is driven by the server unread flag)', () => {
+    // 遷移とunreadの両方が反応すると同じ完了で二重に通知が出るため、
+    // 完了はunreadに一本化した。
+    const prev = { s1: { status: 'running' } };
+    const next = { s1: { status: 'done' } };
+    expect(collectJobEvents(prev, next, titleOf)).toEqual([]);
+  });
+
+  it('ignores a job that was not running before', () => {
+    expect(collectJobEvents({}, { s1: { status: 'error' } }, titleOf)).toEqual([]);
+  });
+
   it('ignores a job that is still running', () => {
     expect(collectJobEvents({ s1: { status: 'running' } }, { s1: { status: 'running' } }, titleOf)).toEqual([]);
   });
+});
 
-  it('reports every session that finished in the same poll', () => {
-    const prev = { s1: { status: 'running' }, s2: { status: 'running' } };
-    const next = { s1: { status: 'done' }, s2: { status: 'error' } };
-    expect(collectJobEvents(prev, next, titleOf)).toEqual([
-      { id: 's1', kind: 'done', title: 'A' },
-      { id: 's2', kind: 'error', title: 'B' },
-    ]);
+describe('collectUnreadIds', () => {
+  it('returns ids whose job is flagged unread', () => {
+    const jobs = { s1: { status: 'done', unread: true }, s2: { status: 'done', unread: false } };
+    expect(collectUnreadIds(jobs, new Set())).toEqual(['s1']);
+  });
+
+  it('skips ids already announced in this mount', () => {
+    // 既読化POSTの往復中に次のポーリングが返っても二重に通知しないための抑止。
+    const jobs = { s1: { status: 'done', unread: true } };
+    expect(collectUnreadIds(jobs, new Set(['s1']))).toEqual([]);
+  });
+
+  it('returns an empty array when nothing is unread', () => {
+    expect(collectUnreadIds({ s1: { status: 'running' } }, new Set())).toEqual([]);
+  });
+
+  it('returns every unread id at once', () => {
+    const jobs = { s1: { status: 'done', unread: true }, s2: { status: 'done', unread: true } };
+    expect(collectUnreadIds(jobs, new Set())).toEqual(['s1', 's2']);
   });
 });
