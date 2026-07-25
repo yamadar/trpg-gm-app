@@ -603,6 +603,24 @@ describe('Home', () => {
     expect(seenSpy).not.toHaveBeenCalled();
   });
 
+  it('does not announce an unread completion for a session unknown to this client (a second device)', async () => {
+    // /novel-jobsはアカウント全体のセッションを返すが、sessionsはローカル(IndexedDB)
+    // 由来でこのクライアントが把握している範囲でしかない。別端末で小説化した直後に
+    // この端末を開くと、該当セッションがsessionsに無いままunread:trueだけが届く。
+    // ここで通知してしまうとタイトルが解決できず空欄のトーストが出るうえ、
+    // markNovelSeenでフラグを消費し、本来の端末が通知を受け取れなくなる(finding 1)。
+    const seenSpy = vi.spyOn(sessionSyncClient, 'markNovelSeen').mockResolvedValue({ ok: true });
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      other_device_session: { status: 'done', error: null, hasNovel: true, stale: false, unread: true },
+    });
+    const sessions = [{ id: 's1', title: 'このクライアントのセッション', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+
+    expect(await screen.findByText('小説化する')).toBeInTheDocument();
+    expect(screen.queryByText(/の小説ができました/)).not.toBeInTheDocument();
+    expect(seenSpy).not.toHaveBeenCalled();
+  });
+
   it('does not announce a stale unread flag on a job that is still running', async () => {
     // 既読化POSTが往路の最中に再生成が始まった場合、サーバーは古いunread:trueを
     // running中に返すことがある(finding 1)。running中は完了扱いしてはならない。
@@ -1041,30 +1059,41 @@ describe('collectJobEvents', () => {
 });
 
 describe('collectUnreadIds', () => {
+  const known = new Set(['s1', 's2']);
+
   it('returns ids whose job is flagged unread', () => {
     const jobs = { s1: { status: 'done', unread: true }, s2: { status: 'done', unread: false } };
-    expect(collectUnreadIds(jobs, new Set())).toEqual(['s1']);
+    expect(collectUnreadIds(jobs, new Set(), known)).toEqual(['s1']);
   });
 
   it('skips ids already announced in this mount', () => {
     // 既読化POSTの往復中に次のポーリングが返っても二重に通知しないための抑止。
     const jobs = { s1: { status: 'done', unread: true } };
-    expect(collectUnreadIds(jobs, new Set(['s1']))).toEqual([]);
+    expect(collectUnreadIds(jobs, new Set(['s1']), known)).toEqual([]);
   });
 
   it('returns an empty array when nothing is unread', () => {
-    expect(collectUnreadIds({ s1: { status: 'running' } }, new Set())).toEqual([]);
+    expect(collectUnreadIds({ s1: { status: 'running' } }, new Set(), known)).toEqual([]);
   });
 
   it('returns every unread id at once', () => {
     const jobs = { s1: { status: 'done', unread: true }, s2: { status: 'done', unread: true } };
-    expect(collectUnreadIds(jobs, new Set())).toEqual(['s1', 's2']);
+    expect(collectUnreadIds(jobs, new Set(), known)).toEqual(['s1', 's2']);
   });
 
   it('ignores a stale unread flag on a job that is still running', () => {
     // 既読化POSTが遅延している間に再生成が始まると、サーバーから
     // running中にunread:trueが返ることがある(finding 1)。doneでなければ無視する。
     const jobs = { s1: { status: 'running', unread: true } };
-    expect(collectUnreadIds(jobs, new Set())).toEqual([]);
+    expect(collectUnreadIds(jobs, new Set(), known)).toEqual([]);
+  });
+
+  it('skips an unread id that is not in the known-id set', () => {
+    // /novel-jobsはアカウント全体を返すが、sessions(IndexedDB由来)はこの端末が
+    // 把握している範囲でしかない。他端末で生成された未読をここで拾うと、
+    // タイトルが解決できず空欄の通知が出るうえ、既読化POSTがそのフラグを
+    // 消費してしまい、本来の端末が二度と通知を受け取れなくなる(finding 1)。
+    const jobs = { other: { status: 'done', unread: true } };
+    expect(collectUnreadIds(jobs, new Set(), known)).toEqual([]);
   });
 });

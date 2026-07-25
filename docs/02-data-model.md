@@ -134,6 +134,8 @@ sessions/{session_id}/
   novelJob.json                    小説化ジョブの状態(実装済み2026-07-25。
                                     { status: 'running'|'done'|'error',
                                       startedAt, updatedAt, error, bootId })
+  novelNotice.json                 完了通知の未読フラグ({ unread: boolean }。
+                                    実装済み2026-07-25)
 ```
 
 **紐付けルール**

@@ -34,27 +34,34 @@ export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey,
   router.get('/novel-jobs', asyncHandler(async (req, res) => {
     const keys = await dataStore.list(sessionListPrefix(req.userId));
     const out = {};
-    for (const key of keys) {
-      const id = key.slice(key.lastIndexOf('/') + 1);
-      const { status, error, elapsedMs } = await novelJobs.read(req.userId, id);
-      const text = await textStore.read(sessionNovelDocPath(req.userId, id));
-      const meta = await dataStore.get(sessionNovelMetaKey(req.userId, id));
-      const notice = await dataStore.get(sessionNovelNoticeKey(req.userId, id));
-      const session = await dataStore.get(key);
-      out[id] = {
-        status,
-        error,
-        // 実行中のみ数値。クライアントはこれを起点に秒を補間して表示する。
-        elapsedMs,
-        hasNovel: text !== null,
-        stale: isStale(meta, session),
-        // この変更以前に生成された小説のメタにはtruncatedが無い。完結扱いにする。
-        truncated: meta?.truncated === true,
-        // レコードが無い(この機能の投入以前に生成された小説)は既読扱いにする。
-        // ここを未読に倒すと、投入直後に過去の全小説が一斉に通知される。
-        unread: notice?.unread === true,
-      };
-    }
+    // このエンドポイントはジョブ実行中5秒おきにポーリングされる。セッションごとの
+    // 5回の読み取りは互いに独立しているため、直列awaitだとセッション数に比例して
+    // レイテンシが伸びる(GET /sessionsと同様にPromise.allでまとめる)。
+    await Promise.all(
+      keys.map(async (key) => {
+        const id = key.slice(key.lastIndexOf('/') + 1);
+        const [{ status, error, elapsedMs }, text, meta, notice, session] = await Promise.all([
+          novelJobs.read(req.userId, id),
+          textStore.read(sessionNovelDocPath(req.userId, id)),
+          dataStore.get(sessionNovelMetaKey(req.userId, id)),
+          dataStore.get(sessionNovelNoticeKey(req.userId, id)),
+          dataStore.get(key),
+        ]);
+        out[id] = {
+          status,
+          error,
+          // 実行中のみ数値。クライアントはこれを起点に秒を補間して表示する。
+          elapsedMs,
+          hasNovel: text !== null,
+          stale: isStale(meta, session),
+          // この変更以前に生成された小説のメタにはtruncatedが無い。完結扱いにする。
+          truncated: meta?.truncated === true,
+          // レコードが無い(この機能の投入以前に生成された小説)は既読扱いにする。
+          // ここを未読に倒すと、投入直後に過去の全小説が一斉に通知される。
+          unread: notice?.unread === true,
+        };
+      })
+    );
     res.json(out);
   }));
 

@@ -56,16 +56,26 @@ export function collectJobEvents(prev, next, titleOf) {
   return events;
 }
 
-// 未読の完了を取り出す。announcedは同一マウント内で通知済みのID。
+// 未読の完了を取り出す。announcedは同一マウント内で通知済みのID、knownIdsは
+// このクライアントが実際にカードとして表示できるセッションID(sessions prop由来)。
 // サーバーのフラグはマウントを跨いだ抑止、announcedはマウント内の抑止を担う。
-export function collectUnreadIds(jobs, announced) {
+export function collectUnreadIds(jobs, announced, knownIds) {
   // unreadだけで判定すると、既読化POSTがサーバーの新規start()によるクリアより後に
-  // 届いた場合に新しいunreadを消してしまう窓(サーバー側で別途対処)や、
-  // それ以前に発行された古いレコードが running/unread:true のまま残る窓を
-  // クライアント側でも塞ぐ必要がある。doneを必須にすることで、実行中のジョブに
-  // 対して完了通知を出してしまう事態を避ける。
+  // 届いた場合に新しいunreadを消してしまう窓が生じうる。start()が新規ジョブ開始時に
+  // unread:falseへ倒すことでこの窓は狭まるが、閉じ切るわけではない
+  // (生成には数分かかるため現実的なリスクは小さい)。それ以前に発行された古いレコードが
+  // running/unread:true のまま残る窓もあるため、クライアント側でも塞ぐ必要がある。
+  // doneを必須にすることで、実行中のジョブに対して完了通知を出してしまう事態を避ける。
+  //
+  // /novel-jobsはアカウント全体のセッションを返すが、sessions(IndexedDB由来)は
+  // このクライアントが把握している範囲でしかない。別端末で未読のまま残っている
+  // セッションをここで拾うと、タイトルが解決できず空欄のトーストが出るうえ、
+  // markNovelSeenでフラグを消費してしまい、本来カードを持つ端末が二度と気づけなく
+  // なる。knownIdsに無いIDはここでは扱わず、サーバー側のフラグをそのまま残す。
   return Object.entries(jobs)
-    .filter(([id, job]) => job.status === 'done' && job.unread === true && !announced.has(id))
+    .filter(
+      ([id, job]) => job.status === 'done' && job.unread === true && !announced.has(id) && knownIds.has(id)
+    )
     .map(([id]) => id);
 }
 
@@ -104,7 +114,8 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
     const next = typeof updater === 'function' ? updater(prev) : updater;
     const titleOf = (id) => sessions.find((s) => s.id === id)?.title ?? '';
     const errorEvents = collectJobEvents(prev, next, titleOf);
-    const unreadIds = collectUnreadIds(next, announcedRef.current);
+    const knownIds = new Set(sessions.map((s) => s.id));
+    const unreadIds = collectUnreadIds(next, announcedRef.current, knownIds);
 
     // サーバーが未読を降ろした=既読化が届いた。抑止はここで役目を終える
     // (再生成でもう一度未読になったときに通知できるようにする)。

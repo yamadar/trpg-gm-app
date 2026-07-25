@@ -66,10 +66,12 @@ const [finishedIds, setFinishedIds] = useState(() => new Set()); // 完了ブロ
 | 変更 | 内容 |
 |---|---|
 | `server/storage/paths.js` | `sessionNovelNoticeKey` を追加 |
-| `server/novelJobs.js` | 生成成功時に `{ unread: true }` を書く |
+| `server/novelJobs.js` | 生成成功時に `{ unread: true }` を書く。`start()` は新規ジョブ開始時に `{ unread: false }` を書く |
 | `server/routes/sessions.js` | `/novel-jobs` に `unread` を追加。`POST /sessions/:id/novel/seen` を新設 |
 
-`novelJobs.js` は、本文とメタを保存してジョブを `done` にする箇所で notice も書く。**失敗時は書かない**(エラーは別経路で伝わるため)。
+`novelJobs.js` は、本文とメタを保存してジョブを `done` にする箇所で notice に `{ unread: true }` を書く。**失敗時にはそこを通らないので `unread: true` にはならない**(エラーは別経路で伝わるため)。
+
+加えて `start()` は新しいジョブを記録する際、notice へ `{ unread: false }` を書いてから `running` を記録する。前回生成分の `unread: true` を残したままにすると、新しいジョブが `running` の間にその古いフラグが観測されてしまい(`status: 'running'` と `unread: true` が同時に成立しうる)、その状態に対して既読化POSTが届くと、これから成功する今回の生成の `unread: true` を上書き消去してしまう。開始時点で必ず降ろしておくことで、`running` 中に観測される `unread` は常に `false` になる。
 
 `truncated: true`(継続上限に達して末尾が欠けている場合)でも本文は保存され `status` は `done` になる。この場合も `unread: true` を立てる。ユーザーにとっては「小説ができた」という事実に変わりはなく、欠落は既存の警告行が伝える。
 
@@ -102,9 +104,10 @@ out[id] = {
 遅延は悪化しない。完了を知る手段はどのみちポーリングであり、`status: 'done'` を返すポーリングと `unread: true` を返すポーリングは同一のレスポンスだからである。
 
 ```
-[ポーリング応答] { status:'done', unread:true, ... }
+[ポーリング応答] { status, unread, ... }
         ↓
-announcedRef に無いIDだけを拾う
+status==='done' かつ unread===true かつ knownIdsに含まれ、
+かつ announcedRef に無いIDだけを拾う
         ↓
   ├→ finishedIds に追加(完了ブロック)
   ├→ toasts に追加
@@ -112,12 +115,22 @@ announcedRef に無いIDだけを拾う
   └→ markNovelSeen(id) をPOST(結果は待たない)
 ```
 
+`status==='done'` を必須にしているのは、`start()` が新規ジョブ開始時に notice を降ろしてもその窓を完全には閉じないため(3.3節参照)。`running` 中に古い `unread: true` が観測されても、doneでなければ完了として扱わない。
+
+#### 自分の端末に無いセッションは扱わない
+
+`GET /novel-jobs` はアカウント全体のセッションを返すが、`Home` の `sessions` prop はローカル(IndexedDB)由来であり、このクライアントが実際にカードを描画できる範囲でしかない。両者は一致するとは限らない(例: 別端末で小説化した直後にこの端末を開いた場合)。
+
+そこで `knownIds`(`sessions` から作る `Set`)に含まれないIDは、`unread: true` であっても通知対象から外す。含めてしまうと、タイトルが解決できず空欄のトースト(「「」の小説ができました」)が出るうえ、`markNovelSeen` がフラグを消費してしまい、本来カードを持つ端末が二度と通知を受け取れなくなる。**サーバーのフラグは触れず未読のまま残す**のが正しい。カードを持つ端末が次に Home を開いたときに、その端末が通知して既読化する。
+
 #### 二重通知の抑止
 
 `markNovelSeen` の往復中に次のポーリングが返ると、サーバーはまだ `unread: true` を返す。そこで**マウント中に通知済みのIDをメモリ上の `Set`(ref)** で押さえ、同じセッションを二度通知しない。
 
 - ref(state ではない): 通知の判定は描画ではなく副作用の中で行うため、再描画を誘発する必要がない
 - サーバーのフラグはマウントを跨いだ抑止、`announcedRef` はマウント内の抑止。二段で担保する
+
+この抑止は永続ではなく期限付きである。ポーリング応答を見て、サーバーがそのIDに対してもう `unread: true` を返さなくなった(＝既読化が反映された)ら `announcedRef` から削除する。削除しないままだと、同一マウント中に再生成して再び `unread: true` が立っても、`announcedRef` に残った古い記録のせいで二度と通知できなくなる。「サーバーが降ろした=役目を終えた」を合図に解除することで、マウントを跨がない再生成でも通知できるようにしている。
 
 #### POSTが失敗したとき
 
@@ -140,7 +153,7 @@ announcedRef に無いIDだけを拾う
 | ファイル | 変更 |
 |---|---|
 | `server/storage/paths.js` | `sessionNovelNoticeKey` を追加 |
-| `server/novelJobs.js` | 生成成功時に notice を書く |
+| `server/novelJobs.js` | 生成成功時に notice を書く。`start()` が新規ジョブ開始時に notice を降ろす |
 | `server/routes/sessions.js` | `/novel-jobs` が `unread` を返す。`POST /sessions/:id/novel/seen` を追加 |
 | `src/api/sessionSyncClient.js` | `markNovelSeen(sessionId)` を追加 |
 | `src/screens/Home.jsx` | `unread` 駆動の通知、`announcedRef`、`collectJobEvents` から done 分岐を削除 |
@@ -150,7 +163,8 @@ announcedRef に無いIDだけを拾う
 ### 5.1 `server/novelJobs.test.js`
 
 - 生成成功時に notice に `{ unread: true }` が書かれる
-- 生成失敗時に notice が書かれない
+- **失敗時に notice が `unread: true` にはならない**(`start()` が開始時点で必ず `{ unread: false }` を書いており、生成失敗はその状態を上書きしない。テストは失敗後の notice が `{ unread: false }` のままであることを確認する)
+- 新しいジョブの `start()` 時点で、前回分の `unread: true` が `{ unread: false }` に降ろされる
 - `truncated` で完了した場合も `unread: true` が書かれる
 
 ### 5.2 `server/routes/sessions.test.js`
@@ -170,6 +184,7 @@ announcedRef に無いIDだけを拾う
 - `running → error` のトーストは従来どおり出る
 - 完了ブロックは DL で消える(既存テストの維持)
 - `collectJobEvents` が `running → done` でイベントを返さなくなる(error のみを返す)
+- `collectUnreadIds` は `sessions` に無いID(＝この端末が把握していないセッション)の `unread: true` を無視する。`/novel-jobs` にそうした未知セッションが含まれても、トーストは出ず `markNovelSeen` も呼ばれない(finding 1の回帰防止)
 
 ## 6. リスク
 
