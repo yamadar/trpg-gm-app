@@ -35,8 +35,37 @@ describe('RulesetTab', () => {
         desc: '独自ルール',
         hint: '',
         growthUnit: 'CP',
+        formula: 'simple',
       })
     );
+  });
+
+  it('sends the selected formula when creating a ruleset', async () => {
+    vi.spyOn(rulesetLibraryClient, 'listRulesets').mockResolvedValue([]);
+    const putSpy = vi.spyOn(rulesetLibraryClient, 'putRuleset').mockResolvedValue({});
+    render(<RulesetTab />);
+    fireEvent.click(screen.getByText('+ 新規Ruleset'));
+    fireEvent.change(screen.getByPlaceholderText('例: homebrew'), { target: { value: 'homebrew' } });
+    fireEvent.change(screen.getByPlaceholderText('ラベル'), { target: { value: '自作' } });
+    fireEvent.change(screen.getByLabelText('判定式(formula)'), { target: { value: 'coc7e' } });
+    fireEvent.click(screen.getByText('作成する'));
+    await waitFor(() => expect(putSpy).toHaveBeenCalled());
+    expect(putSpy.mock.calls[0][1].formula).toBe('coc7e');
+  });
+
+  it('loads and saves the formula when editing', async () => {
+    vi.spyOn(rulesetLibraryClient, 'listRulesets').mockResolvedValue([{ id: 'r1', label: 'L', desc: 'd' }]);
+    vi.spyOn(rulesetLibraryClient, 'getRuleset').mockResolvedValue({
+      id: 'r1', label: 'L', desc: 'd', hint: '', growthUnit: '', formula: 'gurps',
+    });
+    const putSpy = vi.spyOn(rulesetLibraryClient, 'putRuleset').mockResolvedValue({});
+    render(<RulesetTab />);
+    await waitFor(() => expect(screen.getByText('L')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('L'));
+    await waitFor(() => expect(screen.getByLabelText('判定式(formula)')).toHaveValue('gurps'));
+    fireEvent.click(screen.getByText('保存する'));
+    await waitFor(() => expect(putSpy).toHaveBeenCalled());
+    expect(putSpy.mock.calls[0][1].formula).toBe('gurps');
   });
 
   it('deletes a ruleset after confirmation', async () => {

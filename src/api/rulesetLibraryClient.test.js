@@ -34,6 +34,13 @@ describe('putRuleset', () => {
       })
     );
   });
+
+  it('putRuleset sends the formula in the body', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    await putRuleset('r1', { label: 'L', desc: '', hint: '', growthUnit: '', formula: 'dnd5e' });
+    const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(body.formula).toBe('dnd5e');
+  });
 });
 
 describe('listRulesets', () => {

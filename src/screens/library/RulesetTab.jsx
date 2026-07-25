@@ -6,6 +6,13 @@ import Field from '../../components/ui/Field.jsx';
 import ConfirmModal from '../../components/library/ConfirmModal.jsx';
 import { getRuleset, putRuleset, listRulesets, deleteRuleset } from '../../api/rulesetLibraryClient.js';
 
+const FORMULA_OPTIONS = [
+  { value: 'simple', label: 'シンプル(d100成功率)' },
+  { value: 'coc7e', label: 'CoC7e風(ハード/イクストリーム+SAN)' },
+  { value: 'dnd5e', label: 'D&D5e風(固定5%会心/致命)' },
+  { value: 'gurps', label: 'GURPS風(マージン付き)' },
+];
+
 export default function RulesetTab() {
   const [rulesets, setRulesets] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -14,12 +21,14 @@ export default function RulesetTab() {
   const [newDesc, setNewDesc] = useState('');
   const [newHint, setNewHint] = useState('');
   const [newGrowthUnit, setNewGrowthUnit] = useState('');
+  const [newFormula, setNewFormula] = useState('simple');
 
   const [selectedId, setSelectedId] = useState(null);
   const [editLabel, setEditLabel] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editHint, setEditHint] = useState('');
   const [editGrowthUnit, setEditGrowthUnit] = useState('');
+  const [editFormula, setEditFormula] = useState('simple');
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -49,6 +58,7 @@ export default function RulesetTab() {
         setEditDesc(r.desc);
         setEditHint(r.hint || '');
         setEditGrowthUnit(r.growthUnit || '');
+        setEditFormula(r.formula || 'simple');
       } catch (e) {
         if (!cancelled) setError('取得に失敗した: ' + e.message);
       }
@@ -63,12 +73,19 @@ export default function RulesetTab() {
     setBusy(true);
     setError('');
     try {
-      await putRuleset(newId, { label: newLabel, desc: newDesc, hint: newHint, growthUnit: newGrowthUnit });
+      await putRuleset(newId, {
+        label: newLabel,
+        desc: newDesc,
+        hint: newHint,
+        growthUnit: newGrowthUnit,
+        formula: newFormula,
+      });
       setNewId('');
       setNewLabel('');
       setNewDesc('');
       setNewHint('');
       setNewGrowthUnit('');
+      setNewFormula('simple');
       setCreating(false);
       await refresh();
     } catch (e) {
@@ -82,7 +99,13 @@ export default function RulesetTab() {
     setBusy(true);
     setError('');
     try {
-      await putRuleset(selectedId, { label: editLabel, desc: editDesc, hint: editHint, growthUnit: editGrowthUnit });
+      await putRuleset(selectedId, {
+        label: editLabel,
+        desc: editDesc,
+        hint: editHint,
+        growthUnit: editGrowthUnit,
+        formula: editFormula,
+      });
       await refresh();
     } catch (e) {
       setError('保存に失敗した: ' + e.message);
@@ -170,6 +193,20 @@ export default function RulesetTab() {
               style={inputStyle}
             />
           </Field>
+          <Field label="判定式(formula)" hint="判定式と成功度の出し方。CoC7e風はSAN(正気度)も有効になる。">
+            <select
+              aria-label="判定式(formula)"
+              value={newFormula}
+              onChange={(e) => setNewFormula(e.target.value)}
+              style={inputStyle}
+            >
+              {FORMULA_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Button variant="brass" onClick={handleCreate} disabled={busy || !newId || !newLabel}>
             {busy ? '作成中…' : '作成する'}
           </Button>
@@ -194,6 +231,20 @@ export default function RulesetTab() {
           </Field>
           <Field label="成長の呼び名(growthUnit)" hint="任意。未入力なら「経験値」として扱われる。">
             <input value={editGrowthUnit} onChange={(e) => setEditGrowthUnit(e.target.value)} style={inputStyle} />
+          </Field>
+          <Field label="判定式(formula)" hint="判定式と成功度の出し方。CoC7e風はSAN(正気度)も有効になる。">
+            <select
+              aria-label="判定式(formula)"
+              value={editFormula}
+              onChange={(e) => setEditFormula(e.target.value)}
+              style={inputStyle}
+            >
+              {FORMULA_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </Field>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="brass" onClick={handleSave} disabled={busy}>
