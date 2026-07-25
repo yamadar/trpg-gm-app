@@ -50,7 +50,7 @@ export default function Tabs({ tabs, value, onChange, label }) {
             role="tab"
             id={`tab-${t.key}`}
             aria-selected={selected}
-            aria-controls={`tabpanel-${t.key}`}
+            aria-controls={selected ? `tabpanel-${t.key}` : undefined}
             // 選択中のタブだけが Tab キーの停止点になる。
             tabIndex={selected ? 0 : -1}
             ref={(el) => {
