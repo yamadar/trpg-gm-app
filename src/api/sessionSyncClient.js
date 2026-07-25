@@ -20,6 +20,11 @@ export async function getIllustratedNovel(id) {
   return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel/illustrated`, { method: 'GET' });
 }
 
+// 完了通知を受け取ったことをサーバーに記録する。以降その小説は未読でなくなる。
+export async function markNovelSeen(id) {
+  return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel/seen`, { method: 'POST' });
+}
+
 export async function listServerSessions() {
   return apiFetch('/api/sessions');
 }

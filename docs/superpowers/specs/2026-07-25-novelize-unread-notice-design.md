@@ -87,7 +87,9 @@ out[id] = {
 };
 ```
 
-`POST /sessions/:id/novel/seen` は `{ unread: false }` を書き、`204` を返す。セッションが存在しない場合は `404`。冪等であり、既に false でも成功する。
+`POST /sessions/:id/novel/seen` は `{ unread: false }` を書き、`200 { ok: true }` を返す。セッションが存在しない場合は `404`。冪等であり、既に false でも成功する。
+
+204(空ボディ)にしないのは、クライアントの `apiFetch` が成功時に無条件で `res.json()` を呼ぶため。既存の204エンドポイントは生 `fetch` の別ヘルパーから呼ばれているが、`sessionSyncClient.js` は全関数が `apiFetch` を使っており、この1本のために2つ目のパターンを持ち込む理由がない。
 
 再生成すると成功時に再び `unread: true` が立つため、「新しい小説ができた」も同じ経路で通知される。
 
@@ -155,7 +157,7 @@ announcedRef に無いIDだけを拾う
 
 - `GET /novel-jobs` が生成直後のセッションに `unread: true` を返す
 - **notice レコードが無い小説は `unread: false` になる**(後方互換の回帰防止)
-- `POST /sessions/:id/novel/seen` が 204 を返し、以降 `/novel-jobs` の `unread` が false になる
+- `POST /sessions/:id/novel/seen` が `200 { ok: true }` を返し、以降 `/novel-jobs` の `unread` が false になる
 - 存在しないセッションへの `POST .../seen` が 404 を返す
 - 既に既読のセッションへの `POST .../seen` が成功する(冪等)
 
