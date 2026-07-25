@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { putSessionToServer, novelizeSession, getNovel, getIllustratedNovel } from './sessionSyncClient.js';
+import { putSessionToServer, novelizeSession, getNovel, getIllustratedNovel, listNovelJobs } from './sessionSyncClient.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -74,5 +74,26 @@ describe('URL encoding', () => {
     vi.stubGlobal('fetch', fetchMock);
     await novelizeSession('s/1');
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s%2F1/novelize', expect.objectContaining({ method: 'POST' }));
+  });
+});
+
+describe('listNovelJobs', () => {
+  it('GETs the novel job map', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ s1: { status: 'running', error: null, hasNovel: false, stale: false } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const jobs = await listNovelJobs();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/novel-jobs', undefined);
+    expect(jobs.s1.status).toBe('running');
+  });
+
+  it('throws with status and truncated body on a non-ok response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(listNovelJobs()).rejects.toThrow('API error 500: boom');
   });
 });
