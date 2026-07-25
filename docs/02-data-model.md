@@ -53,12 +53,14 @@ Markdown推奨(逐語厳守したい記述と、GM裁量に委ねる記述を明
     {"role": "gm", "text": "..."}
   ],
   "turn_count": 12,
-  "xp": 30
+  "xp": 30,
+  "resources": {"san": {"value": 55, "max": 99}}
 }
 ```
 - `recent_log`は文字列配列ではなく`{role, text}`オブジェクトの配列。直近12件を超えると先頭から捨てる(`Play.jsx`)。閾値超過時の要約圧縮トリガーは未実装。
 - `xp`は`ruleset.growthUnit`(例:「経験値」「CP」)の単位で、GMが`state_update.xp_gained`として提示した値を毎ターン加算していく(`src/api/prompts.js`のturn出力形式、`Play.jsx`の加算処理)。
-- `current_region`・`tension_level`・`revealed_facts`はコードに存在しない。将来案として残すのみで、現状のstateキーではない。
+- `resources`は**実装済み(2026-07-25)**。解決したRulesetアダプタ(`src/engine/rulesetAdapters.js`)の`resourceDefs`から`{ [key]: { value, max } }`形状でセッション作成時に初期化される(coc7eなら`{ san: { value: 60, max: 99 } }`)。`resourceDefs`が空(simple/dnd5e/gurps)なら`resources`キー自体を持たない。既存セッション(`resources`未定義)はプロンプト・UIともに無害に無視される(3.5.1節・07-risks-and-roadmap.md 10.1節参照)。
+- `current_region`・`revealed_facts`はコードに存在しない。将来案として残すのみで、現状のstateキーではない。`tension_level`は実装済み(05-ui-ux.md 13.2節参照)。
 
 ### 3.4 自由記述→構造化変換パイプライン
 実装済み(`src/api/characterSheetCache.js`・`src/api/characterSheetParse.js`)。現状はPCのgoal/bondsのみを対象とする。NPCの構造化パース、statsの抽出は未実装。
@@ -98,6 +100,8 @@ Session(プレイ単位) = World + Scenario + Ruleset(埋め込みスナップ�
 
 **SP2(管理タブ+Homeグルーピング)実装済み(2026-07-25)**。素材ライブラリにCampaignタブ(`src/screens/library/CampaignTab.jsx`)が加わり、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC(`carriedPc`)閲覧・改名・削除ができる(`DELETE`は`campaignMetaKey`のみ削除する冪等操作で、メンバーセッションの`campaignId`は不変。dangling`campaignId`はHomeで非グループ表示にフォールバックする)。新規作成UIはタブに無く、Campaignはホームの「次の章へ」からのみ生成される。ホーム画面は`campaignId`付きセッションを、登場`worldId`ごとに`listCampaigns`でタイトル解決してキャンペーン見出し(全N章)配下にグループ表示する。**章からのセッション再開・クロスWorld・構造化インベントリ・NPC記憶連携・次章シナリオ自動提案はSP3以降として未実装**。
 
+**SAN(正気度)の章またぎの扱いは意図的な仕様**: `carriedPc`が持ち越すのはPCシート本文(`raw`)とxpのみで、`state.resources`(SAN等)は含まれない。そのため次章のSetupではRulesetアダプタの`resourceDefs`から通常のセッション開始と同じ初期値(coc7eなら60/99)でSANが再初期化される。前章終盤で正気度が減っていても引き継がれない設計であり、不具合ではない(POWからのSAN算出・SAN回復ルールと同様、YAGNIとして対象外。07-risks-and-roadmap.md 10.1節参照)。
+
 **フォルダ構造(`server/storage/paths.js`が正)**
 ```
 worlds/{world_id}.json               Worldメタ(id/title/updatedAt)
@@ -115,7 +119,7 @@ worlds/{world_id}/
     scenario.md                    本文
   campaigns/{campaign_id}.json      Campaignメタ({id,worldId,title,carriedPc:{raw,xp},chapters[],createdAt,updatedAt})
 
-rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。{id,label,desc,hint,growthUnit}
+rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。{id,label,desc,hint,growthUnit,formula}
 
 sessions/{session_id}.json          セッション本体(world/scenario/ruleset/pc/state/logを1ファイルにフラット保存)
 sessions/{session_id}/
@@ -135,11 +139,12 @@ sessions/{session_id}/
   "id": "coc7e",
   "label": "CoC7e風",
   "desc": "クトゥルフ神話TRPG風。恐怖・異常事態でSAN値チェックを演出。",
-  "hint": "恐怖・異常事態の場面では適宜roll_checkでSAN値チェックを表現し、成功してもSAN減少の描写を加えること。",
-  "growthUnit": "経験値"
+  "hint": "恐怖・異常事態の場面では適宜roll_checkでSAN値チェックを表現し、正気度の変化は判定結果に応じて描写すること。",
+  "growthUnit": "経験値",
+  "formula": "coc7e"
 }
 ```
 - `growthUnit`は成長ポイントの呼び名(「経験値」「CP」等)。GMプロンプトのxp_gained指示とPlay画面の成長ポイント表示の両方に使われる。
-- 判定式(成功率%)自体はどのRulesetでも共通で、`hint`は演出の色付けにのみ使われる(3.6節参照)。ルールごとに判定式やskill値を切り替える「アダプタ方式」は未実装(07章参照)。
+- `formula`は**実装済み(2026-07-25)**。判定式アダプタ(`src/engine/rulesetAdapters.js`の`getAdapter`)を選択するフィールドで、`simple`/`coc7e`/`dnd5e`/`gurps`の4値を持つ。ビルトインは上記4値がそのまま`id`と一致する形で設定済み。カスタムRulesetもRulesetタブのドロップダウンで選択でき(既定`simple`)、未知の値はサーバー保存時に`simple`へ丸められる。未指定・未知の`formula`は`getAdapter`が`simple`にフォールバックする。判定式そのものの違い(degree語彙・SANの有無)は03-gm-logic.md 5章・07-risks-and-roadmap.md 10.1節を参照。`hint`は判定式の説明ではなく演出の色付けとして残る(3.6節参照)。
 
 `session`は`rulesetId`(選択したRulesetのid)と`ruleset`(選択時点の`{id,label,desc,hint,growthUnit}`スナップショット)を併せ持つ。`buildSystemPrompt`(`src/api/prompts.js`)は`session.ruleset`があればそれを優先し、無ければ`rulesetId`からビルトインRulesetを検索する。これは、後からビルトインRulesetの定義を変更してもプレイ中セッションの演出が変わらないようにするため。

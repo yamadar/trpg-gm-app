@@ -13,7 +13,7 @@ AI-GMがシナリオに沿って進行、プレイヤーはPCの行動・選択�
 
 - 1人プレイヤー、1AI-GM
 - テキストベース入出力(自由記述主体、GM側からの二択/Yes-No問いかけを補助的に使用)
-- ダイス判定あり(全Ruleset共通のd100成功率%判定。Ruleset差は演出hintのみで、判定式を切り替えるアダプタ方式は未実装・将来案)
+- ダイス判定あり(判定式アダプタ(`getAdapter`)により`formula`ごとにsimple/coc7e/dnd5e/gurpsの判定式を切り替え。実装済み。CoC7e風はSAN(正気度)副作用も持つ。詳細は03-gm-logic.md・07-risks-and-roadmap.md 10.1節参照)
 - シナリオ既存読み込み / AI自動生成の両対応
 - Vite+Reactのフロントエンドと軽量プロキシサーバー(Express)から成るWebアプリとして動作
 - 実装済み: 素材ライブラリ(World/Character/Scenario/Rulesetの保存・再利用)、成長ポイント(growthUnit/xp)、セッションログの小説化書き出し
