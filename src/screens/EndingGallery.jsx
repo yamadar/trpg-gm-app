@@ -8,12 +8,7 @@ import ConfirmModal from '../components/library/ConfirmModal.jsx';
 import { listEndings, renameEnding, deleteEnding } from '../api/endingClient.js';
 import { evaluateAchievements } from '../engine/achievements.js';
 import { useAuth } from '../auth/AuthContext.jsx';
-
-function formatDate(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { formatDate } from '../utils/formatDate.js';
 
 export default function EndingGallery({ onClose }) {
   const { user } = useAuth();
