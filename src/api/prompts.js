@@ -1,5 +1,6 @@
-import { RULESETS } from '../data/rulesets.js';
-import { getAdapter } from '../engine/rulesetAdapters.js';
+import { resolveRuleset, resolveAdapter } from '../engine/resolveRuleset.js';
+
+export { resolveAdapter };
 
 export const ROLL_TOOL = {
   name: 'roll_check',
@@ -99,14 +100,6 @@ export const TURN_OUTPUT_FORMAT = {
     },
   },
 };
-
-function resolveRuleset(session) {
-  return session.ruleset || RULESETS.find((r) => r.id === session.rulesetId) || RULESETS[0];
-}
-
-export function resolveAdapter(session) {
-  return getAdapter(resolveRuleset(session).formula);
-}
 
 // セッション中は変わらない静的な指示。cache_controlを付けてプロンプトキャッシュを効かせる。
 // 毎ターン変わる状態(シーン・フラグ・要約・ログ)はbuildTurnUserContent側に置く。
