@@ -505,8 +505,11 @@ export function createNovelJobRunner({
   }
 
   async function run(userId, sessionId, session, pov, startedAt) {
-    const { transcript, imageIds } = buildTranscriptWithMarkers(session.log);
     try {
+      // ログの破損などによる同期的な例外もここでcatchし、error記録に倒す。
+      // tryの外に置くとrun()のPromiseがrejectし、start()側で誰も待たないため
+      // プロセス全体を落とす未処理rejectionになってしまう。
+      const { transcript, imageIds } = buildTranscriptWithMarkers(session.log);
       const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -542,7 +545,14 @@ export function createNovelJobRunner({
       });
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
     } catch (e) {
-      await write(userId, sessionId, { status: 'error', startedAt, updatedAt: now(), error: e.message, bootId });
+      try {
+        await write(userId, sessionId, { status: 'error', startedAt, updatedAt: now(), error: e.message, bootId });
+      } catch (writeErr) {
+        // ここでの書き込み失敗(ディスクI/Oエラー等)を握りつぶすとrun()のPromiseが
+        // rejectしてしまい、start()側で誰も待っていないため未処理rejectionでプロセスが
+        // 落ちる。記録は諦めるが、ログには残す。
+        console.error('novelJobs: failed to persist error record', writeErr);
+      }
     }
   }
 

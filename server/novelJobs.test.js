@@ -209,6 +209,18 @@ describe('createNovelJobRunner', () => {
     await runner.pending.get('u1/s1');
     expect(runner.pending.has('u1/s1')).toBe(false);
   });
+
+  it('never rejects the pending promise even when a malformed log entry throws synchronously', async () => {
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl: okFetch(), bootId: 'b1' });
+    const brokenSession = { ...SESSION, log: [null] };
+
+    await runner.start('u1', 's1', brokenSession, 'third');
+    // run()が返すPromiseがrejectしないことがこのテストの本旨。rejectすればawaitでテスト自体が失敗する。
+    await expect(runner.pending.get('u1/s1')).resolves.toBeUndefined();
+
+    const out = await runner.read('u1', 's1');
+    expect(out.status).toBe('error');
+  });
 });
 
 describe('makeBootId', () => {
