@@ -69,6 +69,8 @@ export function createNovelJobRunner({
       const { text, truncated } = await generateNovel({
         transcript,
         hasImages: imageIds.length > 0,
+        // 旧セッションは pc.name を持たない。空文字で渡し、呼称の決定はモデルに委ねる。
+        pcName: session.pc?.name || '',
         pov,
         apiKey,
         fetchImpl,

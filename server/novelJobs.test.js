@@ -129,6 +129,28 @@ describe('createNovelJobRunner', () => {
     expect(meta.imageIds).toEqual([]);
   });
 
+  it('passes the session PC name into the generated system prompt', async () => {
+    const fetchImpl = okFetch();
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+    await runner.start('u1', 's1', { ...SESSION, pc: { name: 'カイ', raw: 'PC名: カイ' } }, 'third');
+    await runner.pending.get('u1/s1');
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.system).toContain('主人公の名前は「カイ」である');
+  });
+
+  // pc.name を持たない既存セッションでも落ちず、呼称をモデルに決めさせる側へ倒れる。
+  it('falls back to the nameless prompt for sessions that predate pc.name', async () => {
+    const fetchImpl = okFetch();
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+    await runner.start('u1', 's1', SESSION, 'third');
+    await runner.pending.get('u1/s1');
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.system).toContain('一つだけ定め');
+    expect(await runner.read('u1', 's1')).toMatchObject({ status: 'done' });
+  });
+
   it('records an error when the upstream call fails', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });

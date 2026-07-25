@@ -15,6 +15,7 @@ import Button from '../components/ui/Button.jsx';
 import Field from '../components/ui/Field.jsx';
 import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
+import { extractPcName, composePcRaw } from '../utils/pcName.js';
 
 export default function Setup({ onStart, onCancel, campaignContext = null, starterContext = null }) {
   // starterContext はスターターパックを一括インポートした直後の状態。World/Scenario/Ruleset を
@@ -56,6 +57,8 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
   // PC
   const [pcMode, setPcMode] = useState(starterContext ? 'existing' : 'new'); // existing | new
   const [pcRaw, setPcRaw] = useState(campaignContext ? campaignContext.pcRaw || '' : '');
+  // キャンペーンの章をまたぐときは引き継いだシートから拾い、打ち直させない。
+  const [pcName, setPcName] = useState(campaignContext ? extractPcName(campaignContext.pcRaw) : '');
   const [existingPCs, setExistingPCs] = useState([]);
   const [selectedPC, setSelectedPC] = useState(null); // { name, raw } | null
 
@@ -73,6 +76,9 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
   const allRulesets = useMemo(() => [...RULESETS, ...customRulesets], [customRulesets]);
 
   const steps = ['世界観', 'シナリオ', 'ルール', 'PC', '確認'];
+  // 小説化したときにPCが他の登場人物と「彼」で衝突しないよう、新規作成のPCには
+  // 名前を必須にする(既存PCは解析でシートから名前を取れるので塞がない)。
+  const pcNameMissing = step === 3 && pcMode === 'new' && !pcName.trim();
 
   useEffect(() => {
     listWorlds()
@@ -222,6 +228,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
       }
 
       let pc;
+      let pcResolvedName = '';
       let pcGoal;
       let pcBonds;
       let pcLibraryName = null;
@@ -229,13 +236,21 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
       if (pcMode === 'existing' && selectedPC) {
         pc = selectedPC.raw;
         pcLibraryName = selectedPC.name;
+        // シート本文の「PC名:」行から先に名前を取っておく。AI解析(下のgetOrParseCharacter)は
+        // ネットワーク越しでオフライン・429・キー無しだと失敗しうるので、それだけに頼らない。
+        pcResolvedName = extractPcName(selectedPC.raw);
       } else {
-        pc = pcRaw || '(自由記述なし)';
+        // 入力されたPC名をシート本文にも残す。ライブラリ原本とGMプロンプトの
+        // 「# PC設定」節の両方に名前が載り、プレイ中の地の文も名前で呼べるようになる。
+        pc = composePcRaw(pcName, pcRaw) || '(自由記述なし)';
+        pcResolvedName = extractPcName(pc);
+        // 保存の条件は従来どおり「自由記述が書かれていること」。名前だけのPCを
+        // ライブラリに増やさないため、ここは広げない。
         if (resolvedWorldId && pcRaw) {
           const pcId = makeId('pc');
           let pcSaved = false;
           await trySaveToLibrary(async () => {
-            await putCharacter(resolvedWorldId, 'pc', pcId, { raw: pcRaw, revealed: undefined });
+            await putCharacter(resolvedWorldId, 'pc', pcId, { raw: pc, revealed: undefined });
             pcSaved = true;
           });
           if (pcSaved) {
@@ -249,8 +264,11 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
           const parsed = await getOrParseCharacter(resolvedWorldId, 'pc', pcLibraryName);
           pcGoal = parsed.goal;
           pcBonds = parsed.bonds;
+          // 新規PC経路ではユーザーが今入力した名前が確定済みなので上書きしない。
+          // 既存PC経路はシート本文の抽出結果をAI解析の結果で補強・上書きしてよい。
+          if (pcMode === 'existing' && parsed.name) pcResolvedName = parsed.name;
         } catch (e) {
-          console.error('goal/bonds parse failed', e);
+          console.error('name/goal/bonds parse failed', e);
         }
       }
 
@@ -283,7 +301,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
           growthUnit: resolvedRuleset.growthUnit || '経験値',
           formula: resolvedRuleset.formula,
         },
-        pc: { raw: pc, goal: pcGoal, bonds: pcBonds },
+        pc: { name: pcResolvedName, raw: pc, goal: pcGoal, bonds: pcBonds },
         state: {
           current_scene: '冒頭',
           flags: {},
@@ -583,18 +601,31 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
             )}
 
             {pcMode === 'new' && (
-              <Field
-                label="PC設定"
-                hint="自由記述でよい。goal(目標)・bonds(因縁・関係)を書いておくと、GMがそれを絡めた展開を作りやすくなる。"
-              >
-                <textarea
-                  value={pcRaw}
-                  onChange={(e) => setPcRaw(e.target.value)}
-                  rows={8}
-                  placeholder={'PC名: ...\n能力値・スキル: ...\ngoal: ...\nbonds: ...'}
-                  style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
-                />
-              </Field>
+              <>
+                <Field
+                  label="PC名"
+                  hint="物語の地の文で主人公を指す名前。小説にしたときに他の登場人物と取り違えられないために必要。"
+                >
+                  <input
+                    value={pcName}
+                    onChange={(e) => setPcName(e.target.value)}
+                    placeholder="例: カイ・アーレンス"
+                    style={inputStyle}
+                  />
+                </Field>
+                <Field
+                  label="PC設定"
+                  hint="自由記述でよい。goal(目標)・bonds(因縁・関係)を書いておくと、GMがそれを絡めた展開を作りやすくなる。"
+                >
+                  <textarea
+                    value={pcRaw}
+                    onChange={(e) => setPcRaw(e.target.value)}
+                    rows={8}
+                    placeholder={'能力値・スキル: ...\ngoal: ...\nbonds: ...'}
+                    style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+                  />
+                </Field>
+              </>
             )}
           </>
         )}
@@ -626,7 +657,7 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
           {step === 0 ? 'やめる' : '戻る'}
         </Button>
         {step < steps.length - 1 ? (
-          <Button variant="primary" onClick={() => setStep(step + 1)}>
+          <Button variant="primary" onClick={() => setStep(step + 1)} disabled={pcNameMissing}>
             次へ
           </Button>
         ) : (

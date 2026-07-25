@@ -15,6 +15,8 @@ bonds: (推奨) 他PC/NPC/世界との因縁・関係
 ```
 原本は自由記述のまま保持(人間が読み書きしやすい形を優先)。構造化は3.4節のパイプラインで別途生成する。
 
+`PC名`はSetupの新規作成モードで必須入力になっており(2026-07-25)、入力値は原本の先頭行へ `PC名: ○○` として合成されると同時に、セッションへ `session.pc.name` としても持たれる。小説化がPCと他の登場人物を「彼」で取り違えないために使う(`server/novelGeneration.js`)。既存PCを選んだ場合は3.4節のパイプラインが抽出した`name`が入る。`pc.name`を持たない旧セッションは空文字として扱われ、小説化側がモデルに呼称を一つ決めさせる。
+
 ### 3.1.1 NPCシート
 PCとは別フォルダで管理する(`worlds/{world_id}/pc/` vs `worlds/{world_id}/npc/`)。
 理由: NPC情報は**可視性ルールがPCと異なる**。goal/bondsを含むNPC設定は基本GM専用であり、物語中で開示されるまでプレイヤー出力に漏らしてはいけない。
@@ -64,7 +66,7 @@ Markdown推奨(逐語厳守したい記述と、GM裁量に委ねる記述を明
 - `state.ending_reached?: boolean`は**実装済み(2026-07-25)**。GMが毎ターン`state_update.ending_reached`で物語が結末に到達したかを申告する一時的なフラグ(`src/api/prompts.js`のスキーマ、`src/api/turnResult.js`の正規化。既定false。03-gm-logic.md参照)。trueかつ`session.endedAt`未設定のときPlay画面が確定案内カードを出し(05-ui-ux.md参照)、「まだ続ける」を押すとfalseに戻す(次ターンでAIが再度trueを返せば案内は再度出る)。旧セッションはこのキーを持たないため無害にfalse扱いになる。
 
 ### 3.4 自由記述→構造化変換パイプライン
-実装済み(`src/api/characterSheetCache.js`・`src/api/characterSheetParse.js`)。現状はPCのgoal/bondsのみを対象とする。NPCの構造化パース、statsの抽出は未実装。
+実装済み(`src/api/characterSheetCache.js`・`src/api/characterSheetParse.js`)。現状はPCのname/goal/bondsのみを対象とする。NPCの構造化パース、statsの抽出は未実装。抽出スキーマを変更したときは`SHEET_PARSE_VERSION`(`src/api/characterSheetParse.js`)を上げること。この値は`parsedHash`の計算に混ざっており、原本が変わっていない既存キャッシュを一度だけ作り直させる。
 
 **フロー(`getOrParseCharacter`)**
 1. Character取得時、原本(`raw`)のハッシュ値を計算
