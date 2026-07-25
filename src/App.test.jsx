@@ -164,7 +164,9 @@ describe('App', () => {
     // 取り込みが実際に効いていれば、WizardはPCステップ(4段目)からプリフィルされて開く。
     // ここを確認しないと、取り込みが裏で失敗してstarterContextが空のままでも
     // 後段の「引き継がれない」検証が意味もなく成立してしまう。
-    expect(await screen.findByText('4. PC')).toBeInTheDocument();
+    // ステップ表示バーは常に5段すべてのラベルを描くので「4. PC」では現在地を示せない。
+    // PCステップでしか描かれないField labelを見る。
+    expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
     // ウィザードを「やめる」で離脱する(やめるボタンは0段目にしか無いため、まず戻る)。
     fireEvent.click(screen.getByText('戻る'));
@@ -179,8 +181,8 @@ describe('App', () => {
     fireEvent.click(newButton2);
 
     // クリーンな0段目で開き、Worldも未選択(空欄のまま進める)のままであること。
-    expect(await screen.findByText('1. 世界観')).toBeInTheDocument();
-    expect(screen.getByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
+    // この文言はworldMode==='skip'のときにしか出ず、starterContextが残っていれば'existing'になる。
+    expect(await screen.findByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });

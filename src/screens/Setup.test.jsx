@@ -450,8 +450,9 @@ describe('Setup', () => {
       vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
       render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
 
-      // ステップ表示が「4. PC」を選択中にしている
-      expect(await screen.findByText('4. PC')).toBeInTheDocument();
+      // ステップ表示バーは常に5段すべてのラベルを描くため現在地の証拠にならない。
+      // PCステップでしか描かれないField labelで判定する。
+      expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
       // PC一覧が選択済みWorldから取れている
       await waitFor(() => expect(characterLibraryClient.listCharacters).toHaveBeenCalledWith('arkham-1920s', 'pc'));
       expect(await screen.findByText('howard-kane')).toBeInTheDocument();
@@ -501,7 +502,9 @@ describe('Setup', () => {
 
     it('behaves exactly as before when starterContext is absent', () => {
       render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
-      expect(screen.getByText('1. 世界観')).toBeInTheDocument();
+      // 0段目でしか描かれないField labelで、PCステップから開いていないことを示す。
+      expect(screen.getByText('Worldの用意方法')).toBeInTheDocument();
+      expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();
     });
   });
 });
