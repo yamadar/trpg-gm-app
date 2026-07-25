@@ -60,7 +60,7 @@ export const TURN_OUTPUT_FORMAT = {
       state_update: {
         type: 'object',
         additionalProperties: false,
-        required: ['current_scene', 'flags', 'history_summary', 'xp_gained', 'tension_level'],
+        required: ['current_scene', 'flags', 'history_summary', 'xp_gained', 'tension_level', 'ending_reached'],
         properties: {
           current_scene: { type: 'string', description: '更新後のシーン名' },
           flags: {
@@ -84,6 +84,10 @@ export const TURN_OUTPUT_FORMAT = {
             type: 'string',
             enum: ['low', 'medium', 'high'],
             description: '現在の場面の緊張度。緊迫・戦闘・危機=high、通常=medium、平穏・休息=low',
+          },
+          ending_reached: {
+            type: 'boolean',
+            description: '物語が結末(エンディング)に到達したならtrue。通常はfalse',
           },
         },
       },
@@ -158,6 +162,7 @@ ${
 - state_update.history_summary: 更新後の物語要約(300字程度)。
 - state_update.xp_gained: 物語が進展・成功した節目でのみ${growthUnit}を与える。目安: 小さな進展や成功=1〜2、章の節目や大きな達成=5〜10。通常は0。
 - state_update.tension_level: 現在の場面の緊張度を毎ターン更新する。緊迫した場面(戦闘・危機・追跡)=high、平穏な場面(休息・日常会話)=low、それ以外=medium。文体もこれに合わせること(highは短文を畳み掛け、lowは五感描写でゆったり)。
+- state_update.ending_reached: 物語が結末(エンディング)に到達し、これ以上続ける必要がない場合のみtrue。それ以外は必ずfalse。
 - choices: 方向性の異なる短い選択肢を2〜4個(慎重・大胆・搦め手など性質を変える)。自由記述を促したい場面では空配列でよい。未開示の秘匿情報を含めないこと。`;
 
   return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];

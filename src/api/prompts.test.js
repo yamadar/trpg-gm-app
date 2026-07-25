@@ -140,6 +140,25 @@ describe('buildSystemBlocks', () => {
   });
 });
 
+describe('ending_reached', () => {
+  it('declares ending_reached as a required boolean in the turn schema', () => {
+    const su = TURN_OUTPUT_FORMAT.schema.properties.state_update;
+    expect(su.properties.ending_reached.type).toBe('boolean');
+    expect(su.required).toContain('ending_reached');
+  });
+
+  it('tells the GM when to set ending_reached', () => {
+    const session = {
+      world: { summary: 'w' },
+      scenario: { raw: 's' },
+      pc: { raw: 'p' },
+      rulesetId: 'simple',
+      state: { current_scene: 'c' },
+    };
+    expect(buildSystemBlocks(session)[0].text).toContain('ending_reached');
+  });
+});
+
 describe('resolveAdapter', () => {
   it('resolves the adapter from session.ruleset.formula', () => {
     expect(resolveAdapter({ ruleset: { id: 'x', formula: 'coc7e' } }).id).toBe('coc7e');

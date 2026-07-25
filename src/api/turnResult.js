@@ -22,9 +22,12 @@ export function normalizeTurnResult(result) {
 
   const tension_level = TENSION_LEVELS.includes(su.tension_level) ? su.tension_level : null;
 
+  // 誤検知を避けるため、真偽値のtrue以外は全てfalseとして扱う。
+  const endingReached = su.ending_reached === true;
+
   return {
     narrative,
     choices,
-    stateUpdate: { current_scene, flags, history_summary, xpGain, tension_level },
+    stateUpdate: { current_scene, flags, history_summary, xpGain, tension_level, endingReached },
   };
 }

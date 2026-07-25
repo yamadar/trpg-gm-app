@@ -16,6 +16,7 @@ describe('normalizeTurnResult', () => {
       history_summary: '要約',
       xpGain: 5,
       tension_level: null,
+      endingReached: false,
     });
   });
 
@@ -67,5 +68,22 @@ describe('normalizeTurnResult', () => {
   it('never throws on a null or non-object result', () => {
     expect(() => normalizeTurnResult(null)).not.toThrow();
     expect(normalizeTurnResult(null).narrative).toBe('(描写を取得できませんでした)');
+  });
+});
+
+describe('normalizeTurnResult ending_reached', () => {
+  it('reports endingReached true when the model says the story ended', () => {
+    const out = normalizeTurnResult({ narrative: 'n', state_update: { ending_reached: true }, choices: [] });
+    expect(out.stateUpdate.endingReached).toBe(true);
+  });
+
+  it('defaults endingReached to false when absent', () => {
+    const out = normalizeTurnResult({ narrative: 'n', state_update: {}, choices: [] });
+    expect(out.stateUpdate.endingReached).toBe(false);
+  });
+
+  it('treats non-boolean ending_reached as false', () => {
+    const out = normalizeTurnResult({ narrative: 'n', state_update: { ending_reached: 'yes' }, choices: [] });
+    expect(out.stateUpdate.endingReached).toBe(false);
   });
 });
