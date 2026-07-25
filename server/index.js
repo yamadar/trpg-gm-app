@@ -15,6 +15,7 @@ import { createPublishRouter } from './routes/publish.js';
 import { createImportsRouter } from './routes/imports.js';
 import { createConfigRouter } from './routes/config.js';
 import { createSceneImagesRouter } from './routes/sceneImages.js';
+import { createNovelJobRunner } from './novelJobs.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 import { createFsImageStore } from './storage/imageStore.js';
@@ -78,6 +79,7 @@ export function createApp({
       images: parseLimit(env.LIMIT_IMAGES_PER_DAY, 30),
     },
   });
+  const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, fetchImpl });
 
   // ミドルウェア順序が重要:
   // 1) originCheck はセッション有無に関わらず全ミューテーションを守る
@@ -95,7 +97,7 @@ export function createApp({
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
   app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
-  app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, fetchImpl, usage }));
+  app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
   app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey: apiKey, geminiApiKey, geminiModel, fetchImpl, usage }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
