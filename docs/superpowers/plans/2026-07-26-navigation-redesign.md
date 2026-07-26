@@ -860,8 +860,12 @@ export function BreadcrumbProvider({ children }) {
 export function useBreadcrumbLabel(label) {
   const { setLabel } = useContext(BreadcrumbContext);
   useEffect(() => {
-    setLabel(label ?? null);
-    return () => setLabel(null);
+    const normalizedLabel = label ?? null;
+    setLabel(normalizedLabel);
+    // 後続の画面が先にマウントしてラベルを登録した後にこのクリーンアップが
+    // 走るケースがあるため、自分が登録したラベルのままであるときだけ解除する。
+    // 無条件にnullへ戻すと、後から来た画面のラベルまで消してしまう。
+    return () => setLabel((current) => (current === normalizedLabel ? null : current));
   }, [label, setLabel]);
 }
 

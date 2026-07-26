@@ -71,4 +71,31 @@ describe('BreadcrumbContext', () => {
     );
     expect(screen.getByTestId('tail')).toHaveTextContent('(none)');
   });
+
+  it('keeps the later screen label when an earlier screen unmounts after handover', () => {
+    // 遷移先の画面が先にラベルを登録し、その後で遷移元の画面がアンマウントされる
+    // ケースを再現する。keyを分けて実体を別コンポーネントとして扱わせることで、
+    // 2番目のScreenを差し替えではなく1番目のScreenのアンマウントとして発生させる。
+    const { rerender } = render(
+      <BreadcrumbProvider>
+        <Tail />
+        <Screen key="outgoing" label="アーカム 1920s" />
+        <Screen key="incoming" label="アルデン辺境領" />
+      </BreadcrumbProvider>
+    );
+    // 両方のマウントエフェクトが走った後、後にマウントしたincoming側のラベルが表示されている。
+    expect(screen.getByTestId('tail')).toHaveTextContent('アルデン辺境領');
+
+    // outgoingのみを取り除く。incomingは再レンダーされず、そのラベルは
+    // 既にコンテキストへ登録済みの状態でoutgoingのクリーンアップが走る。
+    rerender(
+      <BreadcrumbProvider>
+        <Tail />
+        <Screen key="incoming" label="アルデン辺境領" />
+      </BreadcrumbProvider>
+    );
+
+    // 所有権ガードがなければ、outgoingのクリーンアップがincomingのラベルを消してしまう。
+    expect(screen.getByTestId('tail')).toHaveTextContent('アルデン辺境領');
+  });
 });
