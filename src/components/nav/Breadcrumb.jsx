@@ -72,6 +72,7 @@ export default function Breadcrumb({ route }) {
                 </span>
               ) : (
                 <button
+                  type="button"
                   onClick={() => navigateHash(crumb.hash)}
                   style={{
                     background: 'transparent',
