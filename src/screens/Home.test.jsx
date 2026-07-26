@@ -165,15 +165,22 @@ describe('Home', () => {
 
   it('disables new play and novelize when logged out', () => {
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
+    const onContinue = vi.fn();
     renderWithAuth(
-      <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />,
+      <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} />,
       { user: null }
     );
     expect(screen.getByText('+ 新規プレイ')).toBeDisabled();
     expect(screen.getByText('小説化する')).toBeDisabled();
     expect(screen.getByText(/ログインが必要/)).toBeInTheDocument();
-    // 続きから再開は許可されたまま
-    expect(screen.getByText('続きから再開')).not.toBeDisabled();
+
+    // 続きから再開は許可されたまま。未ログインで押せる導線はセッションカード本体
+    // (Cardのonclick)だけで、これはbutton要素ではないため disabled 属性を持てない。
+    // 「続きから再開」の見出しに toBeDisabled を当てても、jest-dom はフォーム要素以外を
+    // 常に「無効ではない」と判定するので何も守れない。押したときに実際に再開へ
+    // 進むことで、未ログインでも操作が1つ残っていることを確かめる。
+    fireEvent.click(screen.getByText('セッションA'));
+    expect(onContinue).toHaveBeenCalledWith('s1');
   });
 
   describe('小説の公開/公開解除', () => {
