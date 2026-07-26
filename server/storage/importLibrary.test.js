@@ -204,9 +204,9 @@ describe('importCharacter', () => {
     });
   });
 
-  // reuseExisting は「同じ一式を何度でも取り込める入口」用の指定。
+  // onDuplicate:'reuse' は「同じ一式を何度でも取り込める入口」用の指定。
   // 2回目以降に -2 付きの複製を作らず、取り込み済みのキャラクターを返す。
-  describe('importCharacter reuseExisting', () => {
+  describe("importCharacter onDuplicate", () => {
     async function publishAlice() {
       await seedWorld('usr_a', 'w1', 'テスト世界');
       await saveCharacter(dataStore, textStore, 'usr_a', { worldId: 'w1', kind: 'pc', name: 'alice', raw: '# アリス' });
@@ -217,8 +217,8 @@ describe('importCharacter', () => {
 
     it('returns the already imported character instead of a suffixed copy', async () => {
       const publicId = await publishAlice();
-      const first = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
-      const second = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+      const first = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { onDuplicate: 'reuse' });
+      const second = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { onDuplicate: 'reuse' });
 
       expect(first).toMatchObject({ ok: true, reused: false });
       expect(second).toMatchObject({ ok: true, reused: true });
@@ -228,20 +228,33 @@ describe('importCharacter', () => {
 
     it('does not overwrite what the player changed after the first import', async () => {
       const publicId = await publishAlice();
-      await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+      await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { onDuplicate: 'reuse' });
       await saveCharacter(dataStore, textStore, 'usr_b', { worldId: 'target', kind: 'pc', name: 'alice', raw: '書き換えたシート' });
 
-      const again = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+      const again = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { onDuplicate: 'reuse' });
 
       expect(again.meta.raw).toBe('書き換えたシート');
       expect((await listCharacters(dataStore, 'usr_b', 'target', 'pc')).map((c) => c.name)).toEqual(['alice']);
     });
 
-    it('keeps suffixing when the caller does not ask for reuse', async () => {
+    it("keeps suffixing under the default 'copy'", async () => {
       const publicId = await publishAlice();
       await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target');
       const second = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target');
       expect(second.meta.name).toBe('alice-2');
+    });
+
+    // 'reject' は複製せずに既存を突き返す。呼び出し側(公開ギャラリーの取り込み)が
+    // 「もう一度別のCharacterとして取り込むか」を確認するための入口。
+    it("reports the existing copy under 'reject' without writing anything", async () => {
+      const publicId = await publishAlice();
+      await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { onDuplicate: 'reject' });
+      const second = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { onDuplicate: 'reject' });
+
+      expect(second.ok).toBe(false);
+      expect(second.reason).toBe('already_imported');
+      expect(second.existing).toMatchObject({ name: 'alice' });
+      expect((await listCharacters(dataStore, 'usr_b', 'target', 'pc')).map((c) => c.name)).toEqual(['alice']);
     });
   });
 });

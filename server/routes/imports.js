@@ -14,11 +14,25 @@ export function createImportsRouter({ dataStore, textStore }) {
       res.status(201).json(result.meta);
       return;
     }
+    // 取り込み済み。黙って複製すると、押した回数だけ -2 / -3 付きの素材が積み上がる。
+    // 「別のものとして取り込むか」を決めるのはユーザーなので、既存を添えて突き返し、
+    // duplicate:true で叩き直してもらう。
+    if (result.reason === 'already_imported') {
+      res.status(409).json({ error: 'already_imported', existing: result.existing });
+      return;
+    }
     res.status(404).json({ error: result.reason === 'target_not_found' ? 'target world not found' : 'not found' });
   }
 
+  // duplicate:true は「取り込み済みだと分かったうえで、もう1つ別に取り込む」の意思表示。
+  function onDuplicateOf(req) {
+    return req.body?.duplicate === true ? 'copy' : 'reject';
+  }
+
   router.post('/import/worlds/:publicId', asyncHandler(async (req, res) => {
-    sendImport(res, await importWorld(dataStore, textStore, req.userId, req.params.publicId));
+    sendImport(res, await importWorld(dataStore, textStore, req.userId, req.params.publicId, {
+      onDuplicate: onDuplicateOf(req),
+    }));
   }));
 
   function targetWorldIdOf(req, res) {
@@ -33,20 +47,24 @@ export function createImportsRouter({ dataStore, textStore }) {
   router.post('/import/characters/:publicId', asyncHandler(async (req, res) => {
     const target = targetWorldIdOf(req, res);
     if (target === null) return;
-    sendImport(res, await importCharacter(dataStore, textStore, req.userId, req.params.publicId, target));
+    sendImport(res, await importCharacter(dataStore, textStore, req.userId, req.params.publicId, target, {
+      onDuplicate: onDuplicateOf(req),
+    }));
   }));
 
   router.post('/import/scenarios/:publicId', asyncHandler(async (req, res) => {
     const target = targetWorldIdOf(req, res);
     if (target === null) return;
-    sendImport(res, await importScenario(dataStore, textStore, req.userId, req.params.publicId, target));
+    sendImport(res, await importScenario(dataStore, textStore, req.userId, req.params.publicId, target, {
+      onDuplicate: onDuplicateOf(req),
+    }));
   }));
 
   // 一括インポート。クライアントから /api/import/* を6回(World→Scenario→PC×2→NPC×2)叩くと途中で失敗したときに
   // 「Worldだけできて中身が無い」状態が残り、リトライで -2 付きの重複が生える。
   // サーバー側の1呼び出しにまとめて、失敗はエラー1つで返す。
   //
-  // reuseExisting: この入口(「この冒険を始める」)は同じ一式を何度でも始められる導線なので、
+  // onDuplicate:'reuse': この入口(「この冒険を始める」)は同じ一式を何度でも始められる導線なので、
   // 押すたびに素材が増えては困る。取り込み済みなら既存の World / Scenario / Character を
   // そのまま返して遊び始めさせる(中身は上書きしないので、取り込み後の書き換えも残る)。
   router.post('/starters/:packId/import', asyncHandler(async (req, res) => {
@@ -61,7 +79,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     // 自分が書いたマニフェストの値を使う)
     const world = await importWorld(dataStore, textStore, req.userId, pack.worldPublicId, {
       preferredId: pack.packId,
-      reuseExisting: true,
+      onDuplicate: 'reuse',
     });
     if (!world.ok) {
       res.status(500).json({ error: 'starter world is missing; re-run the seed' });
@@ -74,7 +92,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     // slugify(title)フォールバックにそのまま任せる
     const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId, {
       preferredId: pack.scenarioId,
-      reuseExisting: true,
+      onDuplicate: 'reuse',
     });
     if (!scenario.ok) {
       res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
@@ -85,7 +103,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     for (const [field, ids] of [['pcs', pack.pcPublicIds ?? []], ['npcs', pack.npcPublicIds ?? []]]) {
       for (const publicId of ids) {
         const result = await importCharacter(dataStore, textStore, req.userId, publicId, worldId, {
-          reuseExisting: true,
+          onDuplicate: 'reuse',
         });
         if (!result.ok) {
           res.status(500).json({ error: 'starter character is missing; re-run the seed' });

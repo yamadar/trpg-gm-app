@@ -87,23 +87,29 @@ export async function publishedNovels() {
   return apiFetch('/api/publish/sessions');
 }
 
-export async function importWorld(publicId) {
-  return apiFetch(`/api/import/worlds/${encodeURIComponent(publicId)}`, { method: 'POST' });
-}
-
-export async function importCharacter(publicId, targetWorldId) {
-  return apiFetch(`/api/import/characters/${encodeURIComponent(publicId)}`, {
+// duplicate: 取り込み済みでも、もう1つ別のものとして取り込む。省略時はサーバーが
+// 409 { error: 'already_imported', existing } を返すので、呼び出し側で確認を挟む。
+export async function importWorld(publicId, { duplicate = false } = {}) {
+  return apiFetch(`/api/import/worlds/${encodeURIComponent(publicId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetWorldId }),
+    body: JSON.stringify({ duplicate }),
   });
 }
 
-export async function importScenario(publicId, targetWorldId) {
+export async function importCharacter(publicId, targetWorldId, { duplicate = false } = {}) {
+  return apiFetch(`/api/import/characters/${encodeURIComponent(publicId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetWorldId, duplicate }),
+  });
+}
+
+export async function importScenario(publicId, targetWorldId, { duplicate = false } = {}) {
   return apiFetch(`/api/import/scenarios/${encodeURIComponent(publicId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetWorldId }),
+    body: JSON.stringify({ targetWorldId, duplicate }),
   });
 }
 

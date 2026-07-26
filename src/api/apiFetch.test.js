@@ -38,4 +38,35 @@ describe('apiFetch', () => {
     expect(err.message).toContain('API error 500');
     expect(err.status).toBe(500);
   });
+
+  // 呼び出し側が message の文字列一致ではなくエラー種別で分岐できるようにする
+  // (公開ギャラリーの取り込みは already_imported を見て確認モーダルを出す)。
+  it('attaches the parsed json error body to the thrown error', async () => {
+    stubFetch(409, '{"error":"already_imported","existing":{"id":"untitled"}}');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.status).toBe(409);
+    expect(err.body).toEqual({ error: 'already_imported', existing: { id: 'untitled' } });
+  });
+
+  it('leaves the body null when the error payload is not json', async () => {
+    stubFetch(500, 'boom');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.body).toBeNull();
+  });
+
+  // JSONとしては妥当でも構造を持たない本文は、添えると呼び出し側の err.body?.error が
+  // 「本文なし」と区別できなくなる。素の値は本文なしと同じ扱いにする。
+  it('leaves the body null for json payloads that are not objects', async () => {
+    for (const payload of ['"boom"', '123', 'true', 'null']) {
+      stubFetch(500, payload);
+      const err = await apiFetch('/api/x').catch((e) => e);
+      expect(err.body).toBeNull();
+    }
+  });
+
+  it('attaches a json array error body', async () => {
+    stubFetch(422, '[{"field":"title"}]');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.body).toEqual([{ field: 'title' }]);
+  });
 });

@@ -2,10 +2,15 @@ import { useState } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../../theme.js';
 import Card from '../ui/Card.jsx';
 import Button from '../ui/Button.jsx';
+import ConfirmModal from '../library/ConfirmModal.jsx';
 import { importWorld, importCharacter, importScenario } from '../../api/shareClient.js';
 import { listWorlds } from '../../api/worldLibraryClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { KIND_LABELS } from '../../constants/publicContent.js';
+
+// 「もう一度別の◯◯として取り込むか」の確認文で使う。UIの他の場所(既存Worldを選ぶ・
+// 追加先のWorldを選択)と同じ呼び方に揃える。
+const TYPE_NOUN = { worlds: 'World', characters: 'Character', scenarios: 'Scenario' };
 
 export const authorButtonStyle = {
   font: 'inherit',
@@ -39,16 +44,35 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerWorlds, setPickerWorlds] = useState([]);
   const [pickerError, setPickerError] = useState('');
+  // 取り込み済みだったときの確認。null は閉じている状態。
+  // worldId は Character / Scenario の取り込み先(Worldの取り込みでは null)で、
+  // 「複製する」を選んだときに同じ宛先で叩き直すために覚えておく。
+  const [duplicateConfirm, setDuplicateConfirm] = useState(null); // { worldId } | null
 
-  async function handleAddWorld() {
+  async function runImport(worldId, duplicate) {
     setAdding(true);
     setAddError('');
     setAddMessage('');
     try {
-      await importWorld(item.publicId);
+      if (type === 'worlds') {
+        await importWorld(item.publicId, { duplicate });
+      } else if (type === 'characters') {
+        await importCharacter(item.publicId, worldId, { duplicate });
+      } else {
+        await importScenario(item.publicId, worldId, { duplicate });
+      }
       setAddMessage('ライブラリに追加しました');
+      setDuplicateConfirm(null);
+      setPickerOpen(false);
     } catch (e) {
-      setAddError(e.message);
+      // 既に取り込んである。黙って複製するとユーザーの知らないうちに素材が増えるので、
+      // 別のものとして取り込むかどうかを本人に決めてもらう。
+      if (e.body?.error === 'already_imported') {
+        setDuplicateConfirm({ worldId });
+      } else {
+        setAddError(e.message);
+        setDuplicateConfirm(null);
+      }
     } finally {
       setAdding(false);
     }
@@ -64,24 +88,6 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
     } catch (e) {
       setPickerError('World一覧の取得に失敗した: ' + e.message);
       setPickerOpen(true);
-    }
-  }
-
-  async function handlePick(worldId) {
-    setAdding(true);
-    setAddError('');
-    try {
-      if (type === 'characters') {
-        await importCharacter(item.publicId, worldId);
-      } else {
-        await importScenario(item.publicId, worldId);
-      }
-      setAddMessage('ライブラリに追加しました');
-      setPickerOpen(false);
-    } catch (e) {
-      setAddError(e.message);
-    } finally {
-      setAdding(false);
     }
   }
 
@@ -179,7 +185,11 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             </div>
           ) : (
             <>
-              <Button variant="brass" onClick={type === 'worlds' ? handleAddWorld : openPicker} disabled={adding}>
+              <Button
+                variant="brass"
+                onClick={type === 'worlds' ? () => runImport(null, false) : openPicker}
+                disabled={adding}
+              >
                 {adding ? '追加中…' : 'ライブラリに追加'}
               </Button>
               {addMessage && (
@@ -219,7 +229,7 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                 {pickerWorlds.map((w) => (
-                  <Card key={w.id} onClick={() => handlePick(w.id)} style={{ cursor: 'pointer' }}>
+                  <Card key={w.id} onClick={() => runImport(w.id, false)} style={{ cursor: 'pointer' }}>
                     <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
                   </Card>
                 ))}
@@ -233,6 +243,18 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
           </Card>
         </div>
       )}
+
+      {/* 取り込み先ピッカーより後ろに置く。どちらも z-index は同じなので、
+          後から描かれたこちらが手前に来る(ピッカーは背後に残り、キャンセルすれば
+          別のWorldを選び直せる)。 */}
+      <ConfirmModal
+        open={duplicateConfirm !== null}
+        message={`「${item.title}」は取り込み済みですが、もう一度別の${TYPE_NOUN[type] ?? '素材'}として取り込みますか?`}
+        confirmLabel="取り込む"
+        confirmDisabled={adding}
+        onConfirm={() => runImport(duplicateConfirm?.worldId ?? null, true)}
+        onCancel={() => setDuplicateConfirm(null)}
+      />
     </div>
   );
 }

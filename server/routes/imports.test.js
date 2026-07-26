@@ -52,7 +52,9 @@ describe('imports routes', () => {
       expect(res.body).toMatchObject({ id: 'untitled', title: 'テスト世界', raw: '# 本文' });
     });
 
-    it('suffixes the id on repeated import (collision)', async () => {
+    // 黙って複製すると、押した回数だけ untitled-2 / -3 が積み上がる。2回目は既存を
+    // 添えて409で突き返し、「別のWorldとして取り込むか」の判断をユーザーへ渡す。
+    it('refuses a second import of the same world and names what is already there', async () => {
       await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: 'テスト世界', raw: '# 本文' });
       const { meta: pubMeta } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
 
@@ -61,8 +63,52 @@ describe('imports routes', () => {
       expect(first.body.id).toBe('untitled');
 
       const second = await request(app).post(`/api/import/worlds/${pubMeta.publicId}`);
+      expect(second.status).toBe(409);
+      expect(second.body).toMatchObject({
+        error: 'already_imported',
+        existing: { id: 'untitled', title: 'テスト世界' },
+      });
+      expect((await listWorlds(dataStore, 'usr_test')).map((w) => w.id)).toEqual(['untitled']);
+    });
+
+    // 確認のうえで「取り込む」を押した場合。ここでは従来どおり別idで複製する。
+    it('duplicates the world when the caller confirms it wants another copy', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: 'テスト世界', raw: '# 本文' });
+      const { meta: pubMeta } = await publishWorld(dataStore, textStore, OWNER.id, 'w1', OWNER);
+      await request(app).post(`/api/import/worlds/${pubMeta.publicId}`);
+
+      const second = await request(app).post(`/api/import/worlds/${pubMeta.publicId}`).send({ duplicate: true });
+
       expect(second.status).toBe(201);
       expect(second.body.id).toBe('untitled-2');
+      expect((await listWorlds(dataStore, 'usr_test')).map((w) => w.id).sort()).toEqual(['untitled', 'untitled-2']);
+      // 複製にも取り込み元の印は残る。3回目もまた確認を挟める。
+      const third = await request(app).post(`/api/import/worlds/${pubMeta.publicId}`);
+      expect(third.status).toBe(409);
+    });
+
+    it('refuses a second import of the same character and scenario into the same world', async () => {
+      await saveWorld(dataStore, textStore, OWNER.id, { id: 'w1', title: 'テスト世界', raw: '# 本文' });
+      await saveCharacter(dataStore, textStore, OWNER.id, { worldId: 'w1', kind: 'pc', name: 'alice', raw: 'a' });
+      await saveScenario(dataStore, textStore, OWNER.id, { worldId: 'w1', id: 'sc', title: 'シナリオ', raw: 'r' });
+      const pubC = await publishCharacter(dataStore, textStore, OWNER.id, 'w1', 'pc', 'alice', OWNER);
+      const pubS = await publishScenario(dataStore, textStore, OWNER.id, 'w1', 'sc', OWNER);
+      await saveWorld(dataStore, textStore, 'usr_test', { id: 'target', title: '受け入れ先', raw: 'r' });
+
+      const post = (type, publicId, body) =>
+        request(app).post(`/api/import/${type}/${publicId}`).send({ targetWorldId: 'target', ...body });
+
+      expect((await post('characters', pubC.meta.publicId)).status).toBe(201);
+      const againC = await post('characters', pubC.meta.publicId);
+      expect(againC.status).toBe(409);
+      expect(againC.body).toMatchObject({ error: 'already_imported', existing: { name: 'alice' } });
+      expect((await post('characters', pubC.meta.publicId, { duplicate: true })).body.name).toBe('alice-2');
+
+      expect((await post('scenarios', pubS.meta.publicId)).status).toBe(201);
+      const againS = await post('scenarios', pubS.meta.publicId);
+      expect(againS.status).toBe(409);
+      expect(againS.body).toMatchObject({ error: 'already_imported', existing: { title: 'シナリオ' } });
+      expect((await post('scenarios', pubS.meta.publicId, { duplicate: true })).body.id).toBe('untitled-2');
     });
 
     it('404s for an unknown publicId', async () => {
