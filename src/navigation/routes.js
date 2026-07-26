@@ -98,7 +98,11 @@ const LIBRARY_LABELS = Object.fromEntries(LIBRARY_TABS.map((t) => [t.key, t.labe
 const BROWSE_LABELS = Object.fromEntries(GALLERY_TABS.map((t) => [t.key, t.label]));
 const RECORDS_LABELS = { endings: 'エンディング図鑑', achievements: '実績' };
 
-const HOME_CRUMB = { key: 'home', label: 'ホーム', hash: '#/' };
+// パンくずの上位段はグローバルナビの項目そのもの。ラベルと遷移先が
+// ナビバーと食い違わないよう NAV_TABS から引く。
+const navCrumb = (key) => NAV_TABS.find((t) => t.key === key);
+
+const HOME_CRUMB = navCrumb('home');
 
 // グローバルナビでハイライトすべきタブ。該当しない画面(集中モード・ユーザーページ)は null。
 export function navTabFor(route) {
@@ -119,7 +123,7 @@ export function crumbsFor(route) {
     case 'library':
       return [
         HOME_CRUMB,
-        { key: 'library', label: '素材', hash: '#/library/world' },
+        navCrumb('library'),
         {
           key: 'libraryTab',
           label: LIBRARY_LABELS[route.libraryTab],
@@ -129,7 +133,7 @@ export function crumbsFor(route) {
     case 'browse':
       return [
         HOME_CRUMB,
-        { key: 'browse', label: 'さがす', hash: '#/browse/starters' },
+        navCrumb('browse'),
         {
           key: 'browseTab',
           label: BROWSE_LABELS[route.browseTab],
@@ -139,7 +143,7 @@ export function crumbsFor(route) {
     case 'records':
       return [
         HOME_CRUMB,
-        { key: 'records', label: '記録', hash: '#/records/endings' },
+        navCrumb('records'),
         {
           key: 'recordsTab',
           label: RECORDS_LABELS[route.recordsTab],
