@@ -500,6 +500,38 @@ describe('focus header and context bar', () => {
   });
 });
 
+describe('log tail auto-scroll', () => {
+  it('セッション開始直後の「GMが考えている…」をスクロールで画面外へ送らない', async () => {
+    // 回帰ピン: 以前は末尾の番兵を block:'start'(既定)で画面最上部へ寄せていたため、
+    // ログが空でも本文カラムの下余白ぶんだけページが送られ、唯一の表示物である
+    // 応答待ちの一行が画面の外へ消えていた。'nearest' なら見えている間は動かない。
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    try {
+      renderWithAuth(<Harness initialSession={makeSession()} />);
+      expect(await screen.findByRole('status')).toHaveTextContent('GMが考えている…');
+      expect(scrollIntoView).toHaveBeenCalled();
+      for (const [options] of scrollIntoView.mock.calls) {
+        expect(options).toMatchObject({ block: 'nearest' });
+      }
+    } finally {
+      scrollIntoView.mockRestore();
+    }
+  });
+
+  it('ログ末尾の番兵は固定入力欄のぶんだけ手前で止まる余白を持つ', async () => {
+    const { container } = renderWithAuth(<Harness initialSession={makeSession()} />);
+    await screen.findByText(/^シーン:/);
+    const column = container.querySelector('div[style*="720px"]');
+    const sentinel = column.querySelector('div[style*="scroll-margin-bottom"]');
+    expect(sentinel).not.toBeNull();
+    // 本文カラムの下余白と同じ値。どちらか一方だけを変えると末尾が入力欄に潜る。
+    expect(sentinel.style.scrollMarginBottom).toBe(column.style.paddingBottom);
+    // Chromiumは「高さ0 + scroll-margin」の要素をblock:'nearest'の対象外にするため、
+    // ここを0に戻すと末尾追従が丸ごと効かなくなる(実ブラウザで確認済み)。
+    expect(sentinel.style.height).toBe('1px');
+  });
+});
+
 describe('resource side effects', () => {
   it('saves the reduced SAN into state.resources after a sanity check', async () => {
     global.fetch = vi

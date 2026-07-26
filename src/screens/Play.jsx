@@ -18,6 +18,12 @@ import RollStatsLine from '../components/ui/RollStatsLine.jsx';
 import { recordEnding } from '../api/endingClient.js';
 import { summarizeRolls } from '../engine/rollStats.js';
 
+// 画面下端に固定した入力欄(上下padding 16×2 + 枠線 + 入力欄で約76px)が
+// ログの末尾に被らないよう確保する高さ。本文カラムの下余白と、ログ末尾を追う
+// スクロールの停止位置(scroll-margin-bottom)の双方に同じ値を使い、
+// 「入力欄の下に末尾が潜り込む」ことが起きないようにする。
+const COMPOSER_RESERVE = 140;
+
 export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
@@ -46,8 +52,17 @@ export default function Play({ session, setSession }) {
   // (セッション再開時に履歴全体が演出され直すのを防ぐ)。
   const initialLogLenRef = useRef(session.log.length);
 
+  // ログ末尾への追従スクロール。
+  //
+  // block:'nearest' なのは、番兵(logEndRef)が既に見えている間は一切スクロール
+  // させないため。既定の 'start' だと番兵を画面最上部へ寄せようとするので、
+  // セッション開始直後のようにログが空でも、本文カラムの下余白(COMPOSER_RESERVE)
+  // ぶんだけページが下へ送られ、その時点で唯一の表示物である「GMが考えている…」が
+  // 画面の外(スティッキーな帯の上)へ追い出されていた。
+  // 追従が必要な場合(番兵が画面下の外にある場合)は、番兵の scroll-margin-bottom
+  // ぶんだけ手前で止まるので、末尾が固定入力欄の下へ潜り込むこともない。
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [session.log.length, busy]);
 
   useEffect(() => {
@@ -270,7 +285,7 @@ export default function Play({ session, setSession }) {
         style={{
           maxWidth: 720,
           margin: '0 auto',
-          padding: '24px 20px 140px',
+          padding: `24px 20px ${COMPOSER_RESERVE}px`,
           // ヘッダーが外に出た分、100vhのままだと本文が短くても縦スクロールが出る。
           minHeight: `calc(100vh - ${FOCUS_HEADER_HEIGHT}px)`,
           background: mood.paper,
@@ -459,13 +474,21 @@ export default function Play({ session, setSession }) {
             </Card>
           )}
           {busy && (
-            <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
+            // 応答待ちであることは目でも支援技術でも取れるようにする。ログが空の
+            // セッション開始直後は、この一行だけが「動いている」ことの唯一の手掛かりになる。
+            <div role="status" style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
               GMが考えている…
             </div>
           )}
           {error && <div style={{ color: COLORS.stamp, fontSize: 13 }}>{error}</div>}
           {saveWarning && <div style={{ color: COLORS.stamp, fontSize: 12 }}>{saveWarning}</div>}
-          <div ref={logEndRef} />
+          {/* ログ末尾の番兵。scroll-margin-bottom があるので、ここへ追従しても
+              固定入力欄のぶんだけ手前で止まる。
+              高さ0にしないのは、Chromiumが「高さ0 + scroll-margin」の要素を
+              block:'nearest' の対象から外し、末尾が画面外にあってもスクロールを
+              一切行わないため(追従が丸ごと効かなくなる)。1pxあれば通常の
+              nearest の判定に乗る。 */}
+          <div ref={logEndRef} style={{ height: 1, scrollMarginBottom: COMPOSER_RESERVE }} />
         </div>
 
         <div
