@@ -34,6 +34,7 @@ export default function GlobalNav({ activeTab }) {
           return (
             <button
               key={tab.key}
+              type="button"
               onClick={() => navigateHash(tab.hash)}
               aria-current={active ? 'page' : undefined}
               style={{
