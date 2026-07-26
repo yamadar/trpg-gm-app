@@ -254,22 +254,23 @@ export default function Play({ session, setSession }) {
   }
 
   return (
-    <div
-      style={{
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '24px 20px 140px',
-        minHeight: '100vh',
-        background: mood.paper,
-        ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
-      }}
-    >
+    <>
       {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。
-          FocusHeader自身は親のpaddingで20px内側に収まるため、直下の帯(margin: '0 -20px')
-          と幅を揃えるよう、同じ負のmarginで包んで両者を同じ幅にする。 */}
-      <div style={{ margin: '0 -20px' }}>
-        <FocusHeader title={session.title || 'プレイ中'} />
-      </div>
+          集中モードのヘッダーは Setup と、回遊モードのシェルヘッダーとも同じく
+          画面幅いっぱいに敷く。本文カラムの中に入れると、この画面だけ
+          帯が中央の720pxで途切れて「画面ごとに上部が変わる」ことになる。 */}
+      <FocusHeader title={session.title || 'プレイ中'} />
+      <div
+        style={{
+          maxWidth: 720,
+          margin: '0 auto',
+          padding: '24px 20px 140px',
+          // ヘッダーが外に出た分、100vhのままだと本文が短くても縦スクロールが出る。
+          minHeight: `calc(100vh - ${FOCUS_HEADER_HEIGHT}px)`,
+          background: mood.paper,
+          ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
+        }}
+      >
 
       {/* タイトルと離脱導線はFocusHeaderが持つので、ここは完結バッジとシーン/経験値
           などの文脈情報だけを出す帯にする。ログは下へ伸び続けるので、この帯も
@@ -511,7 +512,8 @@ export default function Play({ session, setSession }) {
           </>
         )
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -65,6 +65,17 @@ describe('AppShell', () => {
     expect(skip).toHaveAttribute('href', '#main');
   });
 
+  it('reserves room for the bottom tab bar including the safe-area inset', () => {
+    // jsdom には matchMedia が無いので useMediaQuery は false、つまり狭い幅の扱いになる。
+    // 下部固定バーの下側 padding は max(4px, env(safe-area-inset-bottom)) なので、
+    // 固定の64pxだけ空けるとホームインジケータのある端末で末尾が隠れる。
+    renderShell('#/library/character');
+    const main = document.getElementById('main');
+    const padding = main.getAttribute('style');
+    expect(padding).toContain('env(safe-area-inset-bottom)');
+    expect(padding).toContain('64px');
+  });
+
   it('gives the content region an id the skip link can target', () => {
     const { container } = renderShell('#/');
     expect(container.querySelector('#main')).toBeInTheDocument();

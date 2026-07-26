@@ -296,7 +296,10 @@ describe('Play', () => {
         setSession={vi.fn()}
       />
     );
-    const horrorBg = horror.container.firstChild.style.background;
+    // 先頭は集中モードのFocusHeader(全幅・COLORS.card固定)なので、
+    // ムードで色が変わるのはその次の本文カラム。
+    const moodColumn = (r) => r.container.firstChild.nextSibling;
+    const horrorBg = moodColumn(horror).style.background;
     expect(horrorBg).toBeTruthy();
     const plain = renderWithAuth(
       <Play
@@ -304,7 +307,7 @@ describe('Play', () => {
         setSession={vi.fn()}
       />
     );
-    expect(horrorBg).not.toBe(plain.container.firstChild.style.background);
+    expect(horrorBg).not.toBe(moodColumn(plain).style.background);
   });
 
   it('imageGenが有効なら未生成GMエントリに「この場面を描く」ボタンを出す', async () => {
@@ -481,6 +484,19 @@ describe('focus header and context bar', () => {
     const bar = scene.closest('div[style*="sticky"]');
     expect(bar).not.toBeNull();
     expect(bar.style.top).toBe(`${FOCUS_HEADER_HEIGHT}px`);
+  });
+
+  it('renders the focus header full-bleed, outside the centred content column', async () => {
+    // 集中モードのヘッダーは Setup とも回遊モードのシェルヘッダーとも同じく全幅。
+    // 本文カラムの中に入れるとこの画面だけ帯が途中で途切れ、
+    // 「画面ごとに上部が変わる」という元の不満に逆戻りする。
+    const { container } = renderWithAuth(<Harness initialSession={makeSession()} />);
+    const header = await screen.findByText('テストセッション');
+    const headerBar = header.closest('div[style*="sticky"]');
+    expect(headerBar).toBe(container.firstChild);
+    expect(headerBar.style.maxWidth).toBe('');
+    // 本文カラムだけが 720px に絞られる。
+    expect(container.firstChild.nextSibling.style.maxWidth).toBe('720px');
   });
 });
 

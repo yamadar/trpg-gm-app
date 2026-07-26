@@ -8,7 +8,12 @@ import ErrorBoundary from '../ErrorBoundary.jsx';
 import { COLORS, F_DISPLAY } from '../../theme.js';
 
 // 集中モードではスマホの下部タブバーが無いので余白も要らない。
-const NARROW_TABBAR_SPACE = 64;
+// 下部固定バーの実高さは「中身 + GlobalNav の上下padding」で決まり、その下側は
+// max(4px, env(safe-area-inset-bottom)) なのでホームインジケータのある端末では
+// 4px ではなく 34px 前後になる。固定値で見積もると末尾のコンテンツがバーに隠れるため、
+// safe-area の分を calc() で実行時に足す(GlobalNav 側の padding 指定と対で維持すること)。
+const NARROW_TABBAR_BASE = 64;
+const NARROW_TABBAR_SPACE = `calc(${NARROW_TABBAR_BASE}px + max(0px, env(safe-area-inset-bottom) - 4px))`;
 
 export default function AppShell({ route, children }) {
   const wide = useMediaQuery('(min-width: 768px)');
