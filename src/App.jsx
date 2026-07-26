@@ -37,8 +37,10 @@ function AppInner() {
   // バナーはシェルの子として全ルートに描かれるため、出しっぱなしにすると
   // 一度の失敗が以降すべての画面の先頭に居座る。「どのルートで見せたいバナーか」を
   // 値そのものに持たせ、描画時に現在地と突き合わせる。null は「出していない」。
-  // 後始末の effect で消す方式だと、ルートが変わってから effect が走るまでの
-  // 1コミットのあいだ古いバナーが見えてしまう。
+  // 突き合わせだけで描画を抑えるのは、後始末の effect が走るまでの1コミットのあいだ
+  // 古いバナーが見えてしまうのを防ぐため。値の破棄はそれとは別に effect が行う
+  // (下の routeKey 後始末を参照)。両方が要る: 描画ガードだけだと同じルートへ
+  // 戻るたびにバナーが甦り、破棄だけだと離脱直後に一瞬ちらつく。
   const [sessionError, setSessionError] = useState(null); // { routeKey, message } | null
   const [loadingHome, setLoadingHome] = useState(true);
   const [storageOk, setStorageOk] = useState(true);
@@ -114,11 +116,19 @@ function AppInner() {
     };
   }, [route.name, route.sessionId, session]);
 
-  // ルートが変わったときの後始末。離れたプレイ画面のセッションを捨てる。
+  // ルートが変わったときの後始末。離れたプレイ画面のセッションと、
+  // 現在地から外れたバナーを捨てる。
   // 依存は routeKey だけにして、route オブジェクトの作り直しでは走らないようにする。
   useEffect(() => {
     const prev = prevRouteRef.current;
     prevRouteRef.current = route;
+
+    // バナーは「出したルートで一度だけ」。描画は routeKey の突き合わせで抑えているが、
+    // 値を残したままだと同じルートへ戻ってきたときに、新しい失敗が何も起きていないのに
+    // また現れてしまう。現在地が離れた時点で値そのものを捨て、二度と甦らせない。
+    // 関数更新にしているのは、この effect の依存を routeKey だけに保つため。
+    setSessionError((e) => (e && e.routeKey !== routeKey ? null : e));
+    setAuthError((e) => (e && e.routeKey !== routeKey ? null : e));
 
     // メモリ上の session を握ったままだと、素材ライブラリから消したセッションへ
     // 同じ #/play/:id で戻ったときにストレージを読み直さず古い内容を映してしまう。

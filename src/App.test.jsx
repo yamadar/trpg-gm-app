@@ -154,6 +154,9 @@ describe('App', () => {
       // 末尾の状態だけを見ると、useRoute の正準化がずれた hash を差し戻すため
       // 落とした事実が隠れてしまう。クエリを畳む書き換え自体が hash を
       // 持ったままであることを確かめる。
+      // 空配列に対して every は true を返すため、書き換えが1回も観測できていない
+      // 場合(pushState 等に作り替えられた場合)にこの検証は黙って無意味になる。
+      expect(urls.length).toBeGreaterThan(0);
       expect(urls.every((u) => String(u).includes('#/records/endings'))).toBe(true);
     } finally {
       window.history.pushState({}, '', '/');
@@ -399,6 +402,27 @@ describe('App', () => {
     );
   });
 
+  it('does not bring the session-not-found banner back when returning to the route that raised it', async () => {
+    // バナーは一度きり。描画を「今どのルートに居るか」の突き合わせだけで抑えると、
+    // 値が残ったままホームへ戻ってきた瞬間に、新しい失敗が何も起きていないのに
+    // 同じバナーがまた出る(しかもマウントが続く限り毎回)。
+    window.location.hash = '#/play/missing_session';
+    render(<App />);
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+
+    fireEvent.click(screen.getByRole('button', { name: '記録' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    await waitFor(() =>
+      expect(screen.queryByText('セッションが見つかりません')).not.toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(await findHome()).toBeInTheDocument();
+    expect(screen.queryByText('セッションが見つかりません')).not.toBeInTheDocument();
+  });
+
   it('clears the auth error banner once another route is opened', async () => {
     window.history.pushState({}, '', '/?auth_error=1');
     try {
@@ -414,6 +438,15 @@ describe('App', () => {
           screen.queryByText('ログインに失敗しました。もう一度お試しください。')
         ).not.toBeInTheDocument()
       );
+
+      // 戻ってきても甦らない。auth_error は URL からも落ちているので、
+      // ここでバナーが出るなら「消し忘れた値がまだ生きている」ことにしかならない。
+      fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+      await waitFor(() => expect(window.location.hash).toBe('#/'));
+      expect(await findHome()).toBeInTheDocument();
+      expect(
+        screen.queryByText('ログインに失敗しました。もう一度お試しください。')
+      ).not.toBeInTheDocument();
     } finally {
       window.history.pushState({}, '', '/');
     }
