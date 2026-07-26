@@ -42,6 +42,7 @@ export default function FocusHeader({ title, steps, currentStep = 0, exitLabel =
       }}
     >
       <button
+        type="button"
         onClick={() => (onExit ? onExit() : navigateHash('#/'))}
         style={{
           display: 'flex',
