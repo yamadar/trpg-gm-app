@@ -63,7 +63,10 @@ export const TURN_OUTPUT_FORMAT = {
         additionalProperties: false,
         required: ['current_scene', 'flags', 'history_summary', 'xp_gained', 'tension_level', 'ending_reached'],
         properties: {
-          current_scene: { type: 'string', description: '更新後のシーン名' },
+          current_scene: {
+            type: 'string',
+            description: '更新後のシーン名。同じ場面が続く間は現在のシーン名をそのまま返す',
+          },
           flags: {
             type: 'array',
             description: '新規・更新分のフラグのみ(既存分は保持される)',
@@ -150,7 +153,7 @@ ${
 
 # 出力フィールドの書き方
 - narrative: 地の文(150〜250字程度)。
-- state_update.current_scene: 更新後のシーン名。
+- state_update.current_scene: 更新後のシーン名。場所・時間・状況が実際に転換したときだけ新しい名前にし、同じ場面が続く間は現在のシーン名を一字一句そのまま返すこと(言い回しを変えない)。この値の変化を場面転換の合図として扱っているため、毎ターン書き換えないこと。
 - state_update.flags: 新規・更新分のみを{key, value}で列挙する(既存分は保持される)。未開示の秘匿情報をkeyや値に書かないこと。
 - state_update.history_summary: 更新後の物語要約(300字程度)。
 - state_update.xp_gained: 物語が進展・成功した節目でのみ${growthUnit}を与える。目安: 小さな進展や成功=1〜2、章の節目や大きな達成=5〜10。通常は0。

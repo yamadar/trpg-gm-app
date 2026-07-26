@@ -24,6 +24,11 @@ import { summarizeRolls } from '../engine/rollStats.js';
 // 「入力欄の下に末尾が潜り込む」ことが起きないようにする。
 const COMPOSER_RESERVE = 140;
 
+// 自動挿絵を再び発火させるまでに空けるターン数。current_scene はGMが毎ターン自由記述する
+// 文字列なので、同じ場面が続いていても言い回しが揺れて「シーン変化」と判定されうる。
+// 変化の検出だけに任せると挿絵が毎ターン挟まるため、最低間隔で頻度に上限を掛ける。
+const AUTO_ILLUSTRATE_MIN_TURNS = 3;
+
 export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
@@ -44,6 +49,8 @@ export default function Play({ session, setSession }) {
   // 捕捉した古いセッションで上書きして進行を巻き戻さないよう、完了時点の最新を読む。
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  // 直近で自動挿絵を発火したターン。AUTO_ILLUSTRATE_MIN_TURNS の間隔判定に使う。
+  const lastAutoIllustrateTurnRef = useRef(null);
   const mood = moodTheme(session.moods);
   const docked = useMediaQuery('(min-width: 1024px)');
   const [panelOpen, setPanelOpen] = useState(false);
@@ -79,6 +86,11 @@ export default function Play({ session, setSession }) {
       setGeneratingIndex(i);
       setImageError(null);
       try {
+        // 画像APIはサーバーに保存済みのログで logIndex を検証する。通常のセッション同期は
+        // 投げっぱなしなので、ターン直後の自動生成では新しいGMエントリがまだ届いておらず
+        // 400 (logIndex must reference a gm log entry) になる。ここで同期の完了を待って、
+        // 「サーバーが log[i] を持っている」ことを保証してから要求する。
+        await putSessionToServer(baseSession);
         const { imageId, newAppearances } = await generateSceneImage(baseSession.id, i);
         // 生成中に進んだターンを巻き戻さないよう、完了時点の最新セッションへ適用する。
         const current = sessionRef.current;
@@ -172,7 +184,10 @@ export default function Play({ session, setSession }) {
 
         const sceneChanged =
           !!norm.stateUpdate.current_scene && norm.stateUpdate.current_scene !== session.state.current_scene;
-        if (imageGen && updated.autoIllustrate && sceneChanged) {
+        const lastAuto = lastAutoIllustrateTurnRef.current;
+        const spacedEnough = lastAuto === null || updated.state.turn_count - lastAuto >= AUTO_ILLUSTRATE_MIN_TURNS;
+        if (imageGen && updated.autoIllustrate && sceneChanged && spacedEnough) {
+          lastAutoIllustrateTurnRef.current = updated.state.turn_count;
           const gmIndex = updated.log.length - 1;
           illustrate(updated, gmIndex);
         }
