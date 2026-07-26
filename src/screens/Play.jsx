@@ -264,8 +264,12 @@ export default function Play({ session, setSession }) {
         ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
       }}
     >
-      {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。 */}
-      <FocusHeader title={session.title || 'プレイ中'} />
+      {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。
+          FocusHeader自身は親のpaddingで20px内側に収まるため、直下の帯(margin: '0 -20px')
+          と幅を揃えるよう、同じ負のmarginで包んで両者を同じ幅にする。 */}
+      <div style={{ margin: '0 -20px' }}>
+        <FocusHeader title={session.title || 'プレイ中'} />
+      </div>
 
       {/* タイトルと離脱導線はFocusHeaderが持つので、ここは完結バッジとシーン/経験値
           などの文脈情報だけを出す帯にする。ログは下へ伸び続けるので、この帯も
@@ -278,8 +282,7 @@ export default function Play({ session, setSession }) {
           background: mood.paper,
           borderBottom: `1px solid ${COLORS.line}`,
           margin: '0 -20px 16px',
-          // 非ドック時は右上のAuthBar(アバター)と重ならないよう右に余白を空ける。
-          padding: docked ? '10px 20px' : '10px 56px 10px 20px',
+          padding: '10px 20px',
           display: 'flex',
           alignItems: 'center',
           gap: 12,
@@ -494,7 +497,10 @@ export default function Play({ session, setSession }) {
           <>
             <div
               onClick={() => setPanelOpen(false)}
-              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 19 }}
+              // モーダルのスクリムはFocusHeader(zIndex: 30)より上に出し、
+              // 開いている間は離脱導線ごと覆って本当にモーダルにする。
+              // CharacterPanel(zIndex: 32)よりは下に置く。
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 31 }}
             />
             <CharacterPanel
               session={session}

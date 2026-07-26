@@ -5,10 +5,14 @@ import { COLORS, F_MONO, F_DISPLAY } from '../../theme.js';
 // 集中モード(Play / Setup)のヘッダー。グローバルナビの代わりに
 // 「離脱導線 + 現在地」だけを出す。回遊モードとの差はこの1点に限る。
 // 画面側のログ等が下に伸びてもタイトルと離脱導線を見失わないよう sticky にする。
-// 高さは離脱ボタンの最小タップ域(44px)+上下padding(16px)+下枠線(1px)から固定し、
-// 定数として公開する。画面側が自分のスティッキー要素をこの下に追随させる際、
-// 実測値とズレて隙間や重なりが生じないようにするため。
-export const FOCUS_HEADER_HEIGHT = 61;
+// 高さは離脱ボタンの最小タップ域+上下padding+下枠線から算出し、定数として公開する。
+// 画面側が自分のスティッキー要素をこの下に追随させる際、実測値とズレて隙間や
+// 重なりが生じないようにするため。以下の3定数はスタイルオブジェクト側でも
+// そのまま使い、高さの数値とレイアウトが食い違わないようにする。
+const EXIT_BUTTON_MIN_HEIGHT = 44; // 離脱ボタンの最小タップ域
+const HEADER_VERTICAL_PADDING = 16; // 上下padding合計(8px×2)
+const HEADER_BORDER_WIDTH = 1; // 下枠線
+export const FOCUS_HEADER_HEIGHT = EXIT_BUTTON_MIN_HEIGHT + HEADER_VERTICAL_PADDING + HEADER_BORDER_WIDTH;
 
 export default function FocusHeader({ title, steps, currentStep = 0, exitLabel = 'ホーム', onExit }) {
   return (
@@ -16,15 +20,18 @@ export default function FocusHeader({ title, steps, currentStep = 0, exitLabel =
       style={{
         position: 'sticky',
         top: 0,
-        // 画面側の追随バーが zIndex: 20 を使うため、常にその上に来るようにする。
+        // 画面側の追随バー(Play context bar, zIndex: 20)を常に上回るようにする。
+        // ただしPC/セットアップのオーバーレイパネルとそのスクリムはモーダルとして
+        // これより上に来る必要があるため、呼び出し側(Play.jsx等)でさらに上の
+        // zIndexを割り当てて重ねる。
         zIndex: 30,
         display: 'flex',
         alignItems: 'center',
         gap: 12,
         height: FOCUS_HEADER_HEIGHT,
         boxSizing: 'border-box',
-        padding: '8px 16px',
-        borderBottom: `1px solid ${COLORS.line}`,
+        padding: `${HEADER_VERTICAL_PADDING / 2}px 16px`,
+        borderBottom: `${HEADER_BORDER_WIDTH}px solid ${COLORS.line}`,
         // 下にスクロールするコンテンツが透けないよう不透明にする。
         background: COLORS.card,
       }}
@@ -35,7 +42,7 @@ export default function FocusHeader({ title, steps, currentStep = 0, exitLabel =
           display: 'flex',
           alignItems: 'center',
           gap: 4,
-          minHeight: 44,
+          minHeight: EXIT_BUTTON_MIN_HEIGHT,
           padding: '0 8px',
           background: 'transparent',
           border: 'none',

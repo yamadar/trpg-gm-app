@@ -45,7 +45,10 @@ export default function CharacterPanel({ session, docked, onClose, onRecall }) {
         overflowY: 'auto',
         padding: '20px 18px',
         boxSizing: 'border-box',
-        zIndex: 20,
+        // 非ドック時はモーダルのスクリム(Play.jsx, zIndex: 31)より上に出し、
+        // 見出しと閉じるボタンがFocusHeaderやスクリムに隠れないようにする。
+        // ドック時は他の重なりが無いのでこの値のままで問題ない。
+        zIndex: 32,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>

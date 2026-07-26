@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import FocusHeader, { FOCUS_HEADER_HEIGHT } from './FocusHeader.jsx';
+import FocusHeader from './FocusHeader.jsx';
 
 afterEach(() => {
   window.history.replaceState(null, '', window.location.pathname);
@@ -56,9 +56,19 @@ describe('FocusHeader', () => {
     expect(header.style.top).toBe('0px');
   });
 
-  it('has a height matching the exported FOCUS_HEADER_HEIGHT constant', () => {
+  // 「高さ === エクスポートした定数」という同語反復ではなく、実際にDOMへ出た
+  // 離脱ボタンのタップ域+上下padding+下枠線の実測値がヘッダーの高さぴったりに
+  // 収まっていることを検証する。ボタンのminHeightやpaddingだけを変えて
+  // heightの数値を追随させ忘れると、この検証で失敗する。
+  it('sizes the header so the exit button tap target plus padding and border fit exactly', () => {
     render(<FocusHeader title="丘の上の写真館" />);
     const header = screen.getByText('丘の上の写真館').closest('div[style*="sticky"]');
-    expect(header.style.height).toBe(`${FOCUS_HEADER_HEIGHT}px`);
+    const button = screen.getByRole('button', { name: 'ホーム' });
+
+    const buttonMinHeight = parseInt(button.style.minHeight, 10);
+    const verticalPadding = parseInt(header.style.paddingTop, 10) + parseInt(header.style.paddingBottom, 10);
+    const borderWidth = parseInt(header.style.borderBottomWidth, 10);
+
+    expect(parseInt(header.style.height, 10)).toBe(buttonMinHeight + verticalPadding + borderWidth);
   });
 });

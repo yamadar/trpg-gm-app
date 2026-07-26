@@ -463,6 +463,27 @@ describe('Play', () => {
   });
 });
 
+describe('focus header and context bar', () => {
+  it('shows the session title exactly once', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} />);
+    await waitFor(() => expect(screen.getAllByText('テストセッション').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('テストセッション')).toHaveLength(1);
+  });
+
+  it('falls back to "プレイ中" when the session has no title', async () => {
+    renderWithAuth(<Harness initialSession={makeSession({ title: '' })} />);
+    expect(await screen.findByText('プレイ中')).toBeInTheDocument();
+  });
+
+  it('keeps the context bar pinned directly beneath the focus header', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} />);
+    const scene = await screen.findByText(/^シーン:/);
+    const bar = scene.closest('div[style*="sticky"]');
+    expect(bar).not.toBeNull();
+    expect(bar.style.top).toBe(`${FOCUS_HEADER_HEIGHT}px`);
+  });
+});
+
 describe('resource side effects', () => {
   it('saves the reduced SAN into state.resources after a sanity check', async () => {
     global.fetch = vi
@@ -515,20 +536,6 @@ describe('resource side effects', () => {
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     const saved = saveSpy.mock.calls.at(-1)[0];
     expect('resources' in saved.state).toBe(false);
-  });
-
-  it('shows the session title exactly once', async () => {
-    renderWithAuth(<Harness initialSession={makeSession()} />);
-    await waitFor(() => expect(screen.getAllByText('テストセッション').length).toBeGreaterThan(0));
-    expect(screen.getAllByText('テストセッション')).toHaveLength(1);
-  });
-
-  it('keeps the context bar pinned directly beneath the focus header', async () => {
-    renderWithAuth(<Harness initialSession={makeSession()} />);
-    const scene = await screen.findByText(/^シーン:/);
-    const bar = scene.closest('div[style*="sticky"]');
-    expect(bar).not.toBeNull();
-    expect(bar.style.top).toBe(`${FOCUS_HEADER_HEIGHT}px`);
   });
 
   it('exits to home through the focus header', async () => {
