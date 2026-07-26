@@ -8,6 +8,13 @@ export async function apiFetch(url, options) {
     else message = `API error ${res.status}: ${t.slice(0, 200)}`;
     const err = new Error(message);
     err.status = res.status;
+    // 呼び出し側が分岐に使えるよう、JSONのエラー本文はそのまま添える(素の文字列は無視)。
+    // 文面の作り分けを message の文字列一致に頼らせないため。
+    try {
+      err.body = JSON.parse(t);
+    } catch {
+      err.body = null;
+    }
     throw err;
   }
   return res.json();

@@ -232,6 +232,18 @@ describe('shareClient', () => {
       const [url, options] = f.mock.calls[0];
       expect(url).toBe('/api/import/worlds/pub-w1');
       expect(options.method).toBe('POST');
+      // 既定は複製しない。サーバーは取り込み済みなら409で突き返し、UIが確認を挟む。
+      expect(JSON.parse(options.body)).toEqual({ duplicate: false });
+    });
+
+    it('asks for a duplicate only when the caller opts in', async () => {
+      const f = stubJsonFetch({ id: 'w-new-2' });
+      await importWorld('pub-w1', { duplicate: true });
+      expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ duplicate: true });
+      await importCharacter('pub-c1', 'w2', { duplicate: true });
+      expect(JSON.parse(f.mock.calls[1][1].body)).toEqual({ targetWorldId: 'w2', duplicate: true });
+      await importScenario('pub-s1', 'w2', { duplicate: true });
+      expect(JSON.parse(f.mock.calls[2][1].body)).toEqual({ targetWorldId: 'w2', duplicate: true });
     });
 
     it('importCharacter POSTs /api/import/characters/{publicId} with a targetWorldId body', async () => {
@@ -240,7 +252,7 @@ describe('shareClient', () => {
       const [url, options] = f.mock.calls[0];
       expect(url).toBe('/api/import/characters/pub-c1');
       expect(options.method).toBe('POST');
-      expect(JSON.parse(options.body)).toEqual({ targetWorldId: 'w2' });
+      expect(JSON.parse(options.body)).toEqual({ targetWorldId: 'w2', duplicate: false });
     });
 
     it('importScenario POSTs /api/import/scenarios/{publicId} with a targetWorldId body', async () => {
@@ -249,7 +261,7 @@ describe('shareClient', () => {
       const [url, options] = f.mock.calls[0];
       expect(url).toBe('/api/import/scenarios/pub-s1');
       expect(options.method).toBe('POST');
-      expect(JSON.parse(options.body)).toEqual({ targetWorldId: 'w2' });
+      expect(JSON.parse(options.body)).toEqual({ targetWorldId: 'w2', duplicate: false });
     });
 
     it('encodeURIComponent is applied to publicId/targetWorldId segments', async () => {

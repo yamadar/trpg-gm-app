@@ -40,15 +40,21 @@ function findReusable(metas, publicId, base, label, labelOf) {
 // 日本語タイトルのWorldは何を入れても 'untitled' に潰れてしまう。スターターパックの
 // ように id が意味を持つ経路のための逃げ道であり、未指定なら従来どおり title から作る。
 //
-// reuseExisting: 同じ公開素材を既に取り込んでいたらそれを返し、新しい複製を作らない。
-// スターターパックのように「同じ一式を何度でも始められる」入口のための指定で、
-// 既存の中身には触れない(取り込み後にユーザーが書き換えた内容を上書きしないため)。
-export async function importWorld(dataStore, textStore, userId, publicId, { preferredId, reuseExisting = false } = {}) {
+// onDuplicate: 同じ公開素材を既に取り込んでいたときの振る舞い。
+//   'copy'   … 別のidを採番して複製する(既定。従来どおりの挙動)
+//   'reuse'  … 取り込み済みのものをそのまま返す。「同じ一式を何度でも始められる」
+//              スターターパックの入口用。既存の中身には触れない(取り込み後に
+//              ユーザーが書き換えた内容を上書きしないため)
+//   'reject' … 複製せず reason:'already_imported' と既存メタを返す。呼び出し側が
+//              「もう一度別のWorldとして取り込むか」を確認してから 'copy' で
+//              叩き直すための入口
+export async function importWorld(dataStore, textStore, userId, publicId, { preferredId, onDuplicate = 'copy' } = {}) {
   const pub = await getPublicWorld(dataStore, textStore, publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   const base = typeof preferredId === 'string' && preferredId.length > 0 ? preferredId : slugify(pub.title);
-  if (reuseExisting) {
+  if (onDuplicate !== 'copy') {
     const found = findReusable(await listWorlds(dataStore, userId), publicId, base, pub.title, (m) => m.title);
+    if (found && onDuplicate === 'reject') return { ok: false, reason: 'already_imported', existing: found };
     if (found) return { ok: true, reused: true, meta: await getWorld(dataStore, textStore, userId, found.id) };
   }
   const id = await findAvailable(base, async (c) => (await dataStore.get(worldMetaKey(userId, c))) !== null);
@@ -64,13 +70,15 @@ export async function importWorld(dataStore, textStore, userId, publicId, { pref
   return { ok: true, reused: false, meta: world };
 }
 
-export async function importCharacter(dataStore, textStore, userId, publicId, targetWorldId, { reuseExisting = false } = {}) {
+// onDuplicate の意味は importWorld と同じ。判定は取り込み先World(targetWorldId)の中だけ。
+export async function importCharacter(dataStore, textStore, userId, publicId, targetWorldId, { onDuplicate = 'copy' } = {}) {
   const pub = await getPublicItem(dataStore, textStore, 'characters', publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   if ((await dataStore.get(worldMetaKey(userId, targetWorldId))) === null) return { ok: false, reason: 'target_not_found' };
-  if (reuseExisting) {
+  if (onDuplicate !== 'copy') {
     const metas = await listCharacters(dataStore, userId, targetWorldId, pub.kind);
     const found = findReusable(metas, publicId, pub.name, pub.name, (m) => m.name);
+    if (found && onDuplicate === 'reject') return { ok: false, reason: 'already_imported', existing: found };
     if (found) {
       return { ok: true, reused: true, meta: await getCharacter(dataStore, textStore, userId, targetWorldId, pub.kind, found.name) };
     }
@@ -87,16 +95,17 @@ export async function importCharacter(dataStore, textStore, userId, publicId, ta
   return { ok: true, reused: false, meta: character };
 }
 
-// preferredId / reuseExisting は importWorld と同じ逃げ道。スターターパックのシナリオは
+// preferredId / onDuplicate は importWorld と同じ逃げ道。スターターパックのシナリオは
 // pack.json で意味のあるidを宣言しているが、指定が無ければ従来どおりslugify(title)に潰れる。
-export async function importScenario(dataStore, textStore, userId, publicId, targetWorldId, { preferredId, reuseExisting = false } = {}) {
+export async function importScenario(dataStore, textStore, userId, publicId, targetWorldId, { preferredId, onDuplicate = 'copy' } = {}) {
   const pub = await getPublicItem(dataStore, textStore, 'scenarios', publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   if ((await dataStore.get(worldMetaKey(userId, targetWorldId))) === null) return { ok: false, reason: 'target_not_found' };
   const base = typeof preferredId === 'string' && preferredId.length > 0 ? preferredId : slugify(pub.title);
-  if (reuseExisting) {
+  if (onDuplicate !== 'copy') {
     const metas = await listScenarios(dataStore, userId, targetWorldId);
     const found = findReusable(metas, publicId, base, pub.title, (m) => m.title);
+    if (found && onDuplicate === 'reject') return { ok: false, reason: 'already_imported', existing: found };
     if (found) {
       return { ok: true, reused: true, meta: await getScenario(dataStore, textStore, userId, targetWorldId, found.id) };
     }

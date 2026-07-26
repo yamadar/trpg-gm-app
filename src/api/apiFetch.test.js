@@ -38,4 +38,19 @@ describe('apiFetch', () => {
     expect(err.message).toContain('API error 500');
     expect(err.status).toBe(500);
   });
+
+  // 呼び出し側が message の文字列一致ではなくエラー種別で分岐できるようにする
+  // (公開ギャラリーの取り込みは already_imported を見て確認モーダルを出す)。
+  it('attaches the parsed json error body to the thrown error', async () => {
+    stubFetch(409, '{"error":"already_imported","existing":{"id":"untitled"}}');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.status).toBe(409);
+    expect(err.body).toEqual({ error: 'already_imported', existing: { id: 'untitled' } });
+  });
+
+  it('leaves the body null when the error payload is not json', async () => {
+    stubFetch(500, 'boom');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.body).toBeNull();
+  });
 });

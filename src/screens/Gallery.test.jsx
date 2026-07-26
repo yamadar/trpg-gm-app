@@ -267,7 +267,7 @@ describe('Gallery', () => {
     await screen.findByText('メイン本文');
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
-    await waitFor(() => expect(importSpy).toHaveBeenCalledWith('p1'));
+    await waitFor(() => expect(importSpy).toHaveBeenCalledWith('p1', { duplicate: false }));
     await waitFor(() => expect(screen.getByText('ライブラリに追加しました')).toBeInTheDocument());
   });
 
@@ -315,7 +315,7 @@ describe('Gallery', () => {
     expect(screen.getByText('World Two')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('World Two'));
-    await waitFor(() => expect(importCharacterSpy).toHaveBeenCalledWith('c1', 'w2'));
+    await waitFor(() => expect(importCharacterSpy).toHaveBeenCalledWith('c1', 'w2', { duplicate: false }));
     await waitFor(() => expect(screen.getByText('ライブラリに追加しました')).toBeInTheDocument());
   });
 
@@ -338,7 +338,7 @@ describe('Gallery', () => {
     fireEvent.click(screen.getByText('ライブラリに追加'));
     expect(await screen.findByText('World One')).toBeInTheDocument();
     fireEvent.click(screen.getByText('World One'));
-    await waitFor(() => expect(importScenarioSpy).toHaveBeenCalledWith('s1', 'w1'));
+    await waitFor(() => expect(importScenarioSpy).toHaveBeenCalledWith('s1', 'w1', { duplicate: false }));
   });
 
   it('shows a message in the picker when the user has no worlds yet', async () => {
