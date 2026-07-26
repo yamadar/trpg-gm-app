@@ -10,6 +10,7 @@ import CampaignTab from './library/CampaignTab.jsx';
 import RulesetTab from './library/RulesetTab.jsx';
 import { listWorlds } from '../api/worldLibraryClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import TabStrip from '../components/nav/TabStrip.jsx';
 
 // World ピッカー(<select>)を出すタブ。WORLD_SCOPED_LIBRARY_TABS と違い、
 // world タブは含めない。world タブでは WorldTab 自身が World のカード一覧を
@@ -66,32 +67,7 @@ export default function Library({ route }) {
             <div style={{ color: COLORS.stamp, fontSize: 13, marginBottom: 12 }}>{worldsError}</div>
           )}
 
-          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-            {LIBRARY_TABS.map((t) => {
-              const active = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => goToTab(t.key)}
-                  aria-current={active ? 'page' : undefined}
-                  style={{
-                    minHeight: 44,
-                    padding: '6px 14px',
-                    borderRadius: 3,
-                    cursor: 'pointer',
-                    fontFamily: F_MONO,
-                    fontSize: 12,
-                    background: active ? COLORS.ink : 'transparent',
-                    color: active ? COLORS.paper : COLORS.faint,
-                    fontWeight: active ? 600 : 400,
-                    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
-                  }}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
+          <TabStrip tabs={LIBRARY_TABS} active={tab} onSelect={goToTab} />
 
           {/*
             WORLD_SCOPED_LIBRARY_TABS は「URLの3セグメント目にworldIdを取れるか」を

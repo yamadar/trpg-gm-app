@@ -7,6 +7,7 @@ import StarterPackList from '../components/share/StarterPackList.jsx';
 import { navigate } from '../navigation/useRoute.js';
 import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { GALLERY_TABS as TABS } from '../constants/publicContent.js';
+import TabStrip from '../components/nav/TabStrip.jsx';
 
 export default function Gallery({ route, onStartStarter }) {
   const tab = route.browseTab;
@@ -62,33 +63,7 @@ export default function Gallery({ route, onStartStarter }) {
         公開ギャラリー
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {TABS.map((t) => {
-          const active = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => goToTab(t.key)}
-              aria-current={active ? 'page' : undefined}
-              style={{
-                minHeight: 44,
-                padding: '6px 14px',
-                borderRadius: 3,
-                cursor: 'pointer',
-                fontFamily: F_MONO,
-                fontSize: 12,
-                background: active ? COLORS.ink : 'transparent',
-                color: active ? COLORS.paper : COLORS.faint,
-                fontWeight: active ? 600 : 400,
-                border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
-              }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <TabStrip tabs={TABS} active={tab} onSelect={goToTab} />
 
       {/* starters は公開アイテムの一覧/詳細ではなく「まとめて取り込む単位」なので、
           /api/public/:type の TYPES にも属さない。ここだけ別コンポーネントを描画する。 */}
