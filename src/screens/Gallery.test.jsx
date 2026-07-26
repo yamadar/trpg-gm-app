@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import Gallery from './Gallery.jsx';
 import * as shareClient from '../api/shareClient.js';
 import * as worldLibraryClient from '../api/worldLibraryClient.js';
 import * as starterClient from '../api/starterClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+import { parseRoute } from '../navigation/routes.js';
+import { BreadcrumbProvider } from '../navigation/BreadcrumbContext.jsx';
+import Breadcrumb from '../components/nav/Breadcrumb.jsx';
 
 const PUBLISHED_AT = 1700000000000;
 const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
@@ -20,14 +23,51 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  window.location.hash = '';
+  window.history.replaceState(null, '', window.location.pathname);
 });
 
 describe('Gallery', () => {
-  it('loads the novels tab when it is selected', async () => {
+  it('drives the tab from the route', async () => {
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={() => {}} />);
+    expect(await screen.findByRole('button', { name: '小説' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('pushes the tab into the URL when a tab is pressed', async () => {
+    renderWithAuth(<Gallery route={parseRoute('#/browse/starters')} onStartStarter={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: '世界観' }));
+    expect(window.location.hash).toBe('#/browse/worlds');
+  });
+
+  it('no longer renders a screen-level back or close button, on the list or on a detail', async () => {
+    // 画面ごとの「閉じる」はグローバルナビに置き換わって全廃した。詳細の
+    // 「← 一覧に戻る」も、パンくずの1つ手前の段が同じ行き先になったため取り除いた。
+    // 一覧側だけを見ると詳細の分岐がそもそも描かれず、何も確かめられない。
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
+    const list = renderWithAuth(
+      <Gallery route={parseRoute('#/browse/worlds')} onStartStarter={() => {}} />
+    );
+    await screen.findByText('まだ公開されたものがありません');
+    expect(screen.queryByText('閉じる')).not.toBeInTheDocument();
+    list.unmount();
+
+    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'p1',
+      title: 'World A',
+      ownerName: 'Alice',
+      publishedAt: PUBLISHED_AT,
+      raw: 'メイン本文',
+      regions: [],
+      categories: [],
+    });
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={() => {}} />);
+    await screen.findByText('メイン本文');
+    expect(screen.queryByText('閉じる')).not.toBeInTheDocument();
+    expect(screen.queryByText('← 一覧に戻る')).not.toBeInTheDocument();
+  });
+
+  it('loads the novels tab given by the route', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
   });
 
@@ -36,9 +76,8 @@ describe('Gallery', () => {
     vi.spyOn(shareClient, 'listPublic').mockImplementation(
       () => new Promise((resolve) => { resolveList = resolve; })
     );
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
-    expect(screen.getByText('読み込み中…')).toBeInTheDocument();
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
+    expect(await screen.findByText('読み込み中…')).toBeInTheDocument();
 
     await act(async () => {
       resolveList(EMPTY_PAGE);
@@ -49,8 +88,7 @@ describe('Gallery', () => {
 
   it('shows the empty state when a type has no published items', async () => {
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
     await waitFor(() =>
       expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument()
     );
@@ -58,14 +96,12 @@ describe('Gallery', () => {
 
   it('shows a fetch-error message when listPublic fails', async () => {
     vi.spyOn(shareClient, 'listPublic').mockRejectedValue(new Error('boom'));
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
   });
 
-  it('switches tabs and calls listPublic with the matching type, rendering cards', async () => {
+  it('renders cards for the tab given by the route', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'novels') return EMPTY_PAGE;
       if (type === 'worlds') {
         return {
           items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
@@ -75,11 +111,7 @@ describe('Gallery', () => {
       }
       return EMPTY_PAGE;
     });
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
-
-    fireEvent.click(screen.getByText('世界観'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('worlds', DEFAULT_LIST_PARAMS));
     expect(screen.getByText('World A')).toBeInTheDocument();
     expect(screen.getByText(/Alice/)).toBeInTheDocument();
@@ -97,8 +129,7 @@ describe('Gallery', () => {
       }
       return EMPTY_PAGE;
     });
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('キャラクター'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/characters')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Dragon Lord')).toBeInTheDocument());
     expect(screen.getByText('NPC')).toBeInTheDocument();
   });
@@ -122,23 +153,26 @@ describe('Gallery', () => {
       }
       return EMPTY_PAGE;
     });
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('シナリオ'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/scenarios')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Dragon Quest')).toBeInTheDocument());
     expect(screen.getByText(/pathfinder2e/)).toBeInTheDocument();
   });
 
-  it('shows detail with body text, and worlds also show region/category headings; back button returns to list', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'worlds') {
-        return {
-          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
+  it('pushes the publicId into the URL when a card is opened', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
+      total: 1,
+      hasMore: false,
     });
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds')} onStartStarter={vi.fn()} />);
+    await screen.findByText('World A');
+
+    fireEvent.click(screen.getByText('World A'));
+    expect(window.location.hash).toBe('#/browse/worlds/p1');
+  });
+
+  it('shows detail with body text, and worlds also show region/category headings', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
       title: 'World A',
@@ -148,62 +182,18 @@ describe('Gallery', () => {
       regions: [{ name: 'North', raw: '北の地域' }],
       categories: [{ name: 'Lore', raw: '伝承の中身' }],
     });
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('世界観'));
-    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={vi.fn()} />);
 
-    fireEvent.click(screen.getByText('World A'));
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('worlds', 'p1'));
     expect(await screen.findByText('メイン本文')).toBeInTheDocument();
     expect(screen.getByText('North')).toBeInTheDocument();
     expect(screen.getByText('北の地域')).toBeInTheDocument();
     expect(screen.getByText('Lore')).toBeInTheDocument();
     expect(screen.getByText('伝承の中身')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('← 一覧に戻る'));
-    await waitFor(() => expect(screen.queryByText('メイン本文')).not.toBeInTheDocument());
-    expect(screen.getByText('World A')).toBeInTheDocument();
   });
 
-  it('does not show an add button or add prompt on the novels tab', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'novels') {
-        return {
-          items: [{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Henry', publishedAt: PUBLISHED_AT }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
-    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
-      publicId: 'n1',
-      title: 'Epic Adventure',
-      ownerName: 'Henry',
-      publishedAt: PUBLISHED_AT,
-      raw: '物語本文',
-    });
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
-    await waitFor(() => expect(screen.getByText('Epic Adventure')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Epic Adventure'));
-    await screen.findByText('物語本文');
-
-    expect(screen.queryByText('ライブラリに追加')).not.toBeInTheDocument();
-    expect(screen.queryByText(/ログインが必要/)).not.toBeInTheDocument();
-  });
-
-  it('shows a login prompt instead of the add button when logged out', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'worlds') {
-        return {
-          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+  it('returns to the list URL from the breadcrumb crumb that replaced the back button', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
       title: 'World A',
@@ -213,26 +203,55 @@ describe('Gallery', () => {
       regions: [],
       categories: [],
     });
-    renderWithAuth(<Gallery onClose={vi.fn()} />, { user: null });
-    fireEvent.click(screen.getByText('世界観'));
-    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('World A'));
+    const route = parseRoute('#/browse/worlds/p1');
+    renderWithAuth(
+      <BreadcrumbProvider>
+        <Breadcrumb route={route} />
+        <Gallery route={route} onStartStarter={vi.fn()} />
+      </BreadcrumbProvider>
+    );
+    await screen.findByText('メイン本文');
+
+    const crumbs = screen.getByRole('navigation', { name: '現在地' });
+    fireEvent.click(within(crumbs).getByText('世界観'));
+    expect(window.location.hash).toBe('#/browse/worlds');
+  });
+
+  it('does not show an add button or add prompt on the novels tab', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
+    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'n1',
+      title: 'Epic Adventure',
+      ownerName: 'Henry',
+      publishedAt: PUBLISHED_AT,
+      raw: '物語本文',
+    });
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels/n1')} onStartStarter={vi.fn()} />);
+    await screen.findByText('物語本文');
+
+    expect(screen.queryByText('ライブラリに追加')).not.toBeInTheDocument();
+    expect(screen.queryByText(/ログインが必要/)).not.toBeInTheDocument();
+  });
+
+  it('shows a login prompt instead of the add button when logged out', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
+    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'p1',
+      title: 'World A',
+      ownerName: 'Alice',
+      publishedAt: PUBLISHED_AT,
+      raw: 'メイン本文',
+      regions: [],
+      categories: [],
+    });
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={vi.fn()} />, { user: null });
 
     await waitFor(() => expect(screen.getByText(/ログインが必要/)).toBeInTheDocument());
     expect(screen.queryByText('ライブラリに追加')).not.toBeInTheDocument();
   });
 
   it('imports a world directly and shows a success message', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'worlds') {
-        return {
-          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
       title: 'World A',
@@ -244,10 +263,7 @@ describe('Gallery', () => {
     });
     const importSpy = vi.spyOn(shareClient, 'importWorld').mockResolvedValue({ id: 'w-new' });
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('世界観'));
-    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('World A'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={vi.fn()} />);
     await screen.findByText('メイン本文');
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -256,16 +272,7 @@ describe('Gallery', () => {
   });
 
   it('shows the err.message when importing a world fails', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'worlds') {
-        return {
-          items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
       title: 'World A',
@@ -277,10 +284,7 @@ describe('Gallery', () => {
     });
     vi.spyOn(shareClient, 'importWorld').mockRejectedValue(new Error('世界観の取り込みに失敗'));
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('世界観'));
-    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('World A'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={vi.fn()} />);
     await screen.findByText('メイン本文');
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -288,16 +292,7 @@ describe('Gallery', () => {
   });
 
   it('opens a target-world picker for characters and imports into the chosen world', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'characters') {
-        return {
-          items: [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'npc' }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'c1',
       title: 'Dragon Lord',
@@ -311,10 +306,7 @@ describe('Gallery', () => {
       .mockResolvedValue([{ id: 'w1', title: 'World One' }, { id: 'w2', title: 'World Two' }]);
     const importCharacterSpy = vi.spyOn(shareClient, 'importCharacter').mockResolvedValue({ name: 'Dragon Lord' });
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('キャラクター'));
-    await waitFor(() => expect(screen.getByText('Dragon Lord')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Dragon Lord'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/characters/c1')} onStartStarter={vi.fn()} />);
     await screen.findByText('## Dragon');
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -328,18 +320,7 @@ describe('Gallery', () => {
   });
 
   it('opens a target-world picker for scenarios and imports into the chosen world', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'scenarios') {
-        return {
-          items: [
-            { publicId: 's1', title: 'Dragon Quest', ownerName: 'Grace', publishedAt: PUBLISHED_AT, recommendedRuleset: null },
-          ],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 's1',
       title: 'Dragon Quest',
@@ -351,10 +332,7 @@ describe('Gallery', () => {
     vi.spyOn(worldLibraryClient, 'listWorlds').mockResolvedValue([{ id: 'w1', title: 'World One' }]);
     const importScenarioSpy = vi.spyOn(shareClient, 'importScenario').mockResolvedValue({ id: 's-new' });
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('シナリオ'));
-    await waitFor(() => expect(screen.getByText('Dragon Quest')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Dragon Quest'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/scenarios/s1')} onStartStarter={vi.fn()} />);
     await screen.findByText('## Quest');
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -364,16 +342,7 @@ describe('Gallery', () => {
   });
 
   it('shows a message in the picker when the user has no worlds yet', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'characters') {
-        return {
-          items: [{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'pc' }],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'c1',
       title: 'Dragon Lord',
@@ -384,10 +353,7 @@ describe('Gallery', () => {
     });
     vi.spyOn(worldLibraryClient, 'listWorlds').mockResolvedValue([]);
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('キャラクター'));
-    await waitFor(() => expect(screen.getByText('Dragon Lord')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Dragon Lord'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/characters/c1')} onStartStarter={vi.fn()} />);
     await screen.findByText('## Dragon');
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -414,8 +380,7 @@ describe('Gallery', () => {
       return EMPTY_PAGE;
     });
     const getPublicSpy = vi.spyOn(shareClient, 'getPublic');
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('novels', DEFAULT_LIST_PARAMS));
     await screen.findByText('Epic Adventure');
 
@@ -428,18 +393,7 @@ describe('Gallery', () => {
   });
 
   it('navigates to the author page from the detail view via onAuthorClick', async () => {
-    vi.spyOn(shareClient, 'listPublic').mockImplementation(async (type) => {
-      if (type === 'worlds') {
-        return {
-          items: [
-            { publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'usr_alice', publishedAt: PUBLISHED_AT },
-          ],
-          total: 1,
-          hasMore: false,
-        };
-      }
-      return EMPTY_PAGE;
-    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
       title: 'World A',
@@ -450,10 +404,7 @@ describe('Gallery', () => {
       regions: [],
       categories: [],
     });
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('世界観'));
-    await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('World A'));
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={vi.fn()} />);
     await screen.findByText('メイン本文');
 
     const alice = screen.getByText('Alice');
@@ -461,14 +412,6 @@ describe('Gallery', () => {
     fireEvent.click(alice);
 
     expect(window.location.hash).toBe('#/u/usr_alice');
-  });
-
-  it('calls onClose when the close button is clicked', () => {
-    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
-    const onClose = vi.fn();
-    renderWithAuth(<Gallery onClose={onClose} />);
-    fireEvent.click(screen.getByText('閉じる'));
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a stale list response from a previous tab after switching tabs', async () => {
@@ -489,11 +432,10 @@ describe('Gallery', () => {
       return Promise.resolve(EMPTY_PAGE);
     });
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    // まず小説タブを選び、novels の取得が未解決のまま世界観タブへ切替える
+    // 小説タブで取得が未解決のまま、親(App)がroute差し替えで世界観タブへ切替えたことを模す
     // (PublicItemListはtabをkeyに再マウントされる)。
-    fireEvent.click(screen.getByText('小説'));
-    fireEvent.click(screen.getByText('世界観'));
+    const { rerender } = render(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
+    rerender(<Gallery route={parseRoute('#/browse/worlds')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('World A')).toBeInTheDocument());
 
     // novels の遅れたレスポンスが後から解決しても(アンマウント済みのため)、世界観タブの一覧を上書きしない。
@@ -534,18 +476,18 @@ describe('Gallery', () => {
       return { publicId: 'b1', title: 'Item B', ownerName: 'Bob', publishedAt: PUBLISHED_AT, raw: 'B本文' };
     });
 
-    renderWithAuth(<Gallery onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('小説'));
+    // 一覧 → Aを開く(未解決) → 一覧に戻る → Bを開く、という route の遷移を rerender で模す。
+    // タブは変わらないので PublicItemList は再マウントされず、一覧の状態はそのまま。
+    const { rerender } = render(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('Item A')).toBeInTheDocument());
 
-    // Aを開く(未解決のまま)。
-    fireEvent.click(screen.getByText('Item A'));
+    rerender(<Gallery route={parseRoute('#/browse/novels/a1')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'a1'));
 
-    // 一覧に戻り、Bを開く(こちらは即解決)。タブは変わらないので PublicItemList は再マウントされず、一覧はそのまま。
-    fireEvent.click(screen.getByText('← 一覧に戻る'));
-    await waitFor(() => expect(screen.getByText('Item B')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Item B'));
+    rerender(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
+    expect(screen.getByText('Item B')).toBeInTheDocument();
+
+    rerender(<Gallery route={parseRoute('#/browse/novels/b1')} onStartStarter={vi.fn()} />);
     await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'b1'));
     await screen.findByText('B本文');
 
@@ -585,8 +527,7 @@ describe('Gallery', () => {
 
     vi.useFakeTimers();
     try {
-      renderWithAuth(<Gallery onClose={vi.fn()} />);
-      fireEvent.click(screen.getByText('小説'));
+      const { rerender } = render(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
       await act(async () => {
         await Promise.resolve();
       });
@@ -603,11 +544,11 @@ describe('Gallery', () => {
       expect(screen.getByText('Dragon Tale')).toBeInTheDocument();
       vi.useRealTimers(); // waitFor 以降はリアルタイマーに戻す(fake timers下では setInterval ポーリングが進まないため)。
 
-      fireEvent.click(screen.getByText('Dragon Tale'));
+      rerender(<Gallery route={parseRoute('#/browse/novels/d1')} onStartStarter={vi.fn()} />);
       await waitFor(() => expect(shareClient.getPublic).toHaveBeenCalledWith('novels', 'd1'));
       await screen.findByText('龍の物語');
 
-      fireEvent.click(screen.getByText('← 一覧に戻る'));
+      rerender(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
 
       // 検索欄の入力値・検索結果が往復後も保持されている(再マウントで消えていない)。
       expect(screen.getByPlaceholderText('タイトル・作者名で検索').value).toBe('dragon');
@@ -620,28 +561,30 @@ describe('Gallery', () => {
   });
 
   describe('starters tab', () => {
-    it('shows the starters tab first and renders pack cards there', async () => {
+    // 既定タブが starters であることは parseRoute の担当なので、ここは
+    // 「starters ルートを描くとパックのカードが出る」ことだけを見る。
+    it('renders pack cards on the starters tab', async () => {
       vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
         packs: [{ packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null, moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館' }],
         seededAt: 1,
       });
-      renderWithAuth(<Gallery onClose={vi.fn()} onStartStarter={vi.fn()} />);
+      renderWithAuth(<Gallery route={parseRoute('#/browse/starters')} onStartStarter={vi.fn()} />);
       expect(screen.getByText('おすすめ')).toBeInTheDocument();
       expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
     });
 
-    it('swaps the pack cards for the public item list when another tab is chosen', async () => {
+    // 三項演算子で分岐しているので普段は自明に真だが、両分岐を同時に描く
+    // 崩し方(タブ判定の取り違え)はこれが捕まえる。
+    it('does not leak starter pack cards into a non-starters tab', async () => {
       vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
         packs: [{ packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null, moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館' }],
         seededAt: 1,
       });
       vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
-      renderWithAuth(<Gallery onClose={vi.fn()} onStartStarter={vi.fn()} />);
-      expect(await screen.findByText('この冒険を始める')).toBeInTheDocument();
+      renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={vi.fn()} />);
 
-      fireEvent.click(screen.getByText('小説'));
-
-      await waitFor(() => expect(screen.queryByText('この冒険を始める')).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
+      expect(screen.queryByText('この冒険を始める')).not.toBeInTheDocument();
       expect(screen.queryByText('アーカム 1920s')).not.toBeInTheDocument();
     });
   });

@@ -1,0 +1,98 @@
+import { ChevronRight } from 'lucide-react';
+import { crumbsFor, wantsDynamicCrumb } from '../../navigation/routes.js';
+import { navigateHash } from '../../navigation/useRoute.js';
+import { useBreadcrumbLabels, useBreadcrumbTail } from '../../navigation/BreadcrumbContext.jsx';
+import { useMediaQuery } from '../../hooks/useMediaQuery.js';
+import { COLORS, F_MONO } from '../../theme.js';
+
+// スマホで表示する末尾の段数。先頭側は DOM に残したまま非表示にする。
+const NARROW_VISIBLE = 2;
+
+export default function Breadcrumb({ route }) {
+  const wide = useMediaQuery('(min-width: 768px)');
+  const labels = useBreadcrumbLabels();
+  const tail = useBreadcrumbTail();
+
+  // 動的ラベルが未登録の間はその段を出さない(IDを露出させないため)。
+  // 途中の段(dynamicKey)は名前が届くまで丸ごと省き、末尾は wantsDynamicCrumb で判断する。
+  const crumbs = crumbsFor(route)
+    .map((crumb) => (crumb.dynamicKey ? { ...crumb, label: labels[crumb.dynamicKey] ?? null } : crumb))
+    .filter((crumb) => crumb.label != null);
+  if (wantsDynamicCrumb(route) && tail) {
+    crumbs.push({ key: 'dynamic', label: tail, hash: null });
+  }
+
+  const firstVisible = wide ? 0 : Math.max(0, crumbs.length - NARROW_VISIBLE);
+
+  return (
+    <nav
+      aria-label="現在地"
+      // ラベル到着でレイアウトが跳ねないよう高さを固定する。
+      style={{ minHeight: 32, display: 'flex', alignItems: 'center' }}
+    >
+      <ol
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          fontFamily: F_MONO,
+          fontSize: 12,
+        }}
+      >
+        {crumbs.map((crumb, i) => {
+          const isLast = i === crumbs.length - 1;
+          return (
+            <li
+              key={crumb.key}
+              style={{
+                display: i < firstVisible ? 'none' : 'flex',
+                alignItems: 'center',
+                gap: 4,
+                minWidth: 0,
+              }}
+            >
+              {/* 省略時は非表示のliにも区切りが挟まるため、先頭に「見える」段だけ判定する。 */}
+              {i > firstVisible && <ChevronRight size={12} color={COLORS.faint} aria-hidden="true" />}
+              {isLast ? (
+                <span
+                  aria-current="page"
+                  style={{
+                    color: COLORS.ink,
+                    fontWeight: 600,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 240,
+                  }}
+                >
+                  {crumb.label}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => navigateHash(crumb.hash)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: '4px 2px',
+                    cursor: 'pointer',
+                    fontFamily: F_MONO,
+                    fontSize: 12,
+                    // 上位段はリンク。faint は card 上で AA に届かないため brassDark を使う。
+                    color: COLORS.brassDark,
+                    textDecoration: 'underline',
+                  }}
+                >
+                  {crumb.label}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}

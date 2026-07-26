@@ -9,6 +9,7 @@ import { putSessionToServer } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
 import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import FocusHeader, { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
@@ -17,7 +18,7 @@ import RollStatsLine from '../components/ui/RollStatsLine.jsx';
 import { recordEnding } from '../api/endingClient.js';
 import { summarizeRolls } from '../engine/rollStats.js';
 
-export default function Play({ session, setSession, onExit }) {
+export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -253,261 +254,271 @@ export default function Play({ session, setSession, onExit }) {
   }
 
   return (
-    <div
-      style={{
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '24px 20px 140px',
-        minHeight: '100vh',
-        background: mood.paper,
-        ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
-      }}
-    >
-      {/* ログは下へ伸び続けるので、ホームへの導線をスクロール位置に依らず出す。
-          「← ホーム」を左に置くのは、右上に固定されているAuthBarとの重なりを避けるため。 */}
+    <>
+      {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。
+          集中モードのヘッダーは Setup と、回遊モードのシェルヘッダーとも同じく
+          画面幅いっぱいに敷く。本文カラムの中に入れると、この画面だけ
+          帯が中央の720pxで途切れて「画面ごとに上部が変わる」ことになる。
+          ドッキング表示ではPCパネルが帯の右320pxに重なるため、本文カラムと同じ
+          右余白を帯にも渡す。渡さないと、タイトルは画面幅いっぱいを使えるつもりで
+          省略記号を打つので、長いタイトルがパネルの下で語中から断ち切られる。 */}
+      <FocusHeader
+        title={session.title || 'プレイ中'}
+        style={docked ? { paddingRight: PANEL_W + 20 } : undefined}
+      />
       <div
         style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 20,
+          maxWidth: 720,
+          margin: '0 auto',
+          padding: '24px 20px 140px',
+          // ヘッダーが外に出た分、100vhのままだと本文が短くても縦スクロールが出る。
+          minHeight: `calc(100vh - ${FOCUS_HEADER_HEIGHT}px)`,
           background: mood.paper,
-          borderBottom: `1px solid ${COLORS.line}`,
-          margin: '-24px -20px 16px',
-          // 非ドック時は右上のAuthBar(アバター)と重ならないよう右に余白を空ける。
-          padding: docked ? '10px 20px' : '10px 56px 10px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
+          ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
         }}
       >
-        <Button variant="ghost" onClick={onExit} style={{ fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}>
-          ← ホーム
-        </Button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <div
-              style={{
-                fontFamily: F_DISPLAY,
-                fontSize: 16,
-                color: COLORS.ink,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {session.title}
-            </div>
+        {/* タイトルと離脱導線はFocusHeaderが持つので、ここは完結バッジとシーン/経験値
+            などの文脈情報だけを出す帯にする。ログは下へ伸び続けるので、この帯も
+            スクロール位置に依らずFocusHeaderの直下に出す。 */}
+        <div
+          style={{
+            position: 'sticky',
+            top: FOCUS_HEADER_HEIGHT,
+            zIndex: 20,
+            background: mood.paper,
+            borderBottom: `1px solid ${COLORS.line}`,
+            margin: '0 -20px 16px',
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 10,
+              fontFamily: F_MONO,
+              fontSize: 11,
+              color: COLORS.faint,
+            }}
+          >
             {session.endedAt && <Badge variant="brass">完結</Badge>}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
             <span>シーン: {session.state.current_scene}</span>
             <span>
               {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
             </span>
           </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {!docked && (
-            <Button variant="ghost" onClick={() => setPanelOpen((v) => !v)} style={{ fontSize: 12, padding: '6px 10px' }}>
-              PC
-            </Button>
-          )}
-          {imageGen && (
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontFamily: F_MONO,
-                fontSize: 11,
-                color: COLORS.faint,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={!!session.autoIllustrate}
-                onChange={(e) => {
-                  const updated = { ...session, autoIllustrate: e.target.checked, updatedAt: Date.now() };
-                  setSession(updated);
-                  saveSession(updated);
-                  putSessionToServer(updated).catch((err) => console.error('session server sync failed', err));
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {!docked && (
+              <Button variant="ghost" onClick={() => setPanelOpen((v) => !v)} style={{ fontSize: 12, padding: '6px 10px' }}>
+                PC
+              </Button>
+            )}
+            {imageGen && (
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontFamily: F_MONO,
+                  fontSize: 11,
+                  color: COLORS.faint,
                 }}
-              />
-              挿絵を自動生成
-            </label>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {session.log.map((entry, i) =>
-          entry.role === 'player' ? (
-            <div
-              key={i}
-              style={{
-                alignSelf: 'flex-end',
-                maxWidth: '80%',
-                fontFamily: F_MONO,
-                fontSize: 13,
-                color: COLORS.paper,
-                background: COLORS.ink,
-                borderRadius: 4,
-                padding: '8px 12px',
-              }}
-            >
-              {entry.text}
-            </div>
-          ) : (
-            <Card key={i}>
-              {entry.image?.imageId && (
-                <img
-                  src={sceneImageUrl(session.id, entry.image.imageId)}
-                  alt="場面の挿絵"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    maxWidth: '100%',
-                    borderRadius: 6,
-                    border: `1px solid ${COLORS.line}`,
-                    marginBottom: 10,
+              >
+                <input
+                  type="checkbox"
+                  checked={!!session.autoIllustrate}
+                  onChange={(e) => {
+                    const updated = { ...session, autoIllustrate: e.target.checked, updatedAt: Date.now() };
+                    setSession(updated);
+                    saveSession(updated);
+                    putSessionToServer(updated).catch((err) => console.error('session server sync failed', err));
                   }}
                 />
-              )}
-              {imageGen && !entry.image?.imageId && (
-                <div style={{ marginBottom: 8 }}>
-                  {generatingIndex === i ? (
-                    <span style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>挿絵を描いています…</span>
-                  ) : (
-                    <Button variant="ghost" onClick={() => illustrate(session, i)} disabled={generatingIndex !== null}>
-                      この場面を描く
-                    </Button>
-                  )}
-                  {imageError && imageError.index === i && (
-                    <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 4 }}>{imageError.message}</div>
-                  )}
-                </div>
-              )}
-              <Stamp roll={entry.roll} animate={i >= initialLogLenRef.current} />
-              <GmNarrative
-                text={entry.text}
-                animate={i >= initialLogLenRef.current && i === session.log.length - 1 && narrating}
-                speedMs={TYPE_SPEED[session.state.tension_level] ?? TYPE_SPEED.medium}
-                onDone={i === session.log.length - 1 ? handleNarrationDone : undefined}
-              />
-              {i === session.log.length - 1 && !narrating && entry.choices?.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                  {entry.choices.map((c, ci) => (
-                    <Button key={ci} variant="ghost" onClick={() => submitChoice(c)} disabled={busy}>
-                      {c}
-                    </Button>
-                  ))}
-                </div>
-              )}
+                挿絵を自動生成
+              </label>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {session.log.map((entry, i) =>
+            entry.role === 'player' ? (
+              <div
+                key={i}
+                style={{
+                  alignSelf: 'flex-end',
+                  maxWidth: '80%',
+                  fontFamily: F_MONO,
+                  fontSize: 13,
+                  color: COLORS.paper,
+                  background: COLORS.ink,
+                  borderRadius: 4,
+                  padding: '8px 12px',
+                }}
+              >
+                {entry.text}
+              </div>
+            ) : (
+              <Card key={i}>
+                {entry.image?.imageId && (
+                  <img
+                    src={sceneImageUrl(session.id, entry.image.imageId)}
+                    alt="場面の挿絵"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      maxWidth: '100%',
+                      borderRadius: 6,
+                      border: `1px solid ${COLORS.line}`,
+                      marginBottom: 10,
+                    }}
+                  />
+                )}
+                {imageGen && !entry.image?.imageId && (
+                  <div style={{ marginBottom: 8 }}>
+                    {generatingIndex === i ? (
+                      <span style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>挿絵を描いています…</span>
+                    ) : (
+                      <Button variant="ghost" onClick={() => illustrate(session, i)} disabled={generatingIndex !== null}>
+                        この場面を描く
+                      </Button>
+                    )}
+                    {imageError && imageError.index === i && (
+                      <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 4 }}>{imageError.message}</div>
+                    )}
+                  </div>
+                )}
+                <Stamp roll={entry.roll} animate={i >= initialLogLenRef.current} />
+                <GmNarrative
+                  text={entry.text}
+                  animate={i >= initialLogLenRef.current && i === session.log.length - 1 && narrating}
+                  speedMs={TYPE_SPEED[session.state.tension_level] ?? TYPE_SPEED.medium}
+                  onDone={i === session.log.length - 1 ? handleNarrationDone : undefined}
+                />
+                {i === session.log.length - 1 && !narrating && entry.choices?.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                    {entry.choices.map((c, ci) => (
+                      <Button key={ci} variant="ghost" onClick={() => submitChoice(c)} disabled={busy}>
+                        {c}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )
+          )}
+          {session.state?.ending_reached && !session.endedAt && (
+            <Card style={{ borderColor: COLORS.brass }}>
+              <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.ink, marginBottom: 10 }}>
+                物語は結末に辿り着いたようだ。
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {/* 他の操作系(選択肢ボタン・自由入力)と同じくbusy中はガードする。
+                    そうしないとターン進行中の保存とここでの保存が非同期に競合し、
+                    順序保証が無いため直前のターンがIndexedDB/サーバー上で消え得る。 */}
+                <Button variant="brass" onClick={finishStory} disabled={busy || narrating}>
+                  この物語を終える
+                </Button>
+                <Button variant="ghost" onClick={keepPlaying} disabled={busy || narrating}>
+                  まだ続ける
+                </Button>
+              </div>
             </Card>
+          )}
+          {session.endedAt && endingBusy && (
+            <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>エンディングを記録しています…</div>
+          )}
+          {session.endedAt && !endingBusy && ending && (
+            <Card style={{ borderColor: COLORS.brass }}>
+              <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink, marginBottom: 8 }}>
+                {ending.endingTitle}
+              </div>
+              {ending.summary && (
+                <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.inkSoft, lineHeight: 1.8, marginBottom: 10 }}>
+                  {ending.summary}
+                </div>
+              )}
+              <RollStatsLine stats={ending.stats} />
+            </Card>
+          )}
+          {session.endedAt && !endingBusy && !ending && endingError && (
+            <Card style={{ borderColor: COLORS.stamp }}>
+              <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.stamp, marginBottom: 10 }}>{endingError}</div>
+              <Button variant="ghost" onClick={recordEndingNow}>
+                エンディングを記録する
+              </Button>
+            </Card>
+          )}
+          {busy && (
+            <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
+              GMが考えている…
+            </div>
+          )}
+          {error && <div style={{ color: COLORS.stamp, fontSize: 13 }}>{error}</div>}
+          {saveWarning && <div style={{ color: COLORS.stamp, fontSize: 12 }}>{saveWarning}</div>}
+          <div ref={logEndRef} />
+        </div>
+
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: docked ? PANEL_W : 0,
+            background: mood.paper,
+            borderTop: `1px solid ${COLORS.line}`,
+            padding: 16,
+          }}
+        >
+          <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8 }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitFree();
+              }}
+              placeholder="PCの行動を自由に書く…"
+              style={{ ...inputStyle, flex: 1 }}
+              disabled={busy || narrating}
+            />
+            <Button variant="brass" onClick={submitFree} disabled={busy || narrating || !input.trim()}>
+              送る
+            </Button>
+          </div>
+        </div>
+
+        {docked ? (
+          <CharacterPanel session={session} docked onRecall={() => recallMemory(session)} />
+        ) : (
+          panelOpen && (
+            <>
+              <div
+                onClick={() => setPanelOpen(false)}
+                // モーダルのスクリムはFocusHeader(zIndex: 30)より上に出し、
+                // 開いている間は離脱導線ごと覆って本当にモーダルにする。
+                // CharacterPanel(zIndex: 32)よりは下に置く。
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 31 }}
+              />
+              <CharacterPanel
+                session={session}
+                docked={false}
+                onClose={() => setPanelOpen(false)}
+                onRecall={() => recallMemory(session)}
+              />
+            </>
           )
         )}
-        {session.state?.ending_reached && !session.endedAt && (
-          <Card style={{ borderColor: COLORS.brass }}>
-            <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.ink, marginBottom: 10 }}>
-              物語は結末に辿り着いたようだ。
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {/* 他の操作系(選択肢ボタン・自由入力)と同じくbusy中はガードする。
-                  そうしないとターン進行中の保存とここでの保存が非同期に競合し、
-                  順序保証が無いため直前のターンがIndexedDB/サーバー上で消え得る。 */}
-              <Button variant="brass" onClick={finishStory} disabled={busy || narrating}>
-                この物語を終える
-              </Button>
-              <Button variant="ghost" onClick={keepPlaying} disabled={busy || narrating}>
-                まだ続ける
-              </Button>
-            </div>
-          </Card>
-        )}
-        {session.endedAt && endingBusy && (
-          <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>エンディングを記録しています…</div>
-        )}
-        {session.endedAt && !endingBusy && ending && (
-          <Card style={{ borderColor: COLORS.brass }}>
-            <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink, marginBottom: 8 }}>
-              {ending.endingTitle}
-            </div>
-            {ending.summary && (
-              <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.inkSoft, lineHeight: 1.8, marginBottom: 10 }}>
-                {ending.summary}
-              </div>
-            )}
-            <RollStatsLine stats={ending.stats} />
-          </Card>
-        )}
-        {session.endedAt && !endingBusy && !ending && endingError && (
-          <Card style={{ borderColor: COLORS.stamp }}>
-            <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.stamp, marginBottom: 10 }}>{endingError}</div>
-            <Button variant="ghost" onClick={recordEndingNow}>
-              エンディングを記録する
-            </Button>
-          </Card>
-        )}
-        {busy && (
-          <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
-            GMが考えている…
-          </div>
-        )}
-        {error && <div style={{ color: COLORS.stamp, fontSize: 13 }}>{error}</div>}
-        {saveWarning && <div style={{ color: COLORS.stamp, fontSize: 12 }}>{saveWarning}</div>}
-        <div ref={logEndRef} />
       </div>
-
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: docked ? PANEL_W : 0,
-          background: mood.paper,
-          borderTop: `1px solid ${COLORS.line}`,
-          padding: 16,
-        }}
-      >
-        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8 }}>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitFree();
-            }}
-            placeholder="PCの行動を自由に書く…"
-            style={{ ...inputStyle, flex: 1 }}
-            disabled={busy || narrating}
-          />
-          <Button variant="brass" onClick={submitFree} disabled={busy || narrating || !input.trim()}>
-            送る
-          </Button>
-        </div>
-      </div>
-
-      {docked ? (
-        <CharacterPanel session={session} docked onRecall={() => recallMemory(session)} />
-      ) : (
-        panelOpen && (
-          <>
-            <div
-              onClick={() => setPanelOpen(false)}
-              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 19 }}
-            />
-            <CharacterPanel
-              session={session}
-              docked={false}
-              onClose={() => setPanelOpen(false)}
-              onRecall={() => recallMemory(session)}
-            />
-          </>
-        )
-      )}
-    </div>
+    </>
   );
 }
 

@@ -1,47 +1,88 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import App from './App.jsx';
+import { navigate } from './navigation/useRoute.js';
 import * as shareClient from './api/shareClient.js';
 import * as starterClient from './api/starterClient.js';
+import * as storage from './storage/index.js';
+import * as sessionApi from './api/session.js';
+import * as campaignClient from './api/campaignClient.js';
+import * as sessionSyncClient from './api/sessionSyncClient.js';
 
 afterEach(() => {
   window.location.hash = '';
+  // spy / stub がテストをまたいで残ると、後続のテストが実物ではなく前のテストの
+  // モックを見てしまうため、ここでまとめて戻す。
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
+
+// シェルのヘッダーは全画面で "GM's Desk" ボタンを出すため、その文字列だけでは
+// ホームに居ることを示せない。ホーム本文の見出し(h1)で判定する。
+const findHome = () => screen.findByRole('heading', { name: "GM's Desk" });
+const queryHome = () => screen.queryByRole('heading', { name: "GM's Desk" });
 
 describe('App', () => {
   it('shows the home screen after the initial storage check completes', async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    expect(await findHome()).toBeInTheDocument();
     expect(screen.getByText('+ 新規プレイ')).toBeInTheDocument();
   });
 
-  it('navigates to the library screen and back', async () => {
-    // ライブラリはログイン必須なので、/api/meはログイン済みユーザーを返す必要がある
-    // (それ以外のURL、たとえばWorld一覧取得は空配列を返す)。
+  it('reads the session list once on the initial home render', async () => {
+    const listSpy = vi.spyOn(storage, 'listSessions').mockResolvedValue([]);
+    render(<App />);
+    await findHome();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read the session list when opening a play route directly', async () => {
+    // ホーム一覧は #/play では使わない。マウント時に無条件で取っていたころは
+    // 開くだけで無駄な読み取りが1回走っていた。
+    const listSpy = vi.spyOn(storage, 'listSessions').mockResolvedValue([]);
+    vi.spyOn(storage, 'getSession').mockResolvedValue({
+      id: 'sess_1',
+      title: 'テストセッション',
+      world: { raw: '', summary: '' },
+      scenario: { raw: '' },
+      rulesetId: 'simple',
+      pc: { raw: '' },
+      state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], turn_count: 0 },
+      log: [],
+      updatedAt: 0,
+    });
+    window.location.hash = '#/play/sess_1';
+    render(<App />);
+    await screen.findByText('テストセッション');
+    expect(listSpy).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the library through the global nav and back home', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url) => {
         if (String(url).includes('/api/me')) {
-          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }),
+          });
         }
         return Promise.resolve({ ok: true, json: async () => [] });
       })
     );
     render(<App />);
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    await findHome();
 
-    fireEvent.click(screen.getByText('素材ライブラリ'));
-    await waitFor(() => expect(screen.getByText('素材ライブラリ')).toBeInTheDocument());
-    expect(screen.getByText('World一覧')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '素材' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/library/world'));
+    expect(await screen.findByText('World一覧')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('閉じる'));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
-
-    vi.unstubAllGlobals();
+    fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(await findHome()).toBeInTheDocument();
   });
 
-  it('navigates to the public gallery screen and back, without requiring login', async () => {
-    // ギャラリーは未ログインでも閲覧できる想定なので、/api/meは未ログイン(userなし)を返す。
+  it('navigates to the public gallery without requiring login', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url) => {
@@ -55,18 +96,27 @@ describe('App', () => {
       })
     );
     render(<App />);
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    await findHome();
 
-    fireEvent.click(screen.getByText('公開ギャラリー'));
-    // 既定タブは「おすすめ」(スターターパック)になったため、公開アイテム一覧の
-    // 空状態を見るには明示的に他タブへ切り替える。
+    fireEvent.click(screen.getByRole('button', { name: 'さがす' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/browse/starters'));
+
+    // Task 12でGalleryがroute駆動になったため、タブ切り替えもURLに乗る。
+    // 未ログインのまま公開一覧を見られること(画面内タブ切り替え)も併せて確かめる。
     fireEvent.click(await screen.findByText('小説'));
-    await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
+    await waitFor(() => expect(window.location.hash).toBe('#/browse/novels'));
+    expect(await screen.findByText('まだ公開されたものがありません')).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByText('閉じる'));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+  it('keeps the global nav visible on every browsing screen', async () => {
+    render(<App />);
+    await findHome();
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
 
-    vi.unstubAllGlobals();
+    fireEvent.click(screen.getByRole('button', { name: '記録' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
   });
 
   it('shows an auth error banner when the URL has auth_error=1 and strips the query param', async () => {
@@ -82,7 +132,38 @@ describe('App', () => {
     window.history.pushState({}, '', '/');
   });
 
-  it('renders UserPage when the hash matches #/u/{userId}, keeping AuthBar visible', async () => {
+  it('keeps the hash when stripping auth_error from the query', async () => {
+    // hash が現在地の唯一の情報源になったので、クエリを畳む replaceState が
+    // hash まで巻き添えにしてはいけない。replaceState は hashchange を発火しないため、
+    // 落とすと画面は記録タブのまま URL だけ "/" になり、リロードで別画面に着地する。
+    window.history.pushState({}, '', '/?auth_error=1#/records/endings');
+    const realReplace = window.history.replaceState.bind(window.history);
+    const urls = [];
+    vi.spyOn(window.history, 'replaceState').mockImplementation((s, t, url) => {
+      urls.push(url);
+      return realReplace(s, t, url);
+    });
+    try {
+      render(<App />);
+      await waitFor(() =>
+        expect(screen.getByText('ログインに失敗しました。もう一度お試しください。')).toBeInTheDocument()
+      );
+      expect(window.location.search).toBe('');
+      expect(window.location.hash).toBe('#/records/endings');
+      expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
+      // 末尾の状態だけを見ると、useRoute の正準化がずれた hash を差し戻すため
+      // 落とした事実が隠れてしまう。クエリを畳む書き換え自体が hash を
+      // 持ったままであることを確かめる。
+      // 空配列に対して every は true を返すため、書き換えが1回も観測できていない
+      // 場合(pushState 等に作り替えられた場合)にこの検証は黙って無意味になる。
+      expect(urls.length).toBeGreaterThan(0);
+      expect(urls.every((u) => String(u).includes('#/records/endings'))).toBe(true);
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('renders UserPage when the hash matches #/u/{userId}, keeping the account menu visible', async () => {
     window.location.hash = '#/u/usr_x';
     vi.stubGlobal(
       'fetch',
@@ -102,19 +183,44 @@ describe('App', () => {
     expect(profileSpy).toHaveBeenCalledWith('usr_x');
     expect(listSpy).toHaveBeenCalledWith('novels', expect.objectContaining({ ownerId: 'usr_x' }));
     expect(screen.getByText('ログイン')).toBeInTheDocument();
-    expect(screen.queryByText("GM's Desk")).not.toBeInTheDocument();
-
-    vi.unstubAllGlobals();
+    // ユーザーページもシェルの中に入ったので、ホーム本文には差し替わらないが
+    // グローバルナビは出たままになる(以前はページ全体を乗っ取っていた)。
+    expect(queryHome()).not.toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
   });
 
   it('renders the ending gallery for the #/endings route', async () => {
     window.location.hash = '#/endings';
     try {
       render(<App />);
-      expect(await screen.findByText('エンディング図鑑')).toBeInTheDocument();
+      // パンくずにも同じラベルが出るため、本文の見出しで判定する。
+      expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
     } finally {
       window.location.hash = '';
     }
+  });
+
+  it('redirects the legacy #/endings hash to the records route', async () => {
+    window.location.hash = '#/endings';
+    try {
+      render(<App />);
+      // パンくずにも同じラベルが出るため、本文の見出しで判定する。
+      expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
+      await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    } finally {
+      window.location.hash = '';
+    }
+  });
+
+  it('falls back to home when #/play points at a session that no longer exists', async () => {
+    // #/play/:id はリロードしてもストレージから読み直せるが、消えたセッションを
+    // 指している場合は黙って空画面にせず、理由を伝えてホームへ戻す。
+    window.location.hash = '#/play/missing_session';
+    render(<App />);
+
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(await findHome()).toBeInTheDocument();
   });
 
   it('does not carry a previously imported starter pack into a later plain new-session wizard', async () => {
@@ -167,16 +273,18 @@ describe('App', () => {
     // 取り込みが実際に効いていれば、WizardはPCステップ(4段目)からプリフィルされて開く。
     // ここを確認しないと、取り込みが裏で失敗してstarterContextが空のままでも
     // 後段の「引き継がれない」検証が意味もなく成立してしまう。
-    // ステップ表示バーは常に5段すべてのラベルを描くので「4. PC」では現在地を示せない。
+    // FocusHeaderのステップ表示は常に5段すべてのラベルを描き、現在地は
+    // aria-current="step" で示す。ここで見たいのは本文まで開けていることなので、
     // PCステップでしか描かれないField labelを見る。
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
-    // ウィザードを「やめる」で離脱する(やめるボタンは0段目にしか無いため、まず戻る)。
-    fireEvent.click(screen.getByText('戻る'));
-    fireEvent.click(screen.getByText('戻る'));
-    fireEvent.click(screen.getByText('戻る'));
-    fireEvent.click(screen.getByText('やめる'));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
+    // スターター取り込みでWorld/Scenarioが選択済みになっているため、離脱には
+    // 確認モーダルを挟む。ここで確定させることこそが、この後の検証の前提になる。
+    // (離脱時にcontextを消していないことこそが、この後の検証の前提になる)
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    fireEvent.click(screen.getByRole('button', { name: '破棄して離れる' }));
+    expect(await findHome()).toBeInTheDocument();
 
     // 改めて「+ 新規プレイ」から入り直す。
     const newButton2 = await screen.findByText('+ 新規プレイ');
@@ -186,7 +294,222 @@ describe('App', () => {
     // クリーンな0段目で開き、Worldも未選択(空欄のまま進める)のままであること。
     // この文言はworldMode==='skip'のときにしか出ず、starterContextが残っていれば'existing'になる。
     expect(await screen.findByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
+  });
 
-    vi.unstubAllGlobals();
+  it('does not carry a previously imported starter pack into a later 次の章へ wizard', async () => {
+    // ウィザードの入口はそれぞれ「自分が使う文脈」を確定させなければならない。
+    // スターター取り込み後にウィザードを離れ、別セッションの「次の章へ」から入り直すと、
+    // starterContext と campaignContext が同居してしまう。同居するとウィザードは
+    // starterContext を見てPCステップから開き、シナリオはスターターのものが選ばれたまま、
+    // ユーザーはシナリオステップを一度も通らずに無関係なシナリオで遊ぶことになる。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    vi.spyOn(storage, 'listSessions').mockResolvedValue([
+      {
+        id: 's1',
+        title: '第一章',
+        updatedAt: 1,
+        worldId: 'w1',
+        world: { raw: 'r', summary: 'ある世界' },
+        rulesetId: 'simple',
+        moods: [],
+        pc: { raw: '元シート' },
+        state: { xp: 3, flags: {}, recent_log: [] },
+        log: [{ role: 'gm', text: '物語' }],
+      },
+    ]);
+    vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '成長版シート', xp: 7 });
+    vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(null);
+    vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({});
+    vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]);
+    vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
+      packs: [
+        {
+          packId: 'arkham-1920s',
+          title: 'アーカム 1920s',
+          tagline: '港町。',
+          source: null,
+          moods: ['ホラー'],
+          recommendedRuleset: 'coc7e',
+          scenarioTitle: '丘の上の写真館',
+        },
+      ],
+      seededAt: 1,
+    });
+    vi.spyOn(starterClient, 'importStarterPack').mockResolvedValue({
+      world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界' },
+      scenario: {
+        id: 'sc',
+        worldId: 'arkham-1920s',
+        title: '丘の上の写真館',
+        recommendedRuleset: 'coc7e',
+        moods: ['ホラー'],
+        raw: '# シナリオ',
+      },
+      pcs: [],
+      npcs: [],
+    });
+
+    render(<App />);
+    await findHome();
+
+    // まずスターターパックを取り込む(starterContext が載る)。ホームの取り込み口は
+    // セッションが1件も無いときにしか出ないので、公開ギャラリー側から取り込む。
+    fireEvent.click(screen.getByRole('button', { name: 'さがす' }));
+    fireEvent.click(await screen.findByText('この冒険を始める'));
+    expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
+
+    // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
+    // スターター取り込みでWorld/Scenarioが選択済みになっているため、離脱には
+    // 確認モーダルを挟む。離脱時に文脈を消していないことがこの後の前提になる。
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    fireEvent.click(screen.getByRole('button', { name: '破棄して離れる' }));
+    await findHome();
+
+    // 別セッションの「次の章へ」からウィザードへ入り直す。
+    fireEvent.click(await screen.findByText('次の章へ'));
+    await waitFor(() => expect(window.location.hash).toBe('#/setup'));
+
+    // キャンペーンの続きは世界観ステップ(0段目)から始まる。PCステップから開くのは
+    // starterContext が残っている証拠で、その場合シナリオはスターターのものになる。
+    expect(await screen.findByText('Worldの用意方法')).toBeInTheDocument();
+    expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();
+    expect(screen.queryByText('丘の上の写真館')).not.toBeInTheDocument();
+
+    // ここまでの3つは「両方の文脈が空の素のウィザード」でも成立してしまうので、
+    // campaignContext まで巻き添えで消していないことを別に確かめる。
+    // campaignContext があれば worldMode は 'existing' で開き、無ければ 'skip' になる。
+    expect(screen.getByText('既存Worldを選ぶ')).toBeInTheDocument();
+    expect(screen.queryByText('世界観を指定しない。AIが自由に構築する。')).not.toBeInTheDocument();
+  });
+
+  it('clears the session-not-found banner once another route is opened', async () => {
+    // バナーはシェルの子として全ルートに描かれるため、消さないと壊れたリンクを
+    // 一度踏んだだけで、以降ずっとすべての画面の先頭に居座る。
+    window.location.hash = '#/play/missing_session';
+    render(<App />);
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+
+    fireEvent.click(screen.getByRole('button', { name: '記録' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    await waitFor(() =>
+      expect(screen.queryByText('セッションが見つかりません')).not.toBeInTheDocument()
+    );
+  });
+
+  it('does not bring the session-not-found banner back when returning to the route that raised it', async () => {
+    // バナーは一度きり。描画を「今どのルートに居るか」の突き合わせだけで抑えると、
+    // 値が残ったままホームへ戻ってきた瞬間に、新しい失敗が何も起きていないのに
+    // 同じバナーがまた出る(しかもマウントが続く限り毎回)。
+    window.location.hash = '#/play/missing_session';
+    render(<App />);
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+
+    fireEvent.click(screen.getByRole('button', { name: '記録' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    await waitFor(() =>
+      expect(screen.queryByText('セッションが見つかりません')).not.toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(await findHome()).toBeInTheDocument();
+    expect(screen.queryByText('セッションが見つかりません')).not.toBeInTheDocument();
+  });
+
+  it('clears the auth error banner once another route is opened', async () => {
+    window.history.pushState({}, '', '/?auth_error=1');
+    try {
+      render(<App />);
+      await waitFor(() =>
+        expect(screen.getByText('ログインに失敗しました。もう一度お試しください。')).toBeInTheDocument()
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '記録' }));
+      await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+      await waitFor(() =>
+        expect(
+          screen.queryByText('ログインに失敗しました。もう一度お試しください。')
+        ).not.toBeInTheDocument()
+      );
+
+      // 戻ってきても甦らない。auth_error は URL からも落ちているので、
+      // ここでバナーが出るなら「消し忘れた値がまだ生きている」ことにしかならない。
+      fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+      await waitFor(() => expect(window.location.hash).toBe('#/'));
+      expect(await findHome()).toBeInTheDocument();
+      expect(
+        screen.queryByText('ログインに失敗しました。もう一度お試しください。')
+      ).not.toBeInTheDocument();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('shows a loading placeholder while the play session is being read', async () => {
+    // 集中モードのシェルはナビを描かないので、読み込み中に何も出さないと
+    // 真っ白で操作不能な画面になる。
+    let resolveGet;
+    vi.spyOn(storage, 'getSession').mockReturnValue(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      })
+    );
+    window.location.hash = '#/play/slow_session';
+    render(<App />);
+
+    expect(await screen.findByText('読み込み中…')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveGet(null);
+    });
+  });
+
+  it('re-reads storage when the same play route is opened again after leaving it', async () => {
+    // メモリ上の session を握ったままだと、素材ライブラリから消したセッションへ
+    // 同じ URL で戻ったときに古い内容をそのまま映してしまう。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: null }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    const getSpy = vi.spyOn(storage, 'getSession').mockResolvedValue({
+      id: 'sess_1',
+      title: 'テストセッション',
+      world: { raw: '', summary: '' },
+      scenario: { raw: '' },
+      rulesetId: 'simple',
+      pc: { raw: '' },
+      state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], turn_count: 0 },
+      log: [],
+      updatedAt: 0,
+    });
+    window.location.hash = '#/play/sess_1';
+    render(<App />);
+    await waitFor(() => expect(getSpy).toHaveBeenCalledWith('sess_1'));
+
+    act(() => navigate({ name: 'home' }));
+    await findHome();
+
+    // ここでセッションが消えた状態にする。
+    getSpy.mockResolvedValue(null);
+    act(() => navigate({ name: 'play', sessionId: 'sess_1' }));
+
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
   });
 });

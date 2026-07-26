@@ -9,11 +9,12 @@ import { listEndings, renameEnding, deleteEnding } from '../api/endingClient.js'
 import { evaluateAchievements } from '../engine/achievements.js';
 import AchievementTile from '../components/achievements/AchievementTile.jsx';
 import AchievementProgressBar from '../components/achievements/AchievementProgressBar.jsx';
-import { navigateToAchievements } from '../router/useHashRoute.js';
+import RecordsTabs from '../components/nav/RecordsTabs.jsx';
+import { navigate } from '../navigation/useRoute.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { formatDate } from '../utils/formatDate.js';
 
-export default function EndingGallery({ onClose }) {
+export default function EndingGallery() {
   const { user } = useAuth();
   const [endings, setEndings] = useState([]);
   const [error, setError] = useState('');
@@ -85,12 +86,10 @@ export default function EndingGallery({ onClose }) {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
-        <h1 style={{ fontFamily: F_DISPLAY, fontSize: 28, color: COLORS.ink, letterSpacing: 1 }}>エンディング図鑑</h1>
-        <Button variant="ghost" onClick={onClose}>
-          ホームへ
-        </Button>
-      </div>
+      <RecordsTabs active="endings" />
+      <h1 style={{ fontFamily: F_DISPLAY, fontSize: 28, color: COLORS.ink, letterSpacing: 1, marginBottom: 24 }}>
+        エンディング図鑑
+      </h1>
 
       {!user && (
         <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginBottom: 24 }}>
@@ -110,7 +109,11 @@ export default function EndingGallery({ onClose }) {
                   「実績 」の接頭辞が混ざり、"3 / 50"のようなテキストマッチが効かなくなるため。 */}
               実績 <span>{earned.length} / {achievements.length}</span>
             </div>
-            <Button variant="ghost" onClick={navigateToAchievements} style={{ fontSize: 12, padding: '6px 10px' }}>
+            <Button
+              variant="ghost"
+              onClick={() => navigate({ name: 'records', recordsTab: 'achievements' })}
+              style={{ fontSize: 12, padding: '6px 10px' }}
+            >
               すべて見る →
             </Button>
           </div>

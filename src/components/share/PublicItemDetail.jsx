@@ -27,7 +27,9 @@ export function publicMetaLine(item) {
   return `${item.ownerName} ・ ${formatPublicDate(item)}`;
 }
 
-export default function PublicItemDetail({ type, item, onBack, onAuthorClick }) {
+// 戻る導線は持たない。詳細は URL(#/browse/:tab/:id・#/u/:userId/:tab/:id)で表せる
+// ようになったため、シェルのパンくずの1つ手前の段が一覧への行き先そのものになる。
+export default function PublicItemDetail({ type, item, onAuthorClick }) {
   const { user } = useAuth();
 
   const [adding, setAdding] = useState(false);
@@ -85,10 +87,6 @@ export default function PublicItemDetail({ type, item, onBack, onAuthorClick }) 
 
   return (
     <div>
-      <Button variant="ghost" onClick={onBack} style={{ marginBottom: 16 }}>
-        ← 一覧に戻る
-      </Button>
-
       <Card>
         <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink, marginBottom: 6 }}>{item.title}</div>
         <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginBottom: 4 }}>

@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
-import Button from '../components/ui/Button.jsx';
 import AchievementRow from '../components/achievements/AchievementRow.jsx';
 import AchievementProgressBar from '../components/achievements/AchievementProgressBar.jsx';
 import { CATEGORIES } from '../engine/achievementCatalog.js';
 import { evaluateAchievements } from '../engine/achievements.js';
 import { listEndings } from '../api/endingClient.js';
-import { navigateToEndings } from '../router/useHashRoute.js';
+import RecordsTabs from '../components/nav/RecordsTabs.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 const SEGMENTS = [
@@ -37,7 +36,7 @@ function Chip({ selected, onClick, children }) {
   );
 }
 
-export default function AchievementList({ onClose }) {
+export default function AchievementList() {
   const { user } = useAuth();
   const [endings, setEndings] = useState([]);
   const [error, setError] = useState('');
@@ -92,17 +91,10 @@ export default function AchievementList({ onClose }) {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
-        <h1 style={{ fontFamily: F_DISPLAY, fontSize: 28, color: COLORS.ink, letterSpacing: 1 }}>実績</h1>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <Button variant="ghost" onClick={navigateToEndings}>
-            図鑑へ
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            ホームへ
-          </Button>
-        </div>
-      </div>
+      <RecordsTabs active="achievements" />
+      <h1 style={{ fontFamily: F_DISPLAY, fontSize: 28, color: COLORS.ink, letterSpacing: 1, marginBottom: 24 }}>
+        実績
+      </h1>
 
       {!user && (
         <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginBottom: 24 }}>

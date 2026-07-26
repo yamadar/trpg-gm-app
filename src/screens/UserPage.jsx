@@ -1,35 +1,38 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
-import Button from '../components/ui/Button.jsx';
 import { getUserProfile, getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
-import Tabs from '../components/ui/Tabs.jsx';
-import { clearHash } from '../router/useHashRoute.js';
+import TabStrip from '../components/nav/TabStrip.jsx';
+import { navigate } from '../navigation/useRoute.js';
+import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
 
-export default function UserPage({ userId }) {
+export default function UserPage({ route }) {
+  const userId = route.userId;
+  const tab = route.userTab;
+  const publicId = route.publicId;
+
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [profile, setProfile] = useState(null);
 
-  const [tab, setTab] = useState('novels');
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
-  const detailReqRef = useRef(0);
+
+  // パンくずは「プロフィール段(表示名)」と「末尾(現在地の名前)」を使う。
+  // 詳細を開いている間の現在地は公開アイテムなので、末尾はそのタイトルになる。
+  // どちらも取得前は登録しない(IDを露出させないため)。
+  useBreadcrumbLabel(profile ? profile.displayName : null, 'user');
+  useBreadcrumbLabel(publicId ? (detail ? detail.title : null) : profile ? profile.displayName : null);
 
   useEffect(() => {
     setLoading(true);
     setNotFound(false);
     setLoadError('');
     setProfile(null);
-    setTab('novels');
-    setViewMode('list');
-    setDetail(null);
-    setDetailError('');
 
     let cancelled = false;
     (async () => {
@@ -53,36 +56,45 @@ export default function UserPage({ userId }) {
     };
   }, [userId]);
 
+  // 詳細の取得は URL の publicId に従う。戻る/進むでも同じ経路を通る(Gallery と同じ形)。
+  // 追い越しの防止は cancelled フラグだけで足りる。Reactは次のeffect本体より先に
+  // 前回のクリーンアップを走らせるため、古いリクエストでは必ず cancelled が先に立つ。
   useEffect(() => {
-    setViewMode('list');
-    setDetail(null);
-    setDetailError('');
-  }, [tab]);
-
-  async function openDetail(publicId) {
-    const my = ++detailReqRef.current;
-    setViewMode('detail');
+    if (!publicId) {
+      setDetail(null);
+      setDetailError('');
+      return undefined;
+    }
+    let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
     setDetailError('');
-    try {
-      const item = await getPublic(tab, publicId);
-      if (my !== detailReqRef.current) return; // 別の詳細取得が始まっていたら破棄
-      setDetail(item);
-    } catch (e) {
-      if (my !== detailReqRef.current) return;
-      setDetailError('取得に失敗した: ' + e.message);
-    } finally {
-      if (my === detailReqRef.current) setDetailLoading(false);
-    }
+    (async () => {
+      try {
+        const item = await getPublic(tab, publicId);
+        if (cancelled) return;
+        setDetail(item);
+      } catch (e) {
+        if (cancelled) return;
+        setDetailError('取得に失敗した: ' + e.message);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, publicId]);
+
+  function goToTab(nextTab) {
+    navigate({ name: 'user', userId, userTab: nextTab, publicId: null });
   }
 
-  function backToList() {
-    setViewMode('list');
-    setDetail(null);
+  function openDetail(id) {
+    navigate({ name: 'user', userId, userTab: tab, publicId: id });
   }
 
-  const wrapStyle = { maxWidth: 720, margin: '0 auto', padding: '64px 20px 40px' };
+  const wrapStyle = { maxWidth: 720, margin: '0 auto', padding: '40px 20px' };
 
   if (loading) {
     return (
@@ -98,9 +110,6 @@ export default function UserPage({ userId }) {
         <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.stamp, marginBottom: 16 }}>
           ユーザーが見つかりません
         </div>
-        <Button variant="ghost" onClick={clearHash}>
-          ← 戻る
-        </Button>
       </div>
     );
   }
@@ -109,104 +118,68 @@ export default function UserPage({ userId }) {
     return (
       <div style={wrapStyle}>
         <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.stamp, marginBottom: 16 }}>{loadError}</div>
-        <Button variant="ghost" onClick={clearHash}>
-          ← 戻る
-        </Button>
       </div>
     );
   }
 
   return (
     <div style={wrapStyle}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: 24,
-          gap: 16,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {profile.avatarUrl ? (
-            <img
-              src={profile.avatarUrl}
-              alt=""
-              style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
-            />
-          ) : (
-            <div
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              background: COLORS.brass,
+              color: COLORS.paper,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: F_DISPLAY,
+              fontSize: 18,
+              flexShrink: 0,
+            }}
+          >
+            {(profile.displayName || '?').slice(0, 1)}
+          </div>
+        )}
+        <div>
+          <div style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink }}>{profile.displayName}</div>
+          {profile.bio && (
+            <p
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                background: COLORS.brass,
-                color: COLORS.paper,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: F_DISPLAY,
-                fontSize: 18,
-                flexShrink: 0,
+                fontFamily: F_BODY,
+                fontSize: 13,
+                color: COLORS.inkSoft,
+                whiteSpace: 'pre-wrap',
+                margin: '4px 0 0',
               }}
             >
-              {(profile.displayName || '?').slice(0, 1)}
-            </div>
+              {profile.bio}
+            </p>
           )}
-          <div>
-            <h1 style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink, margin: 0 }}>
-              {profile.displayName}
-            </h1>
-            {profile.bio && (
-              <p
-                style={{
-                  fontFamily: F_BODY,
-                  fontSize: 13,
-                  color: COLORS.inkSoft,
-                  whiteSpace: 'pre-wrap',
-                  margin: '4px 0 0',
-                }}
-              >
-                {profile.bio}
-              </p>
-            )}
-          </div>
         </div>
-        <Button variant="ghost" onClick={clearHash}>
-          ← 戻る
-        </Button>
       </div>
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="公開物の種類" />
+      <TabStrip tabs={TABS} active={tab} onSelect={goToTab} />
 
-      <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
-      <PublicItemList
-        key={tab}
-        type={tab}
-        ownerId={userId}
-        active={viewMode === 'list'}
-        onOpenDetail={openDetail}
-      />
+      <PublicItemList key={tab} type={tab} ownerId={userId} active={!publicId} onOpenDetail={openDetail} />
 
-      {viewMode !== 'list' &&
+      {publicId &&
         (detailLoading ? (
-          <div>
-            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-              ← 一覧に戻る
-            </Button>
-            <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-          </div>
+          <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
         ) : detailError ? (
-          <div>
-            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-              ← 一覧に戻る
-            </Button>
-            <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-          </div>
+          <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
         ) : (
-          detail && <PublicItemDetail type={tab} item={detail} onBack={backToList} />
+          detail && <PublicItemDetail type={tab} item={detail} />
         ))}
-      </div>
     </div>
   );
 }

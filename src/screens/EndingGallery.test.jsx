@@ -45,13 +45,13 @@ beforeEach(() => {
 describe('EndingGallery', () => {
   it('shows an empty state when nothing has been recorded', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     expect(await screen.findByText(/まだエンディングの記録がありません/)).toBeInTheDocument();
   });
 
   it('lists recorded endings with their title, session and summary', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     expect(await screen.findByText('灰は星を数えない')).toBeInTheDocument();
     expect(screen.getByText(/星降りの夜に/)).toBeInTheDocument();
     expect(screen.getByText('彼女は坑道を出た。')).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe('EndingGallery', () => {
       ending({ sessionId: 'a', endingTitle: '簡易の結末', stats: SIMPLE_STATS }),
       ending({ sessionId: 'b', endingTitle: 'CoCの結末', stats: COC_STATS }),
     ]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     await screen.findByText('CoCの結末');
     expect(screen.getByText(/ハード成功 1/)).toBeInTheDocument();
     expect(screen.getByText(/正気度 12\/99/)).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe('EndingGallery', () => {
 
   it('summarises the achievements instead of listing the whole catalogue', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     // このフィクスチャ(雰囲気ホラー・判定4回)1件では first-ending / mood-horror / short-story の3件が立つ。
     expect(await screen.findByText(`3 / ${CATALOG.length}`)).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: '実績の取得状況' })).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe('EndingGallery', () => {
       }),
     ];
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue(many);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     const tiles = await screen.findAllByTestId('achievement-tile');
     expect(tiles.length).toBe(3);
     const dates = tiles.map((t) => t.textContent.match(/\d{4}-\d{2}-\d{2}/)[0]);
@@ -136,15 +136,15 @@ describe('EndingGallery', () => {
 
   it('says so when nothing has been earned yet', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     expect(await screen.findByText(/まだ実績がありません/)).toBeInTheDocument();
   });
 
   it('links to the full achievement list', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     fireEvent.click(await screen.findByRole('button', { name: /すべて見る/ }));
-    expect(window.location.hash).toBe('#/achievements');
+    expect(window.location.hash).toBe('#/records/achievements');
   });
 
   it('renames an ending', async () => {
@@ -152,7 +152,7 @@ describe('EndingGallery', () => {
     const renameSpy = vi
       .spyOn(endingClient, 'renameEnding')
       .mockResolvedValue(ending({ endingTitle: '新しい題' }));
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
 
     fireEvent.click(await screen.findByText('改名'));
     fireEvent.change(screen.getByDisplayValue('灰は星を数えない'), { target: { value: '新しい題' } });
@@ -165,7 +165,7 @@ describe('EndingGallery', () => {
   it('cancels a rename without calling the API', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
     const renameSpy = vi.spyOn(endingClient, 'renameEnding');
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
 
     fireEvent.click(await screen.findByText('改名'));
     fireEvent.click(screen.getByText('取消'));
@@ -177,7 +177,7 @@ describe('EndingGallery', () => {
   it('deletes an ending after confirmation', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
     const deleteSpy = vi.spyOn(endingClient, 'deleteEnding').mockResolvedValue(undefined);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
 
     fireEvent.click(await screen.findByText('削除'));
     fireEvent.click(screen.getByText('削除する'));
@@ -189,7 +189,7 @@ describe('EndingGallery', () => {
   it('closes the confirm modal on delete failure so the error message is readable (not hidden behind the overlay)', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
     vi.spyOn(endingClient, 'deleteEnding').mockRejectedValue(new Error('boom'));
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
 
     fireEvent.click(await screen.findByText('削除'));
     fireEvent.click(screen.getByText('削除する'));
@@ -203,22 +203,22 @@ describe('EndingGallery', () => {
 
   it('shows an error when loading fails', async () => {
     vi.spyOn(endingClient, 'listEndings').mockRejectedValue(new Error('boom'));
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />);
+    renderWithAuth(<EndingGallery />);
     expect(await screen.findByText(/boom/)).toBeInTheDocument();
   });
 
   it('asks for login when logged out', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<EndingGallery onClose={vi.fn()} />, { user: null });
+    renderWithAuth(<EndingGallery />, { user: null });
     expect(await screen.findByText(/ログインが必要です/)).toBeInTheDocument();
   });
 
-  it('closes the gallery', async () => {
+  it('offers a tab across to the achievements screen', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    const onClose = vi.fn();
-    renderWithAuth(<EndingGallery onClose={onClose} />);
-    fireEvent.click(await screen.findByText('ホームへ'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    renderWithAuth(<EndingGallery />);
+    fireEvent.click(await screen.findByRole('button', { name: '実績' }));
+    expect(window.location.hash).toBe('#/records/achievements');
+    window.history.replaceState(null, '', window.location.pathname);
   });
 });
 

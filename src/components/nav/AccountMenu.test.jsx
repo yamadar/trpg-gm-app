@@ -2,18 +2,18 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { AuthContext } from '../../auth/AuthContext.jsx';
 import { renderWithAuth } from '../../test/renderWithAuth.jsx';
-import AuthBar from './AuthBar.jsx';
+import AccountMenu from './AccountMenu.jsx';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   window.location.hash = '';
 });
 
-function renderWithContext(value, ui = <AuthBar />) {
+function renderWithContext(value, ui = <AccountMenu />) {
   return render(<AuthContext.Provider value={value}>{ui}</AuthContext.Provider>);
 }
 
-describe('AuthBar', () => {
+describe('AccountMenu', () => {
   it('renders nothing while auth is loading', () => {
     const { container } = renderWithContext({
       user: null,
@@ -25,7 +25,7 @@ describe('AuthBar', () => {
   });
 
   it('shows a login button when logged out', () => {
-    renderWithAuth(<AuthBar />, { user: null });
+    renderWithAuth(<AccountMenu />, { user: null });
     expect(screen.getByText('ログイン')).toBeInTheDocument();
   });
 
@@ -34,7 +34,7 @@ describe('AuthBar', () => {
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [] }) })
     );
-    renderWithAuth(<AuthBar />, { user: null });
+    renderWithAuth(<AccountMenu />, { user: null });
     fireEvent.click(screen.getByText('ログイン'));
     await waitFor(() =>
       expect(screen.getByText('ログイン方法が設定されていません')).toBeInTheDocument()
@@ -42,28 +42,28 @@ describe('AuthBar', () => {
   });
 
   it('shows the display name and can open the menu to logout', () => {
-    renderWithAuth(<AuthBar />); // 既定ユーザー「テスト」
+    renderWithAuth(<AccountMenu />); // 既定ユーザー「テスト」
     fireEvent.click(screen.getByText('テスト'));
     expect(screen.getByText('ログアウト')).toBeInTheDocument();
     expect(screen.getByText('プロフィール編集')).toBeInTheDocument();
   });
 
   it('renders a first-letter avatar circle when no avatarUrl is set', () => {
-    renderWithAuth(<AuthBar />, {
+    renderWithAuth(<AccountMenu />, {
       user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
     });
     expect(screen.getByText('テ')).toBeInTheDocument();
   });
 
   it('renders an avatar image when avatarUrl is set', () => {
-    const { container } = renderWithAuth(<AuthBar />, {
+    const { container } = renderWithAuth(<AccountMenu />, {
       user: { id: 'usr_test', displayName: 'テスト', avatarUrl: 'https://example.com/a.png' },
     });
     expect(container.querySelector('img')).toHaveAttribute('src', 'https://example.com/a.png');
   });
 
   it('navigates to my own user page and closes the menu when "自分のページ" is clicked', () => {
-    renderWithAuth(<AuthBar />, {
+    renderWithAuth(<AccountMenu />, {
       user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
     });
     fireEvent.click(screen.getByText('テスト'));
@@ -197,7 +197,7 @@ describe('AuthBar', () => {
   });
 
   it('closes the profile modal via the cancel button without saving', () => {
-    renderWithAuth(<AuthBar />);
+    renderWithAuth(<AccountMenu />);
     fireEvent.click(screen.getByText('テスト'));
     fireEvent.click(screen.getByText('プロフィール編集'));
     fireEvent.click(screen.getByText('キャンセル'));
@@ -205,7 +205,7 @@ describe('AuthBar', () => {
   });
 
   it('closes the menu when clicking outside', () => {
-    renderWithAuth(<AuthBar />); // 既定ログイン
+    renderWithAuth(<AccountMenu />); // 既定ログイン
     fireEvent.click(screen.getByText('テスト')); // メニューを開く(表示名トグル)
     expect(screen.getByText('ログアウト')).toBeInTheDocument();
     fireEvent.mouseDown(document.body);
@@ -213,7 +213,7 @@ describe('AuthBar', () => {
   });
 
   it('still opens and closes the menu via the toggle button itself (unaffected by the outside-click listener)', () => {
-    renderWithAuth(<AuthBar />);
+    renderWithAuth(<AccountMenu />);
     const toggle = screen.getByText('テスト');
 
     // A real click is preceded by a mousedown on the same target; fire both

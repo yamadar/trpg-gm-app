@@ -1,64 +1,70 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_MONO } from '../theme.js';
-import Button from '../components/ui/Button.jsx';
-import Tabs from '../components/ui/Tabs.jsx';
 import { getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
 import StarterPackList from '../components/share/StarterPackList.jsx';
-import { navigateToUser } from '../router/useHashRoute.js';
+import { navigate } from '../navigation/useRoute.js';
+import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { GALLERY_TABS as TABS } from '../constants/publicContent.js';
+import TabStrip from '../components/nav/TabStrip.jsx';
 
-export default function Gallery({ onClose, onStartStarter }) {
-  const [tab, setTab] = useState('starters');
+export default function Gallery({ route, onStartStarter }) {
+  const tab = route.browseTab;
+  const publicId = route.publicId;
 
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
-  const detailReqRef = useRef(0);
 
+  // 詳細の取得は URL の publicId に従う。戻る/進むでも同じ経路を通る。
+  // 追い越しの防止は cancelled フラグだけで足りる。Reactは次のeffect本体より先に
+  // 前回のクリーンアップを走らせるため、古いリクエストでは必ず cancelled が先に立つ。
   useEffect(() => {
-    setViewMode('list');
-    setDetail(null);
-    setDetailError('');
-  }, [tab]);
-
-  async function openDetail(publicId) {
-    const my = ++detailReqRef.current;
-    setViewMode('detail');
+    if (!publicId) {
+      setDetail(null);
+      setDetailError('');
+      return undefined;
+    }
+    let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
     setDetailError('');
-    try {
-      const item = await getPublic(tab, publicId);
-      if (my !== detailReqRef.current) return; // 別の詳細取得が始まっていたら破棄
-      setDetail(item);
-    } catch (e) {
-      if (my !== detailReqRef.current) return;
-      setDetailError('取得に失敗した: ' + e.message);
-    } finally {
-      if (my === detailReqRef.current) setDetailLoading(false);
-    }
+    (async () => {
+      try {
+        const item = await getPublic(tab, publicId);
+        if (cancelled) return;
+        setDetail(item);
+      } catch (e) {
+        if (cancelled) return;
+        setDetailError('取得に失敗した: ' + e.message);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, publicId]);
+
+  useBreadcrumbLabel(detail ? detail.title : null);
+
+  function goToTab(nextTab) {
+    navigate({ name: 'browse', browseTab: nextTab, publicId: null });
   }
 
-  function backToList() {
-    setViewMode('list');
-    setDetail(null);
+  function openDetail(id) {
+    navigate({ name: 'browse', browseTab: tab, publicId: id });
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '64px 20px 40px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, gap: 12 }}>
-        <h1 style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink, margin: 0 }}>公開ギャラリー</h1>
-        <Button variant="ghost" onClick={onClose}>
-          閉じる
-        </Button>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 20px 40px' }}>
+      <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink, marginBottom: 24 }}>
+        公開ギャラリー
       </div>
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="公開物の種類" />
+      <TabStrip tabs={TABS} active={tab} onSelect={goToTab} />
 
-      <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
       {/* starters は公開アイテムの一覧/詳細ではなく「まとめて取り込む単位」なので、
           /api/public/:type の TYPES にも属さない。ここだけ別コンポーネントを描画する。 */}
       {tab === 'starters' ? (
@@ -68,39 +74,27 @@ export default function Gallery({ onClose, onStartStarter }) {
           <PublicItemList
             key={tab}
             type={tab}
-            active={viewMode === 'list'}
+            active={!publicId}
             onOpenDetail={openDetail}
-            onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+            onAuthorClick={(ownerId) => navigate({ name: 'user', userId: ownerId })}
           />
 
-          {viewMode !== 'list' &&
+          {publicId &&
             (detailLoading ? (
-              <div>
-                <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-                  ← 一覧に戻る
-                </Button>
-                <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-              </div>
+              <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
             ) : detailError ? (
-              <div>
-                <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-                  ← 一覧に戻る
-                </Button>
-                <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-              </div>
+              <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
             ) : (
               detail && (
                 <PublicItemDetail
                   type={tab}
                   item={detail}
-                  onBack={backToList}
-                  onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+                  onAuthorClick={(ownerId) => navigate({ name: 'user', userId: ownerId })}
                 />
               )
             ))}
         </>
       )}
-      </div>
-    </main>
+    </div>
   );
 }
