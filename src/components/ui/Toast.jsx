@@ -1,12 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { COLORS, F_BODY, motionAllowed } from '../../theme.js';
+import { SHELL_HEADER_HEIGHT_VAR } from '../nav/AppShell.jsx';
 
 export const TOAST_TIMEOUT_MS = 6000;
 
-// シェルのヘッダー(zIndex 90)とモーダル(100/1000)より下に置く。上から降りてくる
-// 位置も、そのヘッダーと重ならないよう下げる。
-const STACK_Z_INDEX = 80;
-const STACK_TOP = 64;
+// シェルのヘッダーは不透明な全幅の帯なので、その下に降ろさないとトーストが完全に
+// 隠れる。高さは中身の折り返しで変わるため固定値では見積もれず、AppShell が公開する
+// 実測値(CSS変数)から位置を導く。ヘッダーの無い画面では変数が無いので 0 扱いになる。
+const STACK_GAP = 8;
+const STACK_TOP = `calc(var(${SHELL_HEADER_HEIGHT_VAR}, 0px) + ${STACK_GAP}px)`;
+
+// 位置に加えて重なり順でもヘッダー(zIndex 90)を上回らせる。実測値の反映が
+// 一瞬遅れてもトーストが裏に回らないようにするため。アカウントメニューの
+// ドロップダウンとログインモーダル(いずれも100)よりは下に置く。
+const STACK_Z_INDEX = 95;
 
 const KEYFRAMES_ID = 'trpg-toast-anim';
 const KEYFRAMES = `

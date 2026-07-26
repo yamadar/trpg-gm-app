@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { navTabFor, isFocusRoute } from '../../navigation/routes.js';
 import { navigateHash } from '../../navigation/useRoute.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
@@ -21,10 +21,41 @@ import { COLORS, F_DISPLAY } from '../../theme.js';
 const NARROW_TABBAR_BASE = 64;
 const NARROW_TABBAR_SPACE = `calc(${NARROW_TABBAR_BASE}px + max(0px, env(safe-area-inset-bottom) - 4px))`;
 
+// ヘッダーの実高さを公開するCSS変数。上部に position: fixed で重ねるもの
+// (ToastStack 等)は、この値を基準に自分の位置を決めれば帯の裏に隠れない。
+// FocusHeader は高さを定数(FOCUS_HEADER_HEIGHT)で公開できるが、こちらの
+// ヘッダーはナビ・パンくず・アカウント名の折り返しで高さが変わるため定数にできず、
+// 実測値を配る形にしている。集中モードではヘッダーが無いので 0px を配る。
+export const SHELL_HEADER_HEIGHT_VAR = '--shell-header-height';
+
 export default function AppShell({ route, children }) {
   const wide = useMediaQuery('(min-width: 768px)');
   const focus = isFocusRoute(route);
   const mainRef = useRef(null);
+  const headerRef = useRef(null);
+
+  // ヘッダーの実高さを配る。描画直後にトーストが一瞬ヘッダーの裏へ出るのを避けるため
+  // useLayoutEffect で測る。折り返しによる高さ変化は ResizeObserver で追う。
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const publish = () => {
+      const el = headerRef.current;
+      root.style.setProperty(SHELL_HEADER_HEIGHT_VAR, `${el ? el.getBoundingClientRect().height : 0}px`);
+    };
+    publish();
+
+    const el = headerRef.current;
+    // ResizeObserver 非対応環境(jsdom等)では初回の実測値だけで運用する。
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return () => root.style.removeProperty(SHELL_HEADER_HEIGHT_VAR);
+    }
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty(SHELL_HEADER_HEIGHT_VAR);
+    };
+  }, [focus, wide]);
 
   // スキップリンクの既定動作(hash を '#main' にする)は使えない。hash はこのアプリの
   // ルーティング入力そのもので、'#main' は parseRoute が解釈できず(routes.js の default)
@@ -71,6 +102,7 @@ export default function AppShell({ route, children }) {
       </a>
 
       <header
+        ref={headerRef}
         style={{
           position: 'sticky',
           top: 0,

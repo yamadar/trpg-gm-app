@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { screen, within, fireEvent } from '@testing-library/react';
-import AppShell from './AppShell.jsx';
+import AppShell, { SHELL_HEADER_HEIGHT_VAR } from './AppShell.jsx';
 import { BreadcrumbProvider } from '../../navigation/BreadcrumbContext.jsx';
 import { parseRoute } from '../../navigation/routes.js';
 import { renderWithAuth } from '../../test/renderWithAuth.jsx';
@@ -16,8 +16,17 @@ function renderShell(hash, { user } = {}) {
   );
 }
 
+// jsdom はレイアウトを持たず全ての要素の高さが0になるため、ヘッダーだけ実測値を装う。
+function stubHeaderHeight(height) {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    return { height: this.tagName === 'HEADER' ? height : 0, width: 0, top: 0, left: 0, right: 0, bottom: 0 };
+  });
+}
+
 describe('AppShell', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
+    document.documentElement.style.removeProperty(SHELL_HEADER_HEIGHT_VAR);
     // hash を触るテストがあるため、次のテストへ持ち越さない。
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
   });
@@ -89,6 +98,20 @@ describe('AppShell', () => {
   it('lets the content region receive focus without joining the tab order', () => {
     renderShell('#/');
     expect(document.getElementById('main')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('publishes the measured header height so fixed overlays can clear the header', () => {
+    // ヘッダーは中身が折り返すと高くなるため、高さを定数で持てない。上部に固定配置する
+    // もの(ToastStack 等)がその裏に隠れないよう、実測値をCSS変数として公開する。
+    stubHeaderHeight(95);
+    renderShell('#/library/world');
+    expect(document.documentElement.style.getPropertyValue(SHELL_HEADER_HEIGHT_VAR)).toBe('95px');
+  });
+
+  it('publishes a zero header height in focus mode, where the shell renders no header', () => {
+    stubHeaderHeight(95);
+    renderShell('#/play/ses_1');
+    expect(document.documentElement.style.getPropertyValue(SHELL_HEADER_HEIGHT_VAR)).toBe('0px');
   });
 
   it('reserves room for the bottom tab bar including the safe-area inset', () => {
