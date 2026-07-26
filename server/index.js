@@ -65,7 +65,9 @@ export function resolveSecureCookies(value, baseUrl) {
   if (TRUE_VALUES.has(s)) return true;
   if (FALSE_VALUES.has(s)) return false;
   if (s !== '') {
-    throw new Error(`SECURE_COOKIES must be one of true/false (got: ${value})`);
+    throw new Error(
+      `SECURE_COOKIES must be one of true/false, 1/0, yes/no, on/off (got: ${value})`,
+    );
   }
   return new URL(baseUrl).protocol === 'https:';
 }

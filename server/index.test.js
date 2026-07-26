@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { createApp, resolveSecureCookies, resolveStaticDir } from './index.js';
 import { createTestUserSession } from './auth/testHelpers.js';
@@ -215,7 +216,8 @@ describe('resolveStaticDir', () => {
   });
 
   it('resolves a relative path against the repository root', () => {
-    expect(resolveStaticDir('dist')).toBe(path.join(import.meta.dirname, '..', 'dist'));
+    const serverDir = path.dirname(fileURLToPath(import.meta.url));
+    expect(resolveStaticDir('dist')).toBe(path.join(serverDir, '..', 'dist'));
   });
 
   it('passes an absolute path through unchanged', () => {
