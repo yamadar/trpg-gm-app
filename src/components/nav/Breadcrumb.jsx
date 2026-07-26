@@ -50,7 +50,8 @@ export default function Breadcrumb({ route }) {
                 minWidth: 0,
               }}
             >
-              {i > 0 && <ChevronRight size={12} color={COLORS.faint} aria-hidden="true" />}
+              {/* 省略時は非表示のliにも区切りが挟まるため、先頭に「見える」段だけ判定する。 */}
+              {i > firstVisible && <ChevronRight size={12} color={COLORS.faint} aria-hidden="true" />}
               {isLast ? (
                 <span
                   aria-current="page"

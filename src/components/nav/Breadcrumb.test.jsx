@@ -74,4 +74,37 @@ describe('Breadcrumb', () => {
     const { container } = renderCrumbs('#/library/character/w1');
     expect(container.querySelector('nav').style.minHeight).toBe('32px');
   });
+
+  it('省略時、最初に見える段に区切り記号が孤立して表示されない', () => {
+    // jsdom には matchMedia が無いため useMediaQuery は常に false を返し、
+    // このテストは狭幅(先頭を非表示にする)分岐を通る。
+    renderCrumbs('#/library/character');
+    const firstVisibleItem = screen.getByRole('button', { name: '素材' }).closest('li');
+    const lastItem = screen.getByText('Character').closest('li');
+    // 区切りアイコン(lucide の ChevronRight)は svg として描画される。
+    expect(firstVisibleItem.querySelector('svg')).not.toBeInTheDocument();
+    expect(lastItem.querySelector('svg')).toBeInTheDocument();
+  });
+
+  it('幅広時は先頭以外の全段に区切り記号が入る(matchMediaをモックして幅広分岐を強制)', () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = (query) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+    });
+    try {
+      const { container } = renderCrumbs('#/library/character');
+      const items = container.querySelectorAll('nav ol > li');
+      expect(items).toHaveLength(3);
+      items.forEach((li, i) => {
+        expect(!!li.querySelector('svg')).toBe(i > 0);
+      });
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
 });
