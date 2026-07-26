@@ -56,6 +56,10 @@ export function createApp({
   fetchImpl = fetch,
   baseUrl = resolveBaseUrl(env.BASE_URL),
   secureCookies = env.NODE_ENV === 'production',
+  // 本番(単一プロセスでAPIとフロントを両方配信する構成)でのみビルド済みの
+  // dist/ を配信する。開発時はViteのdevサーバーが5173でフロントを配信し、
+  // /api・/auth だけをこのサーバーにプロキシするため配信は不要(vite.config.js)。
+  staticDir = env.STATIC_DIR || (env.NODE_ENV === 'production' ? path.join(__dirname, '..', 'dist') : null),
 } = {}) {
   const app = express();
   app.set('trust proxy', 1);
@@ -105,6 +109,23 @@ export function createApp({
   app.use('/api', createRulesetsRouter({ dataStore }));
   app.use('/api', createPublishRouter({ dataStore, textStore }));
   app.use('/api', createImportsRouter({ dataStore, textStore }));
+
+  // 静的配信はAPIルーターより後にマウントする。先に置くと dist/ 側の
+  // ファイル名と衝突したパスがAPIより優先されてしまうため。
+  if (staticDir) {
+    app.use(express.static(staticDir));
+    // SPAフォールバック: クライアントルーティング用に、未知のGETへ index.html を返す。
+    // /api・/auth 配下は対象外にして、存在しないAPIパスがHTMLで200を返すのを防ぐ
+    // (認証必須APIの401もここで握り潰さない)。
+    app.use((req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      if (req.path === '/api' || req.path === '/auth') return next();
+      if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) return next();
+      res.sendFile(path.join(staticDir, 'index.html'), (err) => {
+        if (err) next(err);
+      });
+    });
+  }
 
   app.use((err, req, res, next) => {
     console.error(err);

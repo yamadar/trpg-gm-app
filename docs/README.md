@@ -28,3 +28,4 @@ AI-GMがシナリオに沿って進行、プレイヤーはPCの行動・選択�
 - [06-content-generation.md](06-content-generation.md) — シナリオ自動生成・世界観分割/インポート・活用方針
 - [07-risks-and-roadmap.md](07-risks-and-roadmap.md) — 留意点・リスク一覧・実装フェーズ計画・設計決定事項
 - [08-feature-ideas.md](08-feature-ideas.md) — 機能アイデア集(楽しさ向上・未着手候補の整理)
+- [09-deployment.md](09-deployment.md) — デプロイ手順(Render)・本番運用メモ
