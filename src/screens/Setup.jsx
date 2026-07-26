@@ -17,6 +17,7 @@ import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
 import { extractPcName, composePcRaw } from '../utils/pcName.js';
 import FocusHeader from '../components/nav/FocusHeader.jsx';
+import ConfirmModal from '../components/library/ConfirmModal.jsx';
 import { navigateHash } from '../navigation/useRoute.js';
 
 export default function Setup({ onStart, campaignContext = null, starterContext = null }) {
@@ -27,6 +28,8 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [libraryWarning, setLibraryWarning] = useState('');
+  // 離脱確認モーダルの開閉。「やめる」を押した時点で失う入力があるときだけ開く。
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // World
   const [worldMode, setWorldMode] = useState(campaignContext || starterContext ? 'existing' : 'skip'); // existing | new | skip
@@ -76,6 +79,35 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   // 現在値で初期化してマウント直後は「変化なし」として扱う。
   const prevWorldIdRef = useRef(worldId);
   const allRulesets = useMemo(() => [...RULESETS, ...customRulesets], [customRulesets]);
+
+  // 「やめる」を押したときに何かを失うか。以前は「やめる」がstep0にしか無く、
+  // そこでは失うものが無かった。今はどのステップからでも押せる集中ヘッダーに
+  // 乗ったため、入力済みの自由記述(貼り付け/ファイル取り込み含む)・既存素材の
+  // 選択・ルールの変更・セッション名のいずれかがあれば「失うもの」とみなす。
+  // campaignContext/starterContext からの引き継ぎ(既存World/Scenarioの選択や
+  // ルールの指定)もここに含める。取り込み直後に無自覚に離脱すると、選び直した
+  // 文脈が黙って消えるため。
+  const hasUnsavedWork =
+    Boolean(worldTitle.trim()) ||
+    Boolean(worldRaw.trim()) ||
+    Boolean(selectedWorld) ||
+    Boolean(scenarioTitle.trim()) ||
+    Boolean(scenarioRaw.trim()) ||
+    Boolean(genre.trim()) ||
+    Boolean(selectedScenario) ||
+    rulesetId !== 'simple' ||
+    Boolean(pcRaw.trim()) ||
+    Boolean(pcName.trim()) ||
+    Boolean(selectedPC) ||
+    Boolean(title.trim());
+
+  function handleExitClick() {
+    if (hasUnsavedWork) {
+      setShowExitConfirm(true);
+    } else {
+      navigateHash('#/');
+    }
+  }
 
   const steps = ['世界観', 'シナリオ', 'ルール', 'PC', '確認'];
   // 小説化したときにPCが他の登場人物と「彼」で衝突しないよう、新規作成のPCには
@@ -332,7 +364,7 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
         steps={steps}
         currentStep={step}
         exitLabel="やめる"
-        onExit={() => navigateHash('#/')}
+        onExit={handleExitClick}
       />
       <div style={{ maxWidth: 640, margin: '0 auto', padding: '40px 20px' }}>
         <Card style={{ minHeight: 320 }}>
@@ -655,6 +687,14 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        open={showExitConfirm}
+        message="入力した内容を破棄してウィザードを離れる。よいか?"
+        confirmLabel="破棄して離れる"
+        onConfirm={() => navigateHash('#/')}
+        onCancel={() => setShowExitConfirm(false)}
+      />
     </div>
   );
 }

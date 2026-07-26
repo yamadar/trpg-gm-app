@@ -45,6 +45,50 @@ describe('Setup', () => {
     window.history.replaceState(null, '', window.location.pathname);
   });
 
+  it('asks for confirmation before leaving once the wizard has unsaved input', () => {
+    // 世界観の自由記述に何か入力されている状態で「やめる」を押すと、
+    // 未入力のときと違って即離脱せず確認モーダルを挟む。
+    render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByText('新規に用意する'));
+    fireEvent.change(screen.getByPlaceholderText('世界観の資料を貼る、ファイルを取り込む'), {
+      target: { value: '中世風の島国' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+
+    expect(screen.getByText('入力した内容を破棄してウィザードを離れる。よいか?')).toBeInTheDocument();
+    expect(window.location.hash).not.toBe('#/');
+  });
+
+  it('leaves the wizard once the exit is confirmed from the modal', () => {
+    render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByText('新規に用意する'));
+    fireEvent.change(screen.getByPlaceholderText('世界観の資料を貼る、ファイルを取り込む'), {
+      target: { value: '中世風の島国' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '破棄して離れる' }));
+
+    expect(window.location.hash).toBe('#/');
+    window.history.replaceState(null, '', window.location.pathname);
+  });
+
+  it('keeps the wizard and its input intact when the exit is cancelled from the modal', () => {
+    render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByText('新規に用意する'));
+    fireEvent.change(screen.getByPlaceholderText('世界観の資料を貼る、ファイルを取り込む'), {
+      target: { value: '中世風の島国' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+
+    expect(window.location.hash).not.toBe('#/');
+    expect(screen.queryByText('入力した内容を破棄してウィザードを離れる。よいか?')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('世界観の資料を貼る、ファイルを取り込む')).toHaveValue('中世風の島国');
+  });
+
   it('keeps the footer back button as a step-level control', () => {
     render(<Setup onStart={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: '次へ' }));

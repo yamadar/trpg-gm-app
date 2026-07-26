@@ -279,8 +279,11 @@ describe('App', () => {
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
     // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
+    // スターター取り込みでWorld/Scenarioが選択済みになっているため、離脱には
+    // 確認モーダルを挟む。ここで確定させることこそが、この後の検証の前提になる。
     // (離脱時にcontextを消していないことこそが、この後の検証の前提になる)
     fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    fireEvent.click(screen.getByRole('button', { name: '破棄して離れる' }));
     expect(await findHome()).toBeInTheDocument();
 
     // 改めて「+ 新規プレイ」から入り直す。
@@ -366,8 +369,10 @@ describe('App', () => {
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
     // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
-    // 離脱時に文脈を消していないことがこの後の前提になる。
+    // スターター取り込みでWorld/Scenarioが選択済みになっているため、離脱には
+    // 確認モーダルを挟む。離脱時に文脈を消していないことがこの後の前提になる。
     fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    fireEvent.click(screen.getByRole('button', { name: '破棄して離れる' }));
     await findHome();
 
     // 別セッションの「次の章へ」からウィザードへ入り直す。
