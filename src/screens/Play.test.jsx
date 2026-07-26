@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import Play from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
 import * as sceneImageClient from '../api/sceneImageClient.js';
 import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+import { AuthContext } from '../auth/AuthContext.jsx';
 import { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 
 // 既定 imageGen:false。getConfig をモックすることで、既存テストで挿絵UIが描画されず、
@@ -38,6 +39,16 @@ function makeSession(overrides = {}) {
 function Harness({ initialSession }) {
   const [session, setSession] = useState(initialSession);
   return <Play session={session} setSession={setSession} />;
+}
+
+// renderWithAuthはプロバイダの値を固定するため、ログイン状態の変化を再現できない。
+// rerenderでuserだけ差し替えられるよう、プロバイダごとハーネスに含める。
+function AuthHarness({ user, initialSession }) {
+  return (
+    <AuthContext.Provider value={{ user, loading: false, refresh: async () => {}, logout: async () => {} }}>
+      <Harness initialSession={initialSession} />
+    </AuthContext.Provider>
+  );
 }
 
 beforeEach(() => {
@@ -450,6 +461,22 @@ describe('Play', () => {
     // 閉じるボタンで閉じる
     fireEvent.click(screen.getByLabelText('パネルを閉じる'));
     expect(screen.queryByText('PC名: テスト猟師')).not.toBeInTheDocument();
+  });
+
+  // 未ログインで開いた新規セッションは、初回自動ターンが「ログインが必要」で即座に
+  // 失敗する。それでも開始済みの印を付けてしまうと、以後ログインしても導入シーンは
+  // 二度と生成されず、場面もエンディングも選択肢も無い空のプレイ画面が残る。
+  it('requests the opening scene once the player logs in after opening a session logged out', async () => {
+    const { rerender } = render(<AuthHarness user={null} initialSession={makeSession()} />);
+    await waitFor(() =>
+      expect(screen.getByText('プレイの進行にはログインが必要です。右上からログインしてください。')).toBeInTheDocument()
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    rerender(<AuthHarness user={{ id: 'usr_test', displayName: 'テスト', avatarUrl: null }} initialSession={makeSession()} />);
+
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    expect(screen.getByText('進む')).toBeInTheDocument();
   });
 
   it('refuses to run a turn when logged out', async () => {

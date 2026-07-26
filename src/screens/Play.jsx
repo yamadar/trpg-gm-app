@@ -104,7 +104,7 @@ export default function Play({ session, setSession }) {
   );
 
   const runTurn = useCallback(
-    async (playerText, displayText) => {
+    async (playerText, displayText, { allowRoll = true } = {}) => {
       if (!user) {
         setError('プレイの進行にはログインが必要です。右上からログインしてください。');
         return false;
@@ -112,7 +112,7 @@ export default function Play({ session, setSession }) {
       setBusy(true);
       setError('');
       try {
-        const { result, roll, resourceChange } = await takeTurn(session, playerText);
+        const { result, roll, resourceChange } = await takeTurn(session, playerText, { allowRoll });
         const norm = normalizeTurnResult(result);
 
         const newFlags = norm.stateUpdate.flags
@@ -188,14 +188,23 @@ export default function Play({ session, setSession }) {
     [session, setSession, user, imageGen, illustrate]
   );
 
+  // 導入シーンの取得。未ログインで開いた場合 runTurn は即座に失敗するので、
+  // user も依存に含めてログイン後にもう一度ここへ来られるようにする。
   useEffect(() => {
     if (authLoading) return;
     if (session.log.length === 0 && !hasStartedRef.current) {
+      // 印は await の前に付ける(StrictModeの二重呼び出しで導入が2回走らないように)。
       hasStartedRef.current = true;
-      runTurn('(セッション開始。導入シーンを描写せよ)', null);
+      // 導入シーンには判定すべきプレイヤーの行動がまだ無い。allowRoll:falseで
+      // 判定を閉じないと、中身のない判定が1回発生し、その見出しが場面の先頭に出る。
+      runTurn('(セッション開始。導入シーンを描写せよ)', null, { allowRoll: false }).then((ok) => {
+        // 失敗した導入を「開始済み」にしたままだと、ログインし直しても回線が戻っても
+        // 導入シーンは二度と生成されず、場面も選択肢も無い空のプレイ画面が残る。
+        if (!ok) hasStartedRef.current = false;
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading]);
+  }, [authLoading, user]);
 
   async function submitFree() {
     if (!input.trim() || busy || narrating) return;

@@ -25,10 +25,23 @@ describe('normalizeTurnResult', () => {
     expect(normalizeTurnResult({}).narrative).toBe('(描写を取得できませんでした)');
   });
 
+  // 空文字は文字列なので型チェックだけでは通ってしまい、地の文の無いGMカードが
+  // そのまま描かれる。プレイヤーには「何も起きなかった」と区別できないため、
+  // 欠落と同じ扱いにして取得失敗であることを見せる。
+  it('replaces a blank narrative with the placeholder', () => {
+    expect(normalizeTurnResult({ narrative: '' }).narrative).toBe('(描写を取得できませんでした)');
+    expect(normalizeTurnResult({ narrative: '   \n\t ' }).narrative).toBe('(描写を取得できませんでした)');
+  });
+
   it('keeps only string choices and defaults to an empty array', () => {
     expect(normalizeTurnResult({ choices: ['ok', 3, null, 'yes'] }).choices).toEqual(['ok', 'yes']);
     expect(normalizeTurnResult({ choices: 'notarray' }).choices).toEqual([]);
     expect(normalizeTurnResult({}).choices).toEqual([]);
+  });
+
+  // 空文字の選択肢はラベルの無いボタンになり、押すと空の行動がGMへ送られる。
+  it('drops blank choices so no empty button is offered', () => {
+    expect(normalizeTurnResult({ choices: ['進む', '', '   '] }).choices).toEqual(['進む']);
   });
 
   it('returns null for an invalid current_scene so the caller keeps the previous one', () => {

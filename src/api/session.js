@@ -60,7 +60,11 @@ function normalizeFlags(result) {
   return result;
 }
 
-export async function takeTurn(session, playerText) {
+// allowRoll: このターンでroll_checkを許すか。導入シーンのように判定対象の行動が
+// 存在しないターンではfalseで呼ぶ。ツールを開けたままにすると、モデルは判定が不要でも
+// 「ダミー」「判定不要」といった中身のない見出しでroll_checkを1回消費し、その見出しが
+// 判定スタンプとして場面の先頭に描かれてしまう。
+export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
   const adapter = resolveAdapter(session);
   const system = buildSystemBlocks(session);
   let messages = [{ role: 'user', content: buildTurnUserContent(session, playerText) }];
@@ -69,7 +73,7 @@ export async function takeTurn(session, playerText) {
     max_tokens: 2000,
     thinking: { type: 'disabled' },
     system,
-    tools: [buildRollTool(adapter)],
+    ...(allowRoll ? { tools: [buildRollTool(adapter)] } : {}),
     output_config: { format: TURN_OUTPUT_FORMAT },
   };
 
@@ -116,7 +120,12 @@ export async function takeTurn(session, playerText) {
         ],
       },
     ];
-    data = await callClaude({ ...base, messages });
+    // 判定は1ターンに最大1回。ここでツールを開けたままにすると、モデルは判定結果を
+    // 受け取った後さらにroll_checkを呼びつつ、structured outputsのスキーマを満たす
+    // ためだけの空JSON(narrative空・choices空)を添えて返すことがある。その2度目の
+    // 呼び出しは下の1回きりの分岐では拾われず、空JSONがそのままターンの内容として
+    // 表示される。tool_choice:noneで追撃時のツールを閉じ、本文の生成を必ず終わらせる。
+    data = await callClaude({ ...base, messages, tool_choice: { type: 'none' } });
   }
 
   const text = extractText(data.content);

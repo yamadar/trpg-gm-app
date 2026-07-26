@@ -9,8 +9,14 @@ export function normalizeTurnResult(result) {
   const r = isPlainObject(result) ? result : {};
   const su = isPlainObject(r.state_update) ? r.state_update : {};
 
-  const narrative = typeof r.narrative === 'string' ? r.narrative : NARRATIVE_FALLBACK;
-  const choices = Array.isArray(r.choices) ? r.choices.filter((c) => typeof c === 'string') : [];
+  // 空文字・空白のみも「取得できなかった」として扱う。型だけ見て通すと、地の文の無い
+  // GMカードが黙って描かれ、プレイヤーには不具合と「何も起きなかった」の区別が付かない。
+  const narrative =
+    typeof r.narrative === 'string' && r.narrative.trim().length > 0 ? r.narrative : NARRATIVE_FALLBACK;
+  // 空文字の選択肢はラベルの無いボタンになり、押すと空の行動がGMへ送られるため落とす。
+  const choices = Array.isArray(r.choices)
+    ? r.choices.filter((c) => typeof c === 'string' && c.trim().length > 0)
+    : [];
 
   const current_scene =
     typeof su.current_scene === 'string' && su.current_scene.length > 0 ? su.current_scene : null;

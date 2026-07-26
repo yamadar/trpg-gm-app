@@ -51,6 +51,52 @@ describe('generateScenario', () => {
 });
 
 describe('takeTurn', () => {
+  // 判定対象の行動が無いターン(導入シーン)でroll_checkを開けておくと、モデルは
+  // 「ダミー」等の空の見出しで判定を1回消費する。その見出しは判定スタンプとして
+  // 場面の先頭に描かれるため、プレイヤーには意味不明な文字列として見える。
+  it('does not offer the roll tool when the caller disallows a roll', async () => {
+    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [{ type: 'text', text: '{"narrative": "村の広場。", "state_update": {}, "choices": ["進む"]}' }],
+    });
+
+    await takeTurn(makeSession(), '(セッション開始。導入シーンを描写せよ)', { allowRoll: false });
+
+    expect(callClaudeMock.mock.calls[0][0].tools).toBeUndefined();
+  });
+
+  it('offers the roll tool by default', async () => {
+    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+      content: [{ type: 'text', text: '{"narrative": "静かな朝。", "state_update": {}, "choices": []}' }],
+    });
+
+    await takeTurn(makeSession(), '周りを見渡す');
+
+    expect(callClaudeMock.mock.calls[0][0].tools.map((t) => t.name)).toEqual(['roll_check']);
+  });
+
+  // 判定は1ターンに最大1回。ツールを開けたまま追撃すると、モデルが再度roll_checkを
+  // 呼びつつ、structured outputsのスキーマを埋めるためだけの空JSON(narrative空・
+  // choices空)を返すことがある。2度目の呼び出しは取りこぼされ、その空JSONが
+  // そのままターンの内容として表示されてしまう。
+  it('closes the tool on the follow-up call so the turn cannot be spent on a second roll', async () => {
+    const toolUseResponse = {
+      content: [
+        { type: 'tool_use', id: 'tool_1', name: 'roll_check', input: { check_label: '崖を登る', success_percent: 50 } },
+      ],
+    };
+    const finalResponse = {
+      content: [{ type: 'text', text: '{"narrative": "登り切った。", "state_update": {}, "choices": ["進む"]}' }],
+    };
+    const callClaudeMock = vi
+      .spyOn(client, 'callClaude')
+      .mockResolvedValueOnce(toolUseResponse)
+      .mockResolvedValueOnce(finalResponse);
+
+    await takeTurn(makeSession(), '崖を登る');
+
+    expect(callClaudeMock.mock.calls[1][0].tool_choice).toEqual({ type: 'none' });
+  });
+
   it('returns the parsed result without a roll when no tool_use happens', async () => {
     const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
       content: [{ type: 'text', text: '{"narrative": "静かな朝。", "state_update": {}, "choices": []}' }],
