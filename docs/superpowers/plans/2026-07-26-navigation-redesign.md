@@ -1886,7 +1886,7 @@ Expected: FAIL — `Unable to find an accessible element with the role "button" 
 `src/App.jsx` を全面的に次の内容へ置き換える:
 
 ```jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGoogleFonts, COLORS, F_MONO } from './theme.js';
 import { listSessions, getSession, saveSession, isStorageAvailable } from './storage/index.js';
 import Home from './screens/Home.jsx';
@@ -1898,6 +1898,7 @@ import UserPage from './screens/UserPage.jsx';
 import EndingGallery from './screens/EndingGallery.jsx';
 import AchievementList from './screens/AchievementList.jsx';
 import { useRoute, navigate, replace } from './navigation/useRoute.js';
+import { buildHash } from './navigation/routes.js';
 import { BreadcrumbProvider } from './navigation/BreadcrumbContext.jsx';
 import AppShell from './components/nav/AppShell.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
@@ -1917,6 +1918,8 @@ export default function App() {
 function AppInner() {
   useGoogleFonts();
   const route = useRoute();
+  // route オブジェクトは hash が動くたびに作り直されるため、同一性の判定には正準 hash を使う。
+  const routeKey = buildHash(route);
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
   const [sessionError, setSessionError] = useState('');
@@ -1930,6 +1933,14 @@ function AppInner() {
   const [starterContext, setStarterContext] = useState(null);
   const takeover = useSessionTakeover();
 
+  // バナーはシェルの子として全ルートに描かれるため、出しっぱなしにすると
+  // 一度の失敗が以降すべての画面の先頭に居座る。「どのルートで見せたいバナーか」を
+  // 覚えておき、そこから離れた時点で畳む。null は「出していない」。
+  const authErrorRouteRef = useRef(null);
+  const sessionErrorRouteRef = useRef(null);
+  // 直前のルート。プレイ画面から離れたことを検知するために持つ。
+  const prevRouteRef = useRef(route);
+
   useEffect(() => {
     (async () => {
       setStorageOk(await isStorageAvailable());
@@ -1941,6 +1952,7 @@ function AppInner() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('auth_error') === '1') {
+      authErrorRouteRef.current = routeKey;
       setAuthError(true);
       params.delete('auth_error');
       const qs = params.toString();
@@ -1972,6 +1984,9 @@ function AppInner() {
       if (s) {
         setSession(s);
       } else {
+        // 見せたいのは差し替えた先のホーム。ここで基準を先に置いておかないと、
+        // 直後の replace によるルート変更で自分自身のバナーを畳んでしまう。
+        sessionErrorRouteRef.current = buildHash({ name: 'home' });
         setSessionError('セッションが見つかりません');
         replace({ name: 'home' });
       }
@@ -1980,6 +1995,30 @@ function AppInner() {
       cancelled = true;
     };
   }, [route.name, route.sessionId, session]);
+
+  // ルートが変わったときの後始末。バナーを畳み、離れたプレイ画面のセッションを捨てる。
+  // 依存は routeKey だけにして、route オブジェクトの作り直しでは走らないようにする。
+  useEffect(() => {
+    const prev = prevRouteRef.current;
+    prevRouteRef.current = route;
+
+    if (authErrorRouteRef.current !== null && authErrorRouteRef.current !== routeKey) {
+      authErrorRouteRef.current = null;
+      setAuthError(false);
+    }
+    if (sessionErrorRouteRef.current !== null && sessionErrorRouteRef.current !== routeKey) {
+      sessionErrorRouteRef.current = null;
+      setSessionError('');
+    }
+
+    // メモリ上の session を握ったままだと、素材ライブラリから消したセッションへ
+    // 同じ #/play/:id で戻ったときにストレージを読み直さず古い内容を映してしまう。
+    // ただし「ウィザード完了 → #/play/:id」では handleStart が置いた session を
+    // 捨ててはいけないので、直前がプレイ画面だったときだけ捨てる。
+    if (prev.name === 'play' && !(route.name === 'play' && route.sessionId === prev.sessionId)) {
+      setSession(null);
+    }
+  }, [routeKey]);
 
   async function handleStart(newSession) {
     setSession(newSession);
@@ -2041,8 +2080,10 @@ function AppInner() {
             <Home
               sessions={sessions}
               storageOk={storageOk}
-              // 「+ 新規プレイ」から入ったSetupが直前のスターター選択を引きずると、
-              // World/Scenarioが勝手に選択済みになる
+              // ウィザードの入口は「自分が使う文脈」だけでなく「使わない文脈」も必ず落とす。
+              // 離脱経路(ブラウザバック等)は文脈を消さないため、両方が同居すると
+              // Setupがstarter基準でPCステップから開き、シナリオだけ無関係なものが
+              // 選ばれたまま気づかれずに進んでしまう。
               onNew={() => {
                 setStarterContext(null);
                 setCampaignContext(null);
@@ -2051,10 +2092,12 @@ function AppInner() {
               onContinue={(id) => navigate({ name: 'play', sessionId: id })}
               onNextChapter={(ctx) => {
                 setCampaignContext(ctx);
+                setStarterContext(null);
                 navigate({ name: 'setup' });
               }}
               onStartStarter={(ctx) => {
                 setStarterContext(ctx);
+                setCampaignContext(null);
                 navigate({ name: 'setup' });
               }}
             />
@@ -2073,6 +2116,7 @@ function AppInner() {
             route={route}
             onStartStarter={(ctx) => {
               setStarterContext(ctx);
+              setCampaignContext(null);
               navigate({ name: 'setup' });
             }}
           />
@@ -2080,9 +2124,14 @@ function AppInner() {
         {route.name === 'records' && route.recordsTab === 'endings' && <EndingGallery />}
         {route.name === 'records' && route.recordsTab === 'achievements' && <AchievementList />}
         {route.name === 'user' && <UserPage userId={route.userId} />}
-        {route.name === 'play' && session && session.id === route.sessionId && (
-          <Play session={session} setSession={setSession} />
-        )}
+        {/* 集中モードのシェルはナビを出さないので、読み込み中に何も描かないと
+            真っ白で戻る手段の無い画面になる。ホームと同じ表示で埋める。 */}
+        {route.name === 'play' &&
+          (session && session.id === route.sessionId ? (
+            <Play session={session} setSession={setSession} />
+          ) : (
+            <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>
+          ))}
       </AppShell>
     </div>
   );
@@ -2907,13 +2956,17 @@ git commit -m "refactor(play): 離脱導線をFocusHeaderへ統合する"
   });
 ```
 
-`src/App.test.jsx` の `does not carry a previously imported starter pack...` は、ウィザード離脱の手順が変わるため次のように書き換える。`戻る` を3回押してから `やめる` を押す部分（`App.test.jsx:174-178`）を、1回の離脱に置き換える:
+`src/App.test.jsx` の `does not carry a previously imported starter pack...` 2件（`+ 新規プレイ` 版と `次の章へ` 版）は、ウィザード離脱の手順が変わるため書き換える。いまは離脱ボタンが無いので `act(() => navigate({ name: 'home' }));` で URL を直接戻しているが、それを `やめる` の1クリックに置き換える:
 
 ```jsx
     // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
     fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    expect(await findHome()).toBeInTheDocument();
 ```
+
+`GM's Desk` は `AppShell` が全ブラウジング画面のヘッダーにボタンとして出すため、
+`getByText("GM's Desk")` ではホームに戻れたことを示せない。`src/App.test.jsx` が既に持つ
+`findHome()`（`screen.findByRole('heading', { name: "GM's Desk" })`）でホーム本文の見出しを見る。
 
 - [ ] **Step 2: テストが失敗することを確認する**
 

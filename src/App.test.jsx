@@ -4,9 +4,17 @@ import App from './App.jsx';
 import { navigate } from './navigation/useRoute.js';
 import * as shareClient from './api/shareClient.js';
 import * as starterClient from './api/starterClient.js';
+import * as storage from './storage/index.js';
+import * as sessionApi from './api/session.js';
+import * as campaignClient from './api/campaignClient.js';
+import * as sessionSyncClient from './api/sessionSyncClient.js';
 
 afterEach(() => {
   window.location.hash = '';
+  // spy / stub がテストをまたいで残ると、後続のテストが実物ではなく前のテストの
+  // モックを見てしまうため、ここでまとめて戻す。
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // シェルのヘッダーは全画面で "GM's Desk" ボタンを出すため、その文字列だけでは
@@ -231,5 +239,183 @@ describe('App', () => {
     expect(await screen.findByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
 
     vi.unstubAllGlobals();
+  });
+
+  it('does not carry a previously imported starter pack into a later 次の章へ wizard', async () => {
+    // ウィザードの入口はそれぞれ「自分が使う文脈」を確定させなければならない。
+    // スターター取り込み後にウィザードを離れ、別セッションの「次の章へ」から入り直すと、
+    // starterContext と campaignContext が同居してしまう。同居するとウィザードは
+    // starterContext を見てPCステップから開き、シナリオはスターターのものが選ばれたまま、
+    // ユーザーはシナリオステップを一度も通らずに無関係なシナリオで遊ぶことになる。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    vi.spyOn(storage, 'listSessions').mockResolvedValue([
+      {
+        id: 's1',
+        title: '第一章',
+        updatedAt: 1,
+        worldId: 'w1',
+        world: { raw: 'r', summary: 'ある世界' },
+        rulesetId: 'simple',
+        moods: [],
+        pc: { raw: '元シート' },
+        state: { xp: 3, flags: {}, recent_log: [] },
+        log: [{ role: 'gm', text: '物語' }],
+      },
+    ]);
+    vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '成長版シート', xp: 7 });
+    vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(null);
+    vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({});
+    vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]);
+    vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
+      packs: [
+        {
+          packId: 'arkham-1920s',
+          title: 'アーカム 1920s',
+          tagline: '港町。',
+          source: null,
+          moods: ['ホラー'],
+          recommendedRuleset: 'coc7e',
+          scenarioTitle: '丘の上の写真館',
+        },
+      ],
+      seededAt: 1,
+    });
+    vi.spyOn(starterClient, 'importStarterPack').mockResolvedValue({
+      world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界' },
+      scenario: {
+        id: 'sc',
+        worldId: 'arkham-1920s',
+        title: '丘の上の写真館',
+        recommendedRuleset: 'coc7e',
+        moods: ['ホラー'],
+        raw: '# シナリオ',
+      },
+      pcs: [],
+      npcs: [],
+    });
+
+    render(<App />);
+    await findHome();
+
+    // まずスターターパックを取り込む(starterContext が載る)。ホームの取り込み口は
+    // セッションが1件も無いときにしか出ないので、公開ギャラリー側から取り込む。
+    fireEvent.click(screen.getByRole('button', { name: 'さがす' }));
+    fireEvent.click(await screen.findByText('この冒険を始める'));
+    expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
+
+    // ブラウザバック相当。離脱時に文脈を消していないことがこの後の前提になる。
+    act(() => navigate({ name: 'home' }));
+    await findHome();
+
+    // 別セッションの「次の章へ」からウィザードへ入り直す。
+    fireEvent.click(await screen.findByText('次の章へ'));
+    await waitFor(() => expect(window.location.hash).toBe('#/setup'));
+
+    // キャンペーンの続きは世界観ステップ(0段目)から始まる。PCステップから開くのは
+    // starterContext が残っている証拠で、その場合シナリオはスターターのものになる。
+    expect(await screen.findByText('Worldの用意方法')).toBeInTheDocument();
+    expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();
+    expect(screen.queryByText('丘の上の写真館')).not.toBeInTheDocument();
+  });
+
+  it('clears the session-not-found banner once another route is opened', async () => {
+    // バナーはシェルの子として全ルートに描かれるため、消さないと壊れたリンクを
+    // 一度踏んだだけで、以降ずっとすべての画面の先頭に居座る。
+    window.location.hash = '#/play/missing_session';
+    render(<App />);
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+
+    fireEvent.click(screen.getByRole('button', { name: '記録' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    await waitFor(() =>
+      expect(screen.queryByText('セッションが見つかりません')).not.toBeInTheDocument()
+    );
+  });
+
+  it('clears the auth error banner once another route is opened', async () => {
+    window.history.pushState({}, '', '/?auth_error=1');
+    try {
+      render(<App />);
+      await waitFor(() =>
+        expect(screen.getByText('ログインに失敗しました。もう一度お試しください。')).toBeInTheDocument()
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '記録' }));
+      await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+      await waitFor(() =>
+        expect(
+          screen.queryByText('ログインに失敗しました。もう一度お試しください。')
+        ).not.toBeInTheDocument()
+      );
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('shows a loading placeholder while the play session is being read', async () => {
+    // 集中モードのシェルはナビを描かないので、読み込み中に何も出さないと
+    // 真っ白で操作不能な画面になる。
+    let resolveGet;
+    vi.spyOn(storage, 'getSession').mockReturnValue(
+      new Promise((resolve) => {
+        resolveGet = resolve;
+      })
+    );
+    window.location.hash = '#/play/slow_session';
+    render(<App />);
+
+    expect(await screen.findByText('読み込み中…')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveGet(null);
+    });
+  });
+
+  it('re-reads storage when the same play route is opened again after leaving it', async () => {
+    // メモリ上の session を握ったままだと、素材ライブラリから消したセッションへ
+    // 同じ URL で戻ったときに古い内容をそのまま映してしまう。
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: null }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    const getSpy = vi.spyOn(storage, 'getSession').mockResolvedValue({
+      id: 'sess_1',
+      title: 'テストセッション',
+      world: { raw: '', summary: '' },
+      scenario: { raw: '' },
+      rulesetId: 'simple',
+      pc: { raw: '' },
+      state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], turn_count: 0 },
+      log: [],
+      updatedAt: 0,
+    });
+    window.location.hash = '#/play/sess_1';
+    render(<App />);
+    await waitFor(() => expect(getSpy).toHaveBeenCalledWith('sess_1'));
+
+    act(() => navigate({ name: 'home' }));
+    await findHome();
+
+    // ここでセッションが消えた状態にする。
+    getSpy.mockResolvedValue(null);
+    act(() => navigate({ name: 'play', sessionId: 'sess_1' }));
+
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
   });
 });
