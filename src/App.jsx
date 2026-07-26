@@ -9,33 +9,38 @@ import Gallery from './screens/Gallery.jsx';
 import UserPage from './screens/UserPage.jsx';
 import EndingGallery from './screens/EndingGallery.jsx';
 import AchievementList from './screens/AchievementList.jsx';
-import { useHashRoute, clearHash } from './router/useHashRoute.js';
+import { useRoute, navigate, replace } from './navigation/useRoute.js';
+import { BreadcrumbProvider } from './navigation/BreadcrumbContext.jsx';
+import AppShell from './components/nav/AppShell.jsx';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
-import AccountMenu from './components/nav/AccountMenu.jsx';
 import ConfirmModal from './components/library/ConfirmModal.jsx';
 
 export default function App() {
   return (
     <AuthProvider>
-      <AppInner />
+      <BreadcrumbProvider>
+        <AppInner />
+      </BreadcrumbProvider>
     </AuthProvider>
   );
 }
 
 function AppInner() {
   useGoogleFonts();
-  const [view, setView] = useState('home'); // home | setup | library | gallery | play
+  const route = useRoute();
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
+  const [sessionError, setSessionError] = useState('');
   const [loadingHome, setLoadingHome] = useState(true);
   const [storageOk, setStorageOk] = useState(true);
   const [authError, setAuthError] = useState(false);
   const [uploadingSessions, setUploadingSessions] = useState(false);
+  // ウィザードへ引き継ぐ文脈。world.summary や scenario オブジェクトを含み URL には載せられないため、
+  // 従来どおりメモリで持つ。#/setup を直接開いた場合は素のウィザードとして開く。
   const [campaignContext, setCampaignContext] = useState(null);
   const [starterContext, setStarterContext] = useState(null);
   const takeover = useSessionTakeover();
-  const { userId: routeUserId, endings: routeEndings, achievements: routeAchievements } = useHashRoute();
 
   useEffect(() => {
     (async () => {
@@ -55,163 +60,142 @@ function AppInner() {
     }
   }, []);
 
-  async function handleContinue(id) {
-    const s = await getSession(id);
-    if (s) {
-      setSession(s);
-      setView('play');
-    }
-  }
+  // ホームへ戻るたびに一覧を取り直す(プレイ後の更新を反映するため)。
+  useEffect(() => {
+    if (route.name !== 'home') return;
+    let cancelled = false;
+    (async () => {
+      const list = await listSessions();
+      if (!cancelled) setSessions(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route.name]);
+
+  // #/play/:sessionId を直接開いた/リロードした場合にセッションを読み直す。
+  useEffect(() => {
+    if (route.name !== 'play') return;
+    if (session && session.id === route.sessionId) return;
+    let cancelled = false;
+    (async () => {
+      const s = await getSession(route.sessionId);
+      if (cancelled) return;
+      if (s) {
+        setSession(s);
+      } else {
+        setSessionError('セッションが見つかりません');
+        replace({ name: 'home' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [route.name, route.sessionId, session]);
 
   async function handleStart(newSession) {
     setSession(newSession);
     await saveSession(newSession);
-    setView('play');
-  }
-
-  async function handleExit() {
-    setSessions(await listSessions());
-    setSession(null);
-    setView('home');
-  }
-
-  if (routeUserId) {
-    return (
-      <div
-        style={{
-          background: COLORS.paper,
-          minHeight: '100vh',
-          color: COLORS.ink,
-        }}
-      >
-        <AccountMenu />
-        <UserPage userId={routeUserId} />
-      </div>
-    );
-  }
-
-  if (routeEndings) {
-    return (
-      <div
-        style={{
-          background: COLORS.paper,
-          minHeight: '100vh',
-          color: COLORS.ink,
-        }}
-      >
-        <AccountMenu />
-        <EndingGallery onClose={clearHash} />
-      </div>
-    );
-  }
-
-  if (routeAchievements) {
-    return (
-      <div
-        style={{
-          background: COLORS.paper,
-          minHeight: '100vh',
-          color: COLORS.ink,
-        }}
-      >
-        <AccountMenu />
-        <AchievementList onClose={clearHash} />
-      </div>
-    );
+    setCampaignContext(null);
+    setStarterContext(null);
+    navigate({ name: 'play', sessionId: newSession.id });
   }
 
   return (
-    <div
-      style={{
-        background: COLORS.paper,
-        minHeight: '100vh',
-        color: COLORS.ink,
-      }}
-    >
-      <AccountMenu />
-      <ConfirmModal
-        open={takeover.pendingCount > 0}
-        message={`このブラウザに保存されたセッション${takeover.pendingCount}件をアカウントに保存しますか?`}
-        confirmLabel="保存する"
-        confirmDisabled={uploadingSessions}
-        onConfirm={async () => {
-          setUploadingSessions(true);
-          try {
-            await takeover.confirm();
-          } finally {
-            setUploadingSessions(false);
-          }
-        }}
-        onCancel={takeover.dismiss}
-      />
-      {authError && (
-        <div
-          style={{
-            fontFamily: F_MONO,
-            fontSize: 12,
-            color: COLORS.stamp,
-            textAlign: 'center',
-            padding: '8px 12px',
+    <div style={{ background: COLORS.paper, minHeight: '100vh', color: COLORS.ink }}>
+      <AppShell route={route}>
+        <ConfirmModal
+          open={takeover.pendingCount > 0}
+          message={`このブラウザに保存されたセッション${takeover.pendingCount}件をアカウントに保存しますか?`}
+          confirmLabel="保存する"
+          confirmDisabled={uploadingSessions}
+          onConfirm={async () => {
+            setUploadingSessions(true);
+            try {
+              await takeover.confirm();
+            } finally {
+              setUploadingSessions(false);
+            }
           }}
-        >
-          ログインに失敗しました。もう一度お試しください。
-        </div>
-      )}
-      {view === 'home' &&
-        (loadingHome ? (
-          <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>
-        ) : (
-          <Home
-            sessions={sessions}
-            storageOk={storageOk}
-            // 「+ 新規プレイ」から入ったSetupが直前のスターター選択を引きずると、
-            // World/Scenarioが勝手に選択済みになる
-            onNew={() => {
-              setStarterContext(null);
-              setView('setup');
+          onCancel={takeover.dismiss}
+        />
+        {authError && (
+          <div
+            style={{
+              fontFamily: F_MONO,
+              fontSize: 12,
+              color: COLORS.stamp,
+              textAlign: 'center',
+              padding: '8px 12px',
             }}
-            onContinue={handleContinue}
-            onOpenLibrary={() => setView('library')}
-            onOpenGallery={() => setView('gallery')}
-            onNextChapter={(ctx) => {
-              setCampaignContext(ctx);
-              setView('setup');
+          >
+            ログインに失敗しました。もう一度お試しください。
+          </div>
+        )}
+        {sessionError && (
+          <div
+            style={{
+              fontFamily: F_MONO,
+              fontSize: 12,
+              color: COLORS.stamp,
+              textAlign: 'center',
+              padding: '8px 12px',
             }}
+          >
+            {sessionError}
+          </div>
+        )}
+
+        {route.name === 'home' &&
+          (loadingHome ? (
+            <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>
+          ) : (
+            <Home
+              sessions={sessions}
+              storageOk={storageOk}
+              // 「+ 新規プレイ」から入ったSetupが直前のスターター選択を引きずると、
+              // World/Scenarioが勝手に選択済みになる
+              onNew={() => {
+                setStarterContext(null);
+                setCampaignContext(null);
+                navigate({ name: 'setup' });
+              }}
+              onContinue={(id) => navigate({ name: 'play', sessionId: id })}
+              onNextChapter={(ctx) => {
+                setCampaignContext(ctx);
+                navigate({ name: 'setup' });
+              }}
+              onStartStarter={(ctx) => {
+                setStarterContext(ctx);
+                navigate({ name: 'setup' });
+              }}
+            />
+          ))}
+
+        {route.name === 'setup' && (
+          <Setup
+            onStart={handleStart}
+            campaignContext={campaignContext}
+            starterContext={starterContext}
+          />
+        )}
+        {route.name === 'library' && <Library route={route} />}
+        {route.name === 'browse' && (
+          <Gallery
+            route={route}
             onStartStarter={(ctx) => {
               setStarterContext(ctx);
-              setView('setup');
+              navigate({ name: 'setup' });
             }}
           />
-        ))}
-      {view === 'setup' && (
-        <Setup
-          onStart={(s) => {
-            setCampaignContext(null);
-            setStarterContext(null);
-            handleStart(s);
-          }}
-          onCancel={() => {
-            setCampaignContext(null);
-            setStarterContext(null);
-            setView('home');
-          }}
-          campaignContext={campaignContext}
-          starterContext={starterContext}
-        />
-      )}
-      {view === 'library' && <Library onClose={() => setView('home')} />}
-      {view === 'gallery' && (
-        <Gallery
-          onClose={() => setView('home')}
-          onStartStarter={(ctx) => {
-            setStarterContext(ctx);
-            setView('setup');
-          }}
-        />
-      )}
-      {view === 'play' && session && (
-        <Play session={session} setSession={setSession} onExit={handleExit} />
-      )}
+        )}
+        {route.name === 'records' && route.recordsTab === 'endings' && <EndingGallery />}
+        {route.name === 'records' && route.recordsTab === 'achievements' && <AchievementList />}
+        {route.name === 'user' && <UserPage userId={route.userId} />}
+        {route.name === 'play' && session && session.id === route.sessionId && (
+          <Play session={session} setSession={setSession} />
+        )}
+      </AppShell>
     </div>
   );
 }

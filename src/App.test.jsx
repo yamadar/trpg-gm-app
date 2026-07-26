@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import App from './App.jsx';
+import { navigate } from './navigation/useRoute.js';
 import * as shareClient from './api/shareClient.js';
 import * as starterClient from './api/starterClient.js';
 
@@ -8,40 +9,46 @@ afterEach(() => {
   window.location.hash = '';
 });
 
+// シェルのヘッダーは全画面で "GM's Desk" ボタンを出すため、その文字列だけでは
+// ホームに居ることを示せない。ホーム本文の見出し(h1)で判定する。
+const findHome = () => screen.findByRole('heading', { name: "GM's Desk" });
+const queryHome = () => screen.queryByRole('heading', { name: "GM's Desk" });
+
 describe('App', () => {
   it('shows the home screen after the initial storage check completes', async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    expect(await findHome()).toBeInTheDocument();
     expect(screen.getByText('+ 新規プレイ')).toBeInTheDocument();
   });
 
-  it('navigates to the library screen and back', async () => {
-    // ライブラリはログイン必須なので、/api/meはログイン済みユーザーを返す必要がある
-    // (それ以外のURL、たとえばWorld一覧取得は空配列を返す)。
+  it('navigates to the library through the global nav and back home', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url) => {
         if (String(url).includes('/api/me')) {
-          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }),
+          });
         }
         return Promise.resolve({ ok: true, json: async () => [] });
       })
     );
     render(<App />);
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    await findHome();
 
-    fireEvent.click(screen.getByText('素材ライブラリ'));
-    await waitFor(() => expect(screen.getByText('素材ライブラリ')).toBeInTheDocument());
-    expect(screen.getByText('World一覧')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '素材' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/library/world'));
+    expect(await screen.findByText('World一覧')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('閉じる'));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(await findHome()).toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });
 
-  it('navigates to the public gallery screen and back, without requiring login', async () => {
-    // ギャラリーは未ログインでも閲覧できる想定なので、/api/meは未ログイン(userなし)を返す。
+  it('navigates to the public gallery without requiring login', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url) => {
@@ -55,18 +62,27 @@ describe('App', () => {
       })
     );
     render(<App />);
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    await findHome();
 
-    fireEvent.click(screen.getByText('公開ギャラリー'));
-    // 既定タブは「おすすめ」(スターターパック)になったため、公開アイテム一覧の
-    // 空状態を見るには明示的に他タブへ切り替える。
+    fireEvent.click(screen.getByRole('button', { name: 'さがす' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/browse/starters'));
+
+    // タブ切り替えがURLに乗るのはGalleryをroute駆動にするTask 12から。ここでは
+    // 未ログインのまま公開一覧を見られること(画面内タブ切り替え)だけを確かめる。
     fireEvent.click(await screen.findByText('小説'));
-    await waitFor(() => expect(screen.getByText('まだ公開されたものがありません')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByText('閉じる'));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    expect(await screen.findByText('まだ公開されたものがありません')).toBeInTheDocument();
 
     vi.unstubAllGlobals();
+  });
+
+  it('keeps the global nav visible on every browsing screen', async () => {
+    render(<App />);
+    await findHome();
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '記録' }));
+    await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
   });
 
   it('shows an auth error banner when the URL has auth_error=1 and strips the query param', async () => {
@@ -102,7 +118,10 @@ describe('App', () => {
     expect(profileSpy).toHaveBeenCalledWith('usr_x');
     expect(listSpy).toHaveBeenCalledWith('novels', expect.objectContaining({ ownerId: 'usr_x' }));
     expect(screen.getByText('ログイン')).toBeInTheDocument();
-    expect(screen.queryByText("GM's Desk")).not.toBeInTheDocument();
+    // ユーザーページもシェルの中に入ったので、ホーム本文には差し替わらないが
+    // グローバルナビは出たままになる(以前はページ全体を乗っ取っていた)。
+    expect(queryHome()).not.toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });
@@ -111,10 +130,34 @@ describe('App', () => {
     window.location.hash = '#/endings';
     try {
       render(<App />);
-      expect(await screen.findByText('エンディング図鑑')).toBeInTheDocument();
+      // パンくずにも同じラベルが出るため、本文の見出しで判定する。
+      expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
     } finally {
       window.location.hash = '';
     }
+  });
+
+  it('redirects the legacy #/endings hash to the records route', async () => {
+    window.location.hash = '#/endings';
+    try {
+      render(<App />);
+      // パンくずにも同じラベルが出るため、本文の見出しで判定する。
+      expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
+      await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    } finally {
+      window.location.hash = '';
+    }
+  });
+
+  it('falls back to home when #/play points at a session that no longer exists', async () => {
+    // #/play/:id はリロードしてもストレージから読み直せるが、消えたセッションを
+    // 指している場合は黙って空画面にせず、理由を伝えてホームへ戻す。
+    window.location.hash = '#/play/missing_session';
+    render(<App />);
+
+    expect(await screen.findByText('セッションが見つかりません')).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe('#/'));
+    expect(await findHome()).toBeInTheDocument();
   });
 
   it('does not carry a previously imported starter pack into a later plain new-session wizard', async () => {
@@ -171,12 +214,11 @@ describe('App', () => {
     // PCステップでしか描かれないField labelを見る。
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
-    // ウィザードを「やめる」で離脱する(やめるボタンは0段目にしか無いため、まず戻る)。
-    fireEvent.click(screen.getByText('戻る'));
-    fireEvent.click(screen.getByText('戻る'));
-    fireEvent.click(screen.getByText('戻る'));
-    fireEvent.click(screen.getByText('やめる'));
-    await waitFor(() => expect(screen.getByText("GM's Desk")).toBeInTheDocument());
+    // ウィザードから離脱する。Setup自身の離脱ボタンがrouteを動かすようになるのは
+    // Task 16からなので、ここではURLを直接ホームへ戻す。
+    // (離脱時にcontextを消していないことこそが、この後の検証の前提になる)
+    act(() => navigate({ name: 'home' }));
+    expect(await findHome()).toBeInTheDocument();
 
     // 改めて「+ 新規プレイ」から入り直す。
     const newButton2 = await screen.findByText('+ 新規プレイ');
