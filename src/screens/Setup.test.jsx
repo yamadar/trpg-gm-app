@@ -29,7 +29,17 @@ describe('Setup', () => {
   });
 
   it('leaves the wizard through the focus header, from any step', () => {
+    const { unmount } = render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    expect(window.location.hash).toBe('#/');
+    window.history.replaceState(null, '', window.location.pathname);
+    unmount();
+
+    // 先のステップへ進んでも同じ離脱導線が同じ場所に出続けること
+    // (以前は画面ごとの「閉じる」に頼っていて、ステップによって出方が違った)。
     render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }));
+    expect(screen.getByText('シナリオ')).toHaveAttribute('aria-current', 'step');
     fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
     expect(window.location.hash).toBe('#/');
     window.history.replaceState(null, '', window.location.pathname);
@@ -51,14 +61,9 @@ describe('Setup', () => {
     expect(screen.getByText('空欄のまま進める')).toBeInTheDocument();
   });
 
-  it('shows the step indicator for all 5 steps', () => {
-    render(<Setup onStart={vi.fn()} />);
-    // ステップタブ("1. 世界観"等)とForm 0のField labelの両方が"世界観"を含みうるため、
-    // 厳密一致のgetByTextではなく部分一致のgetAllByTextで存在確認する。
-    ['世界観', 'シナリオ', 'ルール', 'PC', '確認'].forEach((label) => {
-      expect(screen.getAllByText(new RegExp(label)).length).toBeGreaterThan(0);
-    });
-  });
+  // 5段すべてが出ることの検証は、現在地の印まで見る
+  // 'shows every wizard step in the focus header and marks the current one'
+  // (このファイル冒頭)が引き継いだ。部分一致で存在だけを見る旧版はその真部分集合。
 
   it('lists existing Worlds and loads the selected one', async () => {
     worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
@@ -736,7 +741,8 @@ describe('Setup', () => {
       vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
       render(<Setup onStart={vi.fn()} starterContext={STARTER} />);
 
-      // ステップ表示バーは常に5段すべてのラベルを描くため現在地の証拠にならない。
+      // FocusHeaderのステップ表示は常に5段すべてのラベルを描き、現在地は
+      // aria-current="step" で示す。ここで見たいのは本文まで開けていることなので、
       // PCステップでしか描かれないField labelで判定する。
       expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
       // PC一覧が選択済みWorldから取れている

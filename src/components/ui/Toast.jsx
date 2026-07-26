@@ -3,8 +3,8 @@ import { COLORS, F_BODY, motionAllowed } from '../../theme.js';
 
 export const TOAST_TIMEOUT_MS = 6000;
 
-// AuthBar(zIndex 90)とモーダル(100/1000)より下に置く。上から降りてくる位置も
-// AuthBarと重ならないよう下げる。
+// シェルのヘッダー(zIndex 90)とモーダル(100/1000)より下に置く。上から降りてくる
+// 位置も、そのヘッダーと重ならないよう下げる。
 const STACK_Z_INDEX = 80;
 const STACK_TOP = 64;
 

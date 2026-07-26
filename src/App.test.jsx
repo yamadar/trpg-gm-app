@@ -52,8 +52,6 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
     await waitFor(() => expect(window.location.hash).toBe('#/'));
     expect(await findHome()).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
   });
 
   it('navigates to the public gallery without requiring login', async () => {
@@ -80,8 +78,6 @@ describe('App', () => {
     fireEvent.click(await screen.findByText('小説'));
     await waitFor(() => expect(window.location.hash).toBe('#/browse/novels'));
     expect(await screen.findByText('まだ公開されたものがありません')).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
   });
 
   it('keeps the global nav visible on every browsing screen', async () => {
@@ -160,8 +156,6 @@ describe('App', () => {
     // グローバルナビは出たままになる(以前はページ全体を乗っ取っていた)。
     expect(queryHome()).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
   });
 
   it('renders the ending gallery for the #/endings route', async () => {
@@ -248,7 +242,8 @@ describe('App', () => {
     // 取り込みが実際に効いていれば、WizardはPCステップ(4段目)からプリフィルされて開く。
     // ここを確認しないと、取り込みが裏で失敗してstarterContextが空のままでも
     // 後段の「引き継がれない」検証が意味もなく成立してしまう。
-    // ステップ表示バーは常に5段すべてのラベルを描くので「4. PC」では現在地を示せない。
+    // FocusHeaderのステップ表示は常に5段すべてのラベルを描き、現在地は
+    // aria-current="step" で示す。ここで見たいのは本文まで開けていることなので、
     // PCステップでしか描かれないField labelを見る。
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
@@ -265,8 +260,6 @@ describe('App', () => {
     // クリーンな0段目で開き、Worldも未選択(空欄のまま進める)のままであること。
     // この文言はworldMode==='skip'のときにしか出ず、starterContextが残っていれば'existing'になる。
     expect(await screen.findByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
   });
 
   it('does not carry a previously imported starter pack into a later 次の章へ wizard', async () => {

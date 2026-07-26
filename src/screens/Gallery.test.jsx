@@ -26,20 +26,41 @@ afterEach(() => {
 
 describe('Gallery', () => {
   it('drives the tab from the route', async () => {
-    render(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={() => {}} />);
+    renderWithAuth(<Gallery route={parseRoute('#/browse/novels')} onStartStarter={() => {}} />);
     expect(await screen.findByRole('button', { name: '小説' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('pushes the tab into the URL when a tab is pressed', async () => {
-    render(<Gallery route={parseRoute('#/browse/starters')} onStartStarter={() => {}} />);
+    renderWithAuth(<Gallery route={parseRoute('#/browse/starters')} onStartStarter={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: '世界観' }));
     expect(window.location.hash).toBe('#/browse/worlds');
   });
 
-  it('no longer renders close or back-to-list buttons', () => {
-    render(<Gallery route={parseRoute('#/browse/starters')} onStartStarter={() => {}} />);
+  it('no longer renders a screen-level close button, on the list or on a detail', async () => {
+    // 画面ごとの「閉じる」はグローバルナビに置き換わって全廃した。
+    // 詳細の「← 一覧に戻る」は画面内の移動なので、これは残るのが正しい。
+    // 一覧側だけを見ると詳細の分岐がそもそも描かれず、何も確かめられない。
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
+    const list = renderWithAuth(
+      <Gallery route={parseRoute('#/browse/worlds')} onStartStarter={() => {}} />
+    );
+    await screen.findByText('まだ公開されたものがありません');
     expect(screen.queryByText('閉じる')).not.toBeInTheDocument();
-    expect(screen.queryByText('← 一覧に戻る')).not.toBeInTheDocument();
+    list.unmount();
+
+    vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
+      publicId: 'p1',
+      title: 'World A',
+      ownerName: 'Alice',
+      publishedAt: PUBLISHED_AT,
+      raw: 'メイン本文',
+      regions: [],
+      categories: [],
+    });
+    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={() => {}} />);
+    await screen.findByText('メイン本文');
+    expect(screen.queryByText('閉じる')).not.toBeInTheDocument();
+    expect(screen.getByText('← 一覧に戻る')).toBeInTheDocument();
   });
 
   it('loads the novels tab given by the route', async () => {
@@ -531,7 +552,9 @@ describe('Gallery', () => {
   });
 
   describe('starters tab', () => {
-    it('shows the starters tab first and renders pack cards there', async () => {
+    // 既定タブが starters であることは parseRoute の担当なので、ここは
+    // 「starters ルートを描くとパックのカードが出る」ことだけを見る。
+    it('renders pack cards on the starters tab', async () => {
       vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
         packs: [{ packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null, moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館' }],
         seededAt: 1,
@@ -541,7 +564,9 @@ describe('Gallery', () => {
       expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
     });
 
-    it('renders the public item list instead of starter packs on a non-starters tab', async () => {
+    // 三項演算子で分岐しているので普段は自明に真だが、両分岐を同時に描く
+    // 崩し方(タブ判定の取り違え)はこれが捕まえる。
+    it('does not leak starter pack cards into a non-starters tab', async () => {
       vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
         packs: [{ packId: 'arkham-1920s', title: 'アーカム 1920s', tagline: '港町。', source: null, moods: ['ホラー'], recommendedRuleset: 'coc7e', scenarioTitle: '丘の上の写真館' }],
         seededAt: 1,

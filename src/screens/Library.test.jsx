@@ -23,7 +23,8 @@ describe('Library', () => {
   });
 
   // world/character/scenario/campaign は WORLD_SCOPED_LIBRARY_TABS。ruleset だけ対象外。
-  it('shows a world-selector dropdown on World-scoped tabs but not on Ruleset', async () => {
+  // World スコープのタブにピッカーが出ることは別のテストが見ている。ここは Ruleset 側だけ。
+  it('does not show a world-selector dropdown on the Ruleset tab', async () => {
     stubFetch([{ id: 'w1', title: 'World A', updatedAt: 1 }]);
     renderWithAuth(<Library route={parseRoute('#/library/ruleset')} />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Ruleset' })).toBeInTheDocument());

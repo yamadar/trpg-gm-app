@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_MONO } from '../theme.js';
 import { getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
@@ -15,16 +15,16 @@ export default function Gallery({ route, onStartStarter }) {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
-  const detailReqRef = useRef(0);
 
   // 詳細の取得は URL の publicId に従う。戻る/進むでも同じ経路を通る。
+  // 追い越しの防止は cancelled フラグだけで足りる。Reactは次のeffect本体より先に
+  // 前回のクリーンアップを走らせるため、古いリクエストでは必ず cancelled が先に立つ。
   useEffect(() => {
     if (!publicId) {
       setDetail(null);
       setDetailError('');
       return undefined;
     }
-    const my = ++detailReqRef.current;
     let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
@@ -32,13 +32,13 @@ export default function Gallery({ route, onStartStarter }) {
     (async () => {
       try {
         const item = await getPublic(tab, publicId);
-        if (cancelled || my !== detailReqRef.current) return;
+        if (cancelled) return;
         setDetail(item);
       } catch (e) {
-        if (cancelled || my !== detailReqRef.current) return;
+        if (cancelled) return;
         setDetailError('取得に失敗した: ' + e.message);
       } finally {
-        if (!cancelled && my === detailReqRef.current) setDetailLoading(false);
+        if (!cancelled) setDetailLoading(false);
       }
     })();
     return () => {
@@ -68,6 +68,7 @@ export default function Gallery({ route, onStartStarter }) {
           return (
             <button
               key={t.key}
+              type="button"
               onClick={() => goToTab(t.key)}
               aria-current={active ? 'page' : undefined}
               style={{
