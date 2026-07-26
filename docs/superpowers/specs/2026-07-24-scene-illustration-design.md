@@ -123,6 +123,8 @@ createFsImageStore(rootDir) -> {
   - GMログエントリ描画に挿絵ブロックを追加。`entry.image?.imageId` があれば `<img src={sceneImageUrl(...)}>` を地の文の**上**に表示(`max-width:100%`, 角丸, `theme.js` の枠色, `onError` で非表示)。
   - 未生成のGMエントリに「この場面を描く」ボタン(`imageGen` 時のみ)。押下で当該エントリを生成。生成中は当該エントリにスピナー。成功で `entry.image = { imageId }` を書き込み、`newAppearances` を `session.appearances` にマージし、`saveSession` + `putSessionToServer`。失敗時は当該エントリにインラインエラー(429は上限メッセージ、それ以外は汎用)。imageId・appearancesは失敗時保存しない。
   - 自動トグル: ヘッダ付近に `autoIllustrate` トグル(`imageGen` 時のみ)。ON+`current_scene` が前ターンから変化したターンで、新GMエントリの生成を自動発火(手動と同じ経路)。トグル状態は `session.autoIllustrate` に保存しPUT同期。
+  - 自動発火の最小間隔: `current_scene` はGMが毎ターン自由記述するため、同じ場面でも言い回しが揺れて「変化」と判定されうる。プロンプト側で「場面が続く間は同じシーン名をそのまま返す」ことを指示したうえで、クライアントでも直近の自動発火から `AUTO_ILLUSTRATE_MIN_TURNS`(3ターン)空くまでは再発火しない。手動ボタンはこの制限を受けない。
+  - サーバー同期の先行: 画像APIは**サーバーに保存済み**のログで `logIndex` を検証する。ターン完了時の `putSessionToServer` は投げっぱなしのため、直後に画像を要求すると新GMエントリが未着で400になる。生成経路(手動・自動とも)は `putSessionToServer` の完了を待ってから `POST /images` を呼ぶ。
   - 同時実行防止: エントリ単位の生成中フラグ(`generatingIndex` 等)で二重発火を防ぐ。挿絵生成はクライアント側で直列化されるため、`session.appearances` を読むサーバー解析が前回結果を反映済みであることが保たれる。
 
 ## データモデル変更

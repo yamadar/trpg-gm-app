@@ -387,6 +387,91 @@ describe('Play', () => {
     await waitFor(() => expect(sceneImageClient.generateSceneImage).toHaveBeenCalledWith('s1', expect.any(Number)));
   });
 
+  it('画像を要求する前にセッションをサーバーへ同期する', async () => {
+    // 画像APIはサーバー保存済みのログでlogIndexを検証するため、同期より先に要求すると400になる。
+    // 直前のテストで走った生成の後始末(saveSession→PUT)が残っていると呼び出し順の記録に
+    // 混ざるため、記録を始める前に流し切る。
+    await act(async () => {
+      await new Promise((res) => setTimeout(res, 0));
+    });
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    const order = [];
+    sessionSyncClient.putSessionToServer.mockImplementation(async () => {
+      order.push('put');
+      return {};
+    });
+    sceneImageClient.generateSceneImage.mockImplementation(async () => {
+      order.push('image');
+      return { imageId: 'img_1', newAppearances: [] };
+    });
+    const session = makeSession({ id: 's1', log: [{ role: 'gm', text: 'ログ' }] });
+    renderWithAuth(<Harness initialSession={session} />);
+    await waitFor(() => expect(screen.getByText('この場面を描く')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('この場面を描く'));
+    await waitFor(() => expect(document.querySelector('img[src*="img_1"]')).toBeTruthy());
+    expect(order.slice(0, 2)).toEqual(['put', 'image']);
+  });
+
+  it('自動生成でも同期が完了するまで画像を要求しない', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockResolvedValue({ imageId: 'img_a', newAppearances: [] });
+    let resolvePut;
+    const pendingPut = new Promise((res) => {
+      resolvePut = res;
+    });
+    sessionSyncClient.putSessionToServer.mockReturnValue(pendingPut);
+    const session = makeSession({ id: 's1', autoIllustrate: true, log: [{ role: 'gm', text: '最初の場面' }] });
+    renderWithAuth(<Harness initialSession={session} />);
+    await waitFor(() => expect(sceneImageClient.getConfig).toHaveBeenCalled());
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [
+          { type: 'text', text: JSON.stringify({ narrative: '森へ入った', state_update: { current_scene: '森' }, choices: [] }) },
+        ],
+      }),
+    });
+    fireEvent.change(screen.getByPlaceholderText('PCの行動を自由に書く…'), { target: { value: '森へ' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(screen.getByText('森へ入った')).toBeInTheDocument());
+    // 同期が未完了のまま時間を進めても要求が飛ばないことを見る(直後の観測だと早すぎて素通りする)。
+    await act(async () => {
+      await new Promise((res) => setTimeout(res, 50));
+    });
+    expect(sceneImageClient.generateSceneImage).not.toHaveBeenCalled();
+    await act(async () => {
+      resolvePut({});
+    });
+    await waitFor(() => expect(sceneImageClient.generateSceneImage).toHaveBeenCalledWith('s1', expect.any(Number)));
+  });
+
+  it('自動生成した直後のターンはシーン名が変わっても再発火しない', async () => {
+    sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockResolvedValue({ imageId: 'img_a', newAppearances: [] });
+    const session = makeSession({ id: 's1', autoIllustrate: true, log: [{ role: 'gm', text: '最初の場面' }] });
+    renderWithAuth(<Harness initialSession={session} />);
+    await waitFor(() => expect(sceneImageClient.getConfig).toHaveBeenCalled());
+    const gmTurn = (narrative, scene) => ({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: JSON.stringify({ narrative, state_update: { current_scene: scene }, choices: [] }) }],
+      }),
+    });
+
+    global.fetch.mockResolvedValue(gmTurn('森へ入った', '森'));
+    fireEvent.change(screen.getByPlaceholderText('PCの行動を自由に書く…'), { target: { value: '森へ' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(document.querySelector('img[src*="img_a"]')).toBeTruthy());
+    expect(sceneImageClient.generateSceneImage).toHaveBeenCalledTimes(1);
+
+    // 次のターンでもGMがシーン名を言い換えるが、間隔が空いていないので発火しない。
+    global.fetch.mockResolvedValue(gmTurn('川辺に出た', '森の川辺'));
+    fireEvent.change(screen.getByPlaceholderText('PCの行動を自由に書く…'), { target: { value: '進む' } });
+    fireEvent.click(screen.getByText('送る'));
+    await waitFor(() => expect(screen.getByText('川辺に出た')).toBeInTheDocument());
+    expect(sceneImageClient.generateSceneImage).toHaveBeenCalledTimes(1);
+  });
+
   it('自動トグルの切り替えをsessionへ保存する', async () => {
     sceneImageClient.getConfig.mockResolvedValueOnce({ imageGen: true });
     const saveSpy = vi.spyOn(storage, 'saveSession');
