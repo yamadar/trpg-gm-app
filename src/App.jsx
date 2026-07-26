@@ -34,10 +34,15 @@ function AppInner() {
   const routeKey = buildHash(route);
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
-  const [sessionError, setSessionError] = useState('');
+  // バナーはシェルの子として全ルートに描かれるため、出しっぱなしにすると
+  // 一度の失敗が以降すべての画面の先頭に居座る。「どのルートで見せたいバナーか」を
+  // 値そのものに持たせ、描画時に現在地と突き合わせる。null は「出していない」。
+  // 後始末の effect で消す方式だと、ルートが変わってから effect が走るまでの
+  // 1コミットのあいだ古いバナーが見えてしまう。
+  const [sessionError, setSessionError] = useState(null); // { routeKey, message } | null
   const [loadingHome, setLoadingHome] = useState(true);
   const [storageOk, setStorageOk] = useState(true);
-  const [authError, setAuthError] = useState(false);
+  const [authError, setAuthError] = useState(null); // { routeKey } | null
   const [uploadingSessions, setUploadingSessions] = useState(false);
   // ウィザードへ引き継ぐ文脈。world.summary や scenario オブジェクトを含み URL には載せられないため、
   // 従来どおりメモリで持つ。#/setup を直接開いた場合は素のウィザードとして開く。
@@ -45,27 +50,19 @@ function AppInner() {
   const [starterContext, setStarterContext] = useState(null);
   const takeover = useSessionTakeover();
 
-  // バナーはシェルの子として全ルートに描かれるため、出しっぱなしにすると
-  // 一度の失敗が以降すべての画面の先頭に居座る。「どのルートで見せたいバナーか」を
-  // 覚えておき、そこから離れた時点で畳む。null は「出していない」。
-  const authErrorRouteRef = useRef(null);
-  const sessionErrorRouteRef = useRef(null);
   // 直前のルート。プレイ画面から離れたことを検知するために持つ。
   const prevRouteRef = useRef(route);
 
   useEffect(() => {
     (async () => {
       setStorageOk(await isStorageAvailable());
-      setSessions(await listSessions());
-      setLoadingHome(false);
     })();
   }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('auth_error') === '1') {
-      authErrorRouteRef.current = routeKey;
-      setAuthError(true);
+      setAuthError({ routeKey });
       params.delete('auth_error');
       const qs = params.toString();
       // hash が現在地の唯一の情報源なので、クエリを畳むついでに落としてはいけない。
@@ -80,12 +77,16 @@ function AppInner() {
   }, []);
 
   // ホームへ戻るたびに一覧を取り直す(プレイ後の更新を反映するため)。
+  // 初回の取得もここが担う。マウント時にも取っていたころは、ホームで開くと
+  // 二重に走り、#/play を直接開いた場合は使わない一覧を取りに行っていた。
   useEffect(() => {
     if (route.name !== 'home') return;
     let cancelled = false;
     (async () => {
       const list = await listSessions();
-      if (!cancelled) setSessions(list);
+      if (cancelled) return;
+      setSessions(list);
+      setLoadingHome(false);
     })();
     return () => {
       cancelled = true;
@@ -103,10 +104,8 @@ function AppInner() {
       if (s) {
         setSession(s);
       } else {
-        // 見せたいのは差し替えた先のホーム。ここで基準を先に置いておかないと、
-        // 直後の replace によるルート変更で自分自身のバナーを畳んでしまう。
-        sessionErrorRouteRef.current = buildHash({ name: 'home' });
-        setSessionError('セッションが見つかりません');
+        // 見せたいのは差し替えた先のホームなので、バナーにもその routeKey を持たせる。
+        setSessionError({ routeKey: buildHash({ name: 'home' }), message: 'セッションが見つかりません' });
         replace({ name: 'home' });
       }
     })();
@@ -115,20 +114,11 @@ function AppInner() {
     };
   }, [route.name, route.sessionId, session]);
 
-  // ルートが変わったときの後始末。バナーを畳み、離れたプレイ画面のセッションを捨てる。
+  // ルートが変わったときの後始末。離れたプレイ画面のセッションを捨てる。
   // 依存は routeKey だけにして、route オブジェクトの作り直しでは走らないようにする。
   useEffect(() => {
     const prev = prevRouteRef.current;
     prevRouteRef.current = route;
-
-    if (authErrorRouteRef.current !== null && authErrorRouteRef.current !== routeKey) {
-      authErrorRouteRef.current = null;
-      setAuthError(false);
-    }
-    if (sessionErrorRouteRef.current !== null && sessionErrorRouteRef.current !== routeKey) {
-      sessionErrorRouteRef.current = null;
-      setSessionError('');
-    }
 
     // メモリ上の session を握ったままだと、素材ライブラリから消したセッションへ
     // 同じ #/play/:id で戻ったときにストレージを読み直さず古い内容を映してしまう。
@@ -165,7 +155,7 @@ function AppInner() {
           }}
           onCancel={takeover.dismiss}
         />
-        {authError && (
+        {authError?.routeKey === routeKey && (
           <div
             style={{
               fontFamily: F_MONO,
@@ -178,7 +168,7 @@ function AppInner() {
             ログインに失敗しました。もう一度お試しください。
           </div>
         )}
-        {sessionError && (
+        {sessionError?.routeKey === routeKey && (
           <div
             style={{
               fontFamily: F_MONO,
@@ -188,7 +178,7 @@ function AppInner() {
               padding: '8px 12px',
             }}
           >
-            {sessionError}
+            {sessionError.message}
           </div>
         )}
 

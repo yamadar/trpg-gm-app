@@ -29,6 +29,34 @@ describe('App', () => {
     expect(screen.getByText('+ 新規プレイ')).toBeInTheDocument();
   });
 
+  it('reads the session list once on the initial home render', async () => {
+    const listSpy = vi.spyOn(storage, 'listSessions').mockResolvedValue([]);
+    render(<App />);
+    await findHome();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read the session list when opening a play route directly', async () => {
+    // ホーム一覧は #/play では使わない。マウント時に無条件で取っていたころは
+    // 開くだけで無駄な読み取りが1回走っていた。
+    const listSpy = vi.spyOn(storage, 'listSessions').mockResolvedValue([]);
+    vi.spyOn(storage, 'getSession').mockResolvedValue({
+      id: 'sess_1',
+      title: 'テストセッション',
+      world: { raw: '', summary: '' },
+      scenario: { raw: '' },
+      rulesetId: 'simple',
+      pc: { raw: '' },
+      state: { current_scene: '冒頭', flags: {}, history_summary: '', recent_log: [], turn_count: 0 },
+      log: [],
+      updatedAt: 0,
+    });
+    window.location.hash = '#/play/sess_1';
+    render(<App />);
+    await screen.findByText('テストセッション');
+    expect(listSpy).not.toHaveBeenCalled();
+  });
+
   it('navigates to the library through the global nav and back home', async () => {
     vi.stubGlobal(
       'fetch',
