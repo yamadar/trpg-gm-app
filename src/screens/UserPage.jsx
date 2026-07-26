@@ -178,7 +178,7 @@ export default function UserPage({ route }) {
         ) : detailError ? (
           <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
         ) : (
-          detail && <PublicItemDetail type={tab} item={detail} onBack={() => goToTab(tab)} />
+          detail && <PublicItemDetail type={tab} item={detail} />
         ))}
     </div>
   );

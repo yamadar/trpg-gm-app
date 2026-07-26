@@ -89,7 +89,6 @@ export default function Gallery({ route, onStartStarter }) {
                 <PublicItemDetail
                   type={tab}
                   item={detail}
-                  onBack={() => goToTab(tab)}
                   onAuthorClick={(ownerId) => navigate({ name: 'user', userId: ownerId })}
                 />
               )

@@ -25,7 +25,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="worlds"
         item={{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT, raw: 'メイン本文', regions: [], categories: [] }}
-        onBack={vi.fn()}
       />
     );
     expect(screen.getByText('World A')).toBeInTheDocument();
@@ -45,7 +44,6 @@ describe('PublicItemDetail', () => {
           regions: [{ name: 'North', raw: '北の地域' }],
           categories: [{ name: 'Lore', raw: '伝承の中身' }],
         }}
-        onBack={vi.fn()}
       />
     );
     expect(screen.getByText('地域(region)')).toBeInTheDocument();
@@ -61,7 +59,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="worlds"
         item={{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT, raw: 'メイン本文', regions: [], categories: [] }}
-        onBack={vi.fn()}
       />,
       { user: null }
     );
@@ -75,7 +72,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="worlds"
         item={{ publicId: 'p1', title: 'World A', ownerName: 'Alice', publishedAt: PUBLISHED_AT, raw: 'メイン本文', regions: [], categories: [] }}
-        onBack={vi.fn()}
       />
     );
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -93,7 +89,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="characters"
         item={{ publicId: 'c1', title: 'Dragon Lord', ownerName: 'Frank', publishedAt: PUBLISHED_AT, kind: 'npc', raw: '## Dragon' }}
-        onBack={vi.fn()}
       />
     );
     fireEvent.click(screen.getByText('ライブラリに追加'));
@@ -110,7 +105,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="novels"
         item={{ publicId: 'n1', title: 'Epic Adventure', ownerName: 'Henry', publishedAt: PUBLISHED_AT, raw: '物語本文' }}
-        onBack={vi.fn()}
       />
     );
     expect(screen.getByText('物語本文')).toBeInTheDocument();
@@ -123,7 +117,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="worlds"
         item={{ publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'u1', publishedAt: PUBLISHED_AT, raw: 'メイン本文', regions: [], categories: [] }}
-        onBack={vi.fn()}
       />
     );
     const alice = screen.getByText('Alice');
@@ -136,7 +129,6 @@ describe('PublicItemDetail', () => {
       <PublicItemDetail
         type="worlds"
         item={{ publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'u1', publishedAt: PUBLISHED_AT, raw: 'メイン本文', regions: [], categories: [] }}
-        onBack={vi.fn()}
         onAuthorClick={onAuthorClick}
       />
     );

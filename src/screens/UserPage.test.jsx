@@ -396,10 +396,11 @@ describe('UserPage', () => {
 
     const ownerEl = screen.getByText('Nora');
     expect(ownerEl.tagName).not.toBe('BUTTON');
+    // 詳細内の「← 一覧に戻る」はパンくずと重複するため廃止した。
+    expect(screen.queryByText('← 一覧に戻る')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('← 一覧に戻る'));
-    expect(window.location.hash).toBe('#/u/usr_1');
-    rerenderUser(rerender, window.location.hash);
+    // 一覧へ戻る導線はパンくず(1つ手前の段)。URL が戻れば一覧に戻る。
+    rerenderUser(rerender, '#/u/usr_1');
 
     await waitFor(() => expect(screen.queryByText('物語本文')).not.toBeInTheDocument());
     expect(screen.getByText('Epic Adventure')).toBeInTheDocument();

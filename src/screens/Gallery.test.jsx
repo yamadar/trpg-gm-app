@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import Gallery from './Gallery.jsx';
 import * as shareClient from '../api/shareClient.js';
 import * as worldLibraryClient from '../api/worldLibraryClient.js';
 import * as starterClient from '../api/starterClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
 import { parseRoute } from '../navigation/routes.js';
+import { BreadcrumbProvider } from '../navigation/BreadcrumbContext.jsx';
+import Breadcrumb from '../components/nav/Breadcrumb.jsx';
 
 const PUBLISHED_AT = 1700000000000;
 const EXPECTED_DATE = new Date(PUBLISHED_AT).toLocaleDateString('ja-JP');
@@ -36,9 +38,9 @@ describe('Gallery', () => {
     expect(window.location.hash).toBe('#/browse/worlds');
   });
 
-  it('no longer renders a screen-level close button, on the list or on a detail', async () => {
-    // 画面ごとの「閉じる」はグローバルナビに置き換わって全廃した。
-    // 詳細の「← 一覧に戻る」は画面内の移動なので、これは残るのが正しい。
+  it('no longer renders a screen-level back or close button, on the list or on a detail', async () => {
+    // 画面ごとの「閉じる」はグローバルナビに置き換わって全廃した。詳細の
+    // 「← 一覧に戻る」も、パンくずの1つ手前の段が同じ行き先になったため取り除いた。
     // 一覧側だけを見ると詳細の分岐がそもそも描かれず、何も確かめられない。
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     const list = renderWithAuth(
@@ -60,7 +62,7 @@ describe('Gallery', () => {
     renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={() => {}} />);
     await screen.findByText('メイン本文');
     expect(screen.queryByText('閉じる')).not.toBeInTheDocument();
-    expect(screen.getByText('← 一覧に戻る')).toBeInTheDocument();
+    expect(screen.queryByText('← 一覧に戻る')).not.toBeInTheDocument();
   });
 
   it('loads the novels tab given by the route', async () => {
@@ -190,7 +192,7 @@ describe('Gallery', () => {
     expect(screen.getByText('伝承の中身')).toBeInTheDocument();
   });
 
-  it('returns to the list URL when the detail back button is used', async () => {
+  it('returns to the list URL from the breadcrumb crumb that replaced the back button', async () => {
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
     vi.spyOn(shareClient, 'getPublic').mockResolvedValue({
       publicId: 'p1',
@@ -201,10 +203,17 @@ describe('Gallery', () => {
       regions: [],
       categories: [],
     });
-    renderWithAuth(<Gallery route={parseRoute('#/browse/worlds/p1')} onStartStarter={vi.fn()} />);
+    const route = parseRoute('#/browse/worlds/p1');
+    renderWithAuth(
+      <BreadcrumbProvider>
+        <Breadcrumb route={route} />
+        <Gallery route={route} onStartStarter={vi.fn()} />
+      </BreadcrumbProvider>
+    );
     await screen.findByText('メイン本文');
 
-    fireEvent.click(screen.getByText('← 一覧に戻る'));
+    const crumbs = screen.getByRole('navigation', { name: '現在地' });
+    fireEvent.click(within(crumbs).getByText('世界観'));
     expect(window.location.hash).toBe('#/browse/worlds');
   });
 
