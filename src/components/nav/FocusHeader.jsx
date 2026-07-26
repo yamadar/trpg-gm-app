@@ -14,7 +14,11 @@ const HEADER_VERTICAL_PADDING = 16; // 上下padding合計(8px×2)
 const HEADER_BORDER_WIDTH = 1; // 下枠線
 export const FOCUS_HEADER_HEIGHT = EXIT_BUTTON_MIN_HEIGHT + HEADER_VERTICAL_PADDING + HEADER_BORDER_WIDTH;
 
-export default function FocusHeader({ title, steps, currentStep = 0, exitLabel = 'ホーム', onExit }) {
+// style は帯そのものの見た目を画面側から微調整するための汎用の逃し口。
+// 画面固有の判定(どの画面か、パネルが出ているか等)はここには持ち込まず、
+// 値だけを受け取る。padding のような一括指定より後ろに展開しているので、
+// paddingRight だけを上書きするような部分指定もそのまま効く。
+export default function FocusHeader({ title, steps, currentStep = 0, exitLabel = 'ホーム', onExit, style }) {
   return (
     <div
       style={{
@@ -34,6 +38,7 @@ export default function FocusHeader({ title, steps, currentStep = 0, exitLabel =
         borderBottom: `${HEADER_BORDER_WIDTH}px solid ${COLORS.line}`,
         // 下にスクロールするコンテンツが透けないよう不透明にする。
         background: COLORS.card,
+        ...style,
       }}
     >
       <button

@@ -12,6 +12,11 @@ import { COLORS, F_DISPLAY } from '../../theme.js';
 // max(4px, env(safe-area-inset-bottom)) なのでホームインジケータのある端末では
 // 4px ではなく 34px 前後になる。固定値で見積もると末尾のコンテンツがバーに隠れるため、
 // safe-area の分を calc() で実行時に足す(GlobalNav 側の padding 指定と対で維持すること)。
+// なお env() を解釈できないUAはこの宣言ごと落とすため、余白が0になり末尾の
+// コンテンツが固定バーの裏に隠れる。CSSなら固定値の宣言を先に書いて二段構えに
+// できるが、インラインstyleオブジェクトは同じプロパティを2回持てないので表現できない。
+// このアプリの対応ブラウザは全て env() を解釈するため、フォールバックは置かない。
+// 対応範囲を広げるときは、ここをCSSクラスへ出して二段構えに戻すこと。
 const NARROW_TABBAR_BASE = 64;
 const NARROW_TABBAR_SPACE = `calc(${NARROW_TABBAR_BASE}px + max(0px, env(safe-area-inset-bottom) - 4px))`;
 

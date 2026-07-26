@@ -258,8 +258,14 @@ export default function Play({ session, setSession }) {
       {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。
           集中モードのヘッダーは Setup と、回遊モードのシェルヘッダーとも同じく
           画面幅いっぱいに敷く。本文カラムの中に入れると、この画面だけ
-          帯が中央の720pxで途切れて「画面ごとに上部が変わる」ことになる。 */}
-      <FocusHeader title={session.title || 'プレイ中'} />
+          帯が中央の720pxで途切れて「画面ごとに上部が変わる」ことになる。
+          ドッキング表示ではPCパネルが帯の右320pxに重なるため、本文カラムと同じ
+          右余白を帯にも渡す。渡さないと、タイトルは画面幅いっぱいを使えるつもりで
+          省略記号を打つので、長いタイトルがパネルの下で語中から断ち切られる。 */}
+      <FocusHeader
+        title={session.title || 'プレイ中'}
+        style={docked ? { paddingRight: PANEL_W + 20 } : undefined}
+      />
       <div
         style={{
           maxWidth: 720,
@@ -271,7 +277,6 @@ export default function Play({ session, setSession }) {
           ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
         }}
       >
-
         {/* タイトルと離脱導線はFocusHeaderが持つので、ここは完結バッジとシーン/経験値
             などの文脈情報だけを出す帯にする。ログは下へ伸び続けるので、この帯も
             スクロール位置に依らずFocusHeaderの直下に出す。 */}
