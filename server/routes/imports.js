@@ -45,6 +45,10 @@ export function createImportsRouter({ dataStore, textStore }) {
   // 一括インポート。クライアントから /api/import/* を6回(World→Scenario→PC×2→NPC×2)叩くと途中で失敗したときに
   // 「Worldだけできて中身が無い」状態が残り、リトライで -2 付きの重複が生える。
   // サーバー側の1呼び出しにまとめて、失敗はエラー1つで返す。
+  //
+  // reuseExisting: この入口(「この冒険を始める」)は同じ一式を何度でも始められる導線なので、
+  // 押すたびに素材が増えては困る。取り込み済みなら既存の World / Scenario / Character を
+  // そのまま返して遊び始めさせる(中身は上書きしないので、取り込み後の書き換えも残る)。
   router.post('/starters/:packId/import', asyncHandler(async (req, res) => {
     const manifest = await dataStore.get(starterManifestKey());
     const pack = (manifest?.packs ?? []).find((p) => p.packId === req.params.packId);
@@ -55,7 +59,10 @@ export function createImportsRouter({ dataStore, textStore }) {
 
     // preferredId には manifest 側の packId を渡す(パスパラメータではなく、
     // 自分が書いたマニフェストの値を使う)
-    const world = await importWorld(dataStore, textStore, req.userId, pack.worldPublicId, { preferredId: pack.packId });
+    const world = await importWorld(dataStore, textStore, req.userId, pack.worldPublicId, {
+      preferredId: pack.packId,
+      reuseExisting: true,
+    });
     if (!world.ok) {
       res.status(500).json({ error: 'starter world is missing; re-run the seed' });
       return;
@@ -67,6 +74,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     // slugify(title)フォールバックにそのまま任せる
     const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId, {
       preferredId: pack.scenarioId,
+      reuseExisting: true,
     });
     if (!scenario.ok) {
       res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
@@ -76,7 +84,9 @@ export function createImportsRouter({ dataStore, textStore }) {
     const imported = { pcs: [], npcs: [] };
     for (const [field, ids] of [['pcs', pack.pcPublicIds ?? []], ['npcs', pack.npcPublicIds ?? []]]) {
       for (const publicId of ids) {
-        const result = await importCharacter(dataStore, textStore, req.userId, publicId, worldId);
+        const result = await importCharacter(dataStore, textStore, req.userId, publicId, worldId, {
+          reuseExisting: true,
+        });
         if (!result.ok) {
           res.status(500).json({ error: 'starter character is missing; re-run the seed' });
           return;

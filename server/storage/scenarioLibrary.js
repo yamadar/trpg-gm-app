@@ -1,13 +1,16 @@
 import { scenarioMetaKey, scenarioDocPath } from './paths.js';
 
-export async function saveScenario(dataStore, textStore, userId, { worldId, id, title, raw, recommendedRuleset, moods }) {
+// sourcePublicId の扱いは saveWorld と同じ(取り込み元の印を編集保存で失わせない)。
+export async function saveScenario(dataStore, textStore, userId, { worldId, id, title, raw, recommendedRuleset, moods, sourcePublicId }) {
   await textStore.write(scenarioDocPath(userId, worldId, id), raw);
+  const prev = await dataStore.get(scenarioMetaKey(userId, worldId, id));
   const meta = {
     id,
     worldId,
     title,
     recommendedRuleset: recommendedRuleset ?? null,
     moods: Array.isArray(moods) ? moods : [],
+    sourcePublicId: sourcePublicId ?? prev?.sourcePublicId ?? null,
     updatedAt: Date.now(),
   };
   await dataStore.set(scenarioMetaKey(userId, worldId, id), meta);

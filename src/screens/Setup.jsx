@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, inputStyle } from '../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
 import { RULESETS } from '../data/rulesets.js';
 import { summarizeWorld, generateScenario } from '../api/session.js';
 import { listWorlds, getWorld } from '../api/worldLibraryClient.js';
@@ -604,7 +604,44 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
                           borderColor: selectedPC?.name === c.name ? COLORS.brass : COLORS.line,
                         }}
                       >
-                        <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{c.name}</div>
+                        {/* 名前(=ストレージ上のid)だけでは誰を選ぶのか分からないので、
+                            シート本文から拾った表示名と中身の抜粋を添える。
+                            goal/bonds は一度プレイしたPCにしか無いため、無い場合の
+                            受け皿として抜粋を必ず出す。 */}
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                          <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
+                            {c.displayName || c.name}
+                          </div>
+                          {c.displayName && c.displayName !== c.name && (
+                            <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>{c.name}</div>
+                          )}
+                        </div>
+                        {c.parsed?.goal && (
+                          <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft, marginTop: 4 }}>
+                            目標: {c.parsed.goal}
+                          </div>
+                        )}
+                        {c.parsed?.bonds && (
+                          <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft, marginTop: 2 }}>
+                            因縁: {c.parsed.bonds}
+                          </div>
+                        )}
+                        {c.excerpt && (
+                          <div
+                            style={{
+                              fontFamily: F_BODY,
+                              fontSize: 12,
+                              color: COLORS.faint,
+                              marginTop: 4,
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {c.excerpt}
+                          </div>
+                        )}
                       </Card>
                     ))}
                     {existingPCs.length === 0 && (

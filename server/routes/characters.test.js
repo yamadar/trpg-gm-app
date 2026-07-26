@@ -58,6 +58,37 @@ describe('characters routes', () => {
     expect(res.body.map((c) => c.name)).toEqual(['alice']);
   });
 
+  // 一覧はメタデータしか持たないため、これが無いと選ぶ側にはストレージ上の名前しか見えない。
+  // PC選択のように「どんなキャラクターか」で選ぶ画面のために本文の要約を添える。
+  it('adds a display name and an excerpt from the sheet to each listed character', async () => {
+    await request(app)
+      .put('/api/worlds/w1/characters/pc/howard-kane')
+      .send({ raw: 'PC名: ハワード・ケイン\n新聞記者。兄の死の真相を追っている。' });
+
+    const res = await request(app).get('/api/worlds/w1/characters/pc');
+
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      name: 'howard-kane',
+      displayName: 'ハワード・ケイン',
+      excerpt: '新聞記者。兄の死の真相を追っている。',
+    });
+  });
+
+  // 「PC名:」行が無いシートでも一覧は壊れない。表示名はAI解析(parsed.name)があればそれを使う。
+  it('falls back to the parsed name when the sheet has no PC名 line', async () => {
+    await request(app).put('/api/worlds/w1/characters/pc/alice').send({ raw: '放浪の剣士。' });
+    let res = await request(app).get('/api/worlds/w1/characters/pc');
+    expect(res.body[0]).toMatchObject({ displayName: '', excerpt: '放浪の剣士。' });
+
+    await request(app)
+      .put('/api/worlds/w1/characters/pc/alice/parsed')
+      .send({ parsed: { name: 'アリス', goal: '', bonds: '' }, parsedHash: 'h1' });
+
+    res = await request(app).get('/api/worlds/w1/characters/pc');
+    expect(res.body[0].displayName).toBe('アリス');
+  });
+
   it('deletes a character', async () => {
     await request(app).put('/api/worlds/w1/characters/pc/alice').send({ raw: 'a' });
     const del = await request(app).delete('/api/worlds/w1/characters/pc/alice');

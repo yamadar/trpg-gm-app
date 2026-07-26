@@ -23,10 +23,15 @@ export default function StarterPackList({ onImported }) {
   const [errors, setErrors] = useState({});
   // アンマウント後の setState を防ぐ。onImported で親が画面遷移し、start() の
   // 完了待ちの間にこのコンポーネントごと外れるケースがあるため。
+  // 守るのは自分の state だけ。取り込みの結果そのもの(onImported)は、この一覧が
+  // 残っているかどうかとは無関係に親へ渡さなければならない(下の start() を参照)。
   const aliveRef = useRef(true);
 
   useEffect(() => {
     let alive = true;
+    // マウントのたびに立て直す。ref はインスタンスに紐づくため、初期値だけに頼ると
+    // 一度クリーンアップが走った後(StrictModeの二重呼び出し等)に false のまま戻らない。
+    aliveRef.current = true;
     listStarters()
       .then((m) => alive && setPacks(m?.packs ?? []))
       // 取得できないことは「まだ無い」と同じ扱いにする。ここでエラーを出すと、
@@ -41,23 +46,27 @@ export default function StarterPackList({ onImported }) {
   async function start(pack) {
     setBusy((prev) => ({ ...prev, [pack.packId]: true }));
     setErrors((prev) => ({ ...prev, [pack.packId]: '' }));
+    let result;
     try {
-      const result = await importStarterPack(pack.packId);
-      if (!aliveRef.current) return;
-      onImported?.({
-        world: result.world,
-        scenario: result.scenario,
-        rulesetId: result.scenario?.recommendedRuleset ?? pack.recommendedRuleset,
-      });
+      result = await importStarterPack(pack.packId);
     } catch (e) {
       if (aliveRef.current) {
         setErrors((prev) => ({ ...prev, [pack.packId]: '取り込みに失敗した: ' + e.message }));
       }
+      return;
     } finally {
       if (aliveRef.current) {
         setBusy((prev) => ({ ...prev, [pack.packId]: false }));
       }
     }
+    // アンマウント済みでも必ず渡す。素材はサーバー側に出来上がっているので、ここで
+    // 打ち切ると「取り込みだけ済んで画面はどこへも行かない」状態になる。
+    // 渡した先(App)が触るのは親のstateだけなので、この一覧の生死とは無関係に安全。
+    onImported?.({
+      world: result.world,
+      scenario: result.scenario,
+      rulesetId: result.scenario?.recommendedRuleset ?? pack.recommendedRuleset,
+    });
   }
 
   if (packs.length === 0) return null;

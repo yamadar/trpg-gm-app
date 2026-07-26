@@ -223,6 +223,73 @@ describe('App', () => {
     expect(await findHome()).toBeInTheDocument();
   });
 
+  // 回帰テスト: 取り込みは押した瞬間には終わらない。本番のように遅いと、待ちきれずに
+  // 「+ 新規プレイ」で先へ進んだ後に取り込みが完了する、という順序が普通に起きる。
+  // そのとき navigate は hash が既に #/setup なので何もせず、Setup は文脈をマウント時にしか
+  // 読まないため、ウィザードは0段目(空欄のまま進める)のまま取り残されていた。
+  it('opens the wizard on the PC step when a slow starter import lands after the wizard is already open', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url) => {
+        if (String(url).includes('/api/me')) {
+          return Promise.resolve({ ok: true, json: async () => ({ user: { id: 'usr_test', displayName: 'テスト' } }) });
+        }
+        return Promise.resolve({ ok: true, json: async () => [] });
+      })
+    );
+    vi.spyOn(storage, 'listSessions').mockResolvedValue([]);
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({
+      packs: [
+        {
+          packId: 'arkham-1920s',
+          title: 'アーカム 1920s',
+          tagline: '港町。',
+          source: null,
+          moods: ['ホラー'],
+          recommendedRuleset: 'coc7e',
+          scenarioTitle: '丘の上の写真館',
+        },
+      ],
+      seededAt: 1,
+    });
+    let resolveImport;
+    const pending = new Promise((resolve) => {
+      resolveImport = resolve;
+    });
+    vi.spyOn(starterClient, 'importStarterPack').mockReturnValue(pending);
+
+    render(<App />);
+    const newButton = await screen.findByText('+ 新規プレイ');
+    await waitFor(() => expect(newButton).not.toBeDisabled());
+
+    fireEvent.click(await screen.findByText('この冒険を始める'));
+    // 取り込みの完了を待たずに、素のウィザードへ入ってしまう。
+    fireEvent.click(newButton);
+    expect(await screen.findByText('Worldの用意方法')).toBeInTheDocument();
+
+    // ここで取り込みが完了する。行き先(#/setup)は既に開いているが、
+    // 押したのはスターターパックなので、ウィザードはPCステップで開き直さなければならない。
+    await act(async () => {
+      resolveImport({
+        world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: ['ホラー'], raw: '# 世界' },
+        scenario: {
+          id: 'sc',
+          worldId: 'arkham-1920s',
+          title: '丘の上の写真館',
+          recommendedRuleset: 'coc7e',
+          moods: ['ホラー'],
+          raw: '# シナリオ',
+        },
+        pcs: [],
+        npcs: [],
+      });
+      await pending;
+    });
+
+    expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
+    expect(screen.queryByText('Worldの用意方法')).not.toBeInTheDocument();
+  });
+
   it('does not carry a previously imported starter pack into a later plain new-session wizard', async () => {
     // スターターパックを取り込んでウィザードを一度離れたあと、改めて「+ 新規プレイ」で
     // 入り直した場合に、直前のWorld/Scenarioが残っていないこと。残っていると
