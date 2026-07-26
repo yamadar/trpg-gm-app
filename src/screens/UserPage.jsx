@@ -4,7 +4,7 @@ import Button from '../components/ui/Button.jsx';
 import { getUserProfile, getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
-import { clearHash } from '../router/useHashRoute.js';
+import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
 
 export default function UserPage({ userId }) {
@@ -12,6 +12,9 @@ export default function UserPage({ userId }) {
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [profile, setProfile] = useState(null);
+
+  // パンくず末尾に表示名を出す。プロフィール取得前は登録しない(IDを露出させないため)。
+  useBreadcrumbLabel(profile ? profile.displayName : null);
 
   const [tab, setTab] = useState('novels');
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
@@ -97,9 +100,6 @@ export default function UserPage({ userId }) {
         <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.stamp, marginBottom: 16 }}>
           ユーザーが見つかりません
         </div>
-        <Button variant="ghost" onClick={clearHash}>
-          ← 戻る
-        </Button>
       </div>
     );
   }
@@ -108,70 +108,54 @@ export default function UserPage({ userId }) {
     return (
       <div style={wrapStyle}>
         <div style={{ fontFamily: F_BODY, fontSize: 14, color: COLORS.stamp, marginBottom: 16 }}>{loadError}</div>
-        <Button variant="ghost" onClick={clearHash}>
-          ← 戻る
-        </Button>
       </div>
     );
   }
 
   return (
     <div style={wrapStyle}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: 24,
-          gap: 16,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {profile.avatarUrl ? (
-            <img
-              src={profile.avatarUrl}
-              alt=""
-              style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
-            />
-          ) : (
-            <div
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        {profile.avatarUrl ? (
+          <img
+            src={profile.avatarUrl}
+            alt=""
+            style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              background: COLORS.brass,
+              color: COLORS.paper,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: F_DISPLAY,
+              fontSize: 18,
+              flexShrink: 0,
+            }}
+          >
+            {(profile.displayName || '?').slice(0, 1)}
+          </div>
+        )}
+        <div>
+          <div style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink }}>{profile.displayName}</div>
+          {profile.bio && (
+            <p
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                background: COLORS.brass,
-                color: COLORS.paper,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: F_DISPLAY,
-                fontSize: 18,
-                flexShrink: 0,
+                fontFamily: F_BODY,
+                fontSize: 13,
+                color: COLORS.inkSoft,
+                whiteSpace: 'pre-wrap',
+                margin: '4px 0 0',
               }}
             >
-              {(profile.displayName || '?').slice(0, 1)}
-            </div>
+              {profile.bio}
+            </p>
           )}
-          <div>
-            <div style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink }}>{profile.displayName}</div>
-            {profile.bio && (
-              <p
-                style={{
-                  fontFamily: F_BODY,
-                  fontSize: 13,
-                  color: COLORS.inkSoft,
-                  whiteSpace: 'pre-wrap',
-                  margin: '4px 0 0',
-                }}
-              >
-                {profile.bio}
-              </p>
-            )}
-          </div>
         </div>
-        <Button variant="ghost" onClick={clearHash}>
-          ← 戻る
-        </Button>
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>

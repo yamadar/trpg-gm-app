@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor, act } from '@testing-library/react';
 import UserPage from './UserPage.jsx';
 import * as shareClient from '../api/shareClient.js';
-import * as hashRoute from '../router/useHashRoute.js';
 import { AuthContext } from '../auth/AuthContext.jsx';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+import { parseRoute } from '../navigation/routes.js';
+import { BreadcrumbProvider } from '../navigation/BreadcrumbContext.jsx';
+import Breadcrumb from '../components/nav/Breadcrumb.jsx';
 
 const DEFAULT_AUTH_VALUE = {
   user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
@@ -58,6 +60,20 @@ describe('UserPage', () => {
     expect(screen.getByText('よろしくお願いします')).toBeInTheDocument();
     expect(screen.getByText('Epic Adventure')).toBeInTheDocument();
     expect(screen.getByText(new RegExp(EXPECTED_DATE.replace(/\//g, '\\/')))).toBeInTheDocument();
+  });
+
+  it('no longer renders its own back buttons', async () => {
+    vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
+      id: 'usr_1',
+      displayName: 'Xavier',
+      avatarUrl: null,
+      bio: '',
+    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({ items: [], total: 0, hasMore: false });
+
+    renderWithAuth(<UserPage userId="usr_1" />);
+    expect(await screen.findByText('Xavier')).toBeInTheDocument();
+    expect(screen.queryByText('← 戻る')).not.toBeInTheDocument();
   });
 
   it('fetches the list with ownerId set to the page userId', async () => {
@@ -185,29 +201,39 @@ describe('UserPage', () => {
     await waitFor(() => expect(screen.queryByText('読み込み中…')).not.toBeInTheDocument());
   });
 
-  it('shows "ユーザーが見つかりません" and a back button when the profile 404s', async () => {
+  it('shows "ユーザーが見つかりません" and never exposes the raw userId in the breadcrumb', async () => {
     const err = new Error('user not found');
     err.status = 404;
     vi.spyOn(shareClient, 'getUserProfile').mockRejectedValue(err);
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
-    const clearHashSpy = vi.spyOn(hashRoute, 'clearHash').mockImplementation(() => {});
 
-    renderWithAuth(<UserPage userId="usr_missing" />);
+    const route = parseRoute('#/u/usr_missing');
+    renderWithAuth(
+      <BreadcrumbProvider>
+        <Breadcrumb route={route} />
+        <UserPage userId="usr_missing" />
+      </BreadcrumbProvider>
+    );
     await waitFor(() => expect(screen.getByText('ユーザーが見つかりません')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByText('← 戻る'));
-    expect(clearHashSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('usr_missing')).not.toBeInTheDocument();
   });
 
-  it('shows a fetch-error message on a non-404 failure', async () => {
+  it('shows a fetch-error message on a non-404 failure and never exposes the raw userId in the breadcrumb', async () => {
     vi.spyOn(shareClient, 'getUserProfile').mockRejectedValue(new Error('boom'));
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
 
-    renderWithAuth(<UserPage userId="usr_1" />);
+    const route = parseRoute('#/u/usr_1');
+    renderWithAuth(
+      <BreadcrumbProvider>
+        <Breadcrumb route={route} />
+        <UserPage userId="usr_1" />
+      </BreadcrumbProvider>
+    );
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
+    expect(screen.queryByText('usr_1')).not.toBeInTheDocument();
   });
 
-  it('calls clearHash when the header back button is clicked', async () => {
+  it('registers the display name as the breadcrumb tail once the profile loads', async () => {
     vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
       id: 'usr_1',
       displayName: 'Henry',
@@ -215,12 +241,17 @@ describe('UserPage', () => {
       bio: '',
     });
     vi.spyOn(shareClient, 'listPublic').mockResolvedValue(EMPTY_PAGE);
-    const clearHashSpy = vi.spyOn(hashRoute, 'clearHash').mockImplementation(() => {});
 
-    renderWithAuth(<UserPage userId="usr_1" />);
+    const route = parseRoute('#/u/usr_1');
+    renderWithAuth(
+      <BreadcrumbProvider>
+        <Breadcrumb route={route} />
+        <UserPage userId="usr_1" />
+      </BreadcrumbProvider>
+    );
     await screen.findByText('Henry');
-    fireEvent.click(screen.getByText('← 戻る'));
-    expect(clearHashSpy).toHaveBeenCalledTimes(1);
+    // ヘッダー本文とパンくず末尾の両方に表示名「Henry」が現れる。
+    expect(screen.getAllByText('Henry').length).toBeGreaterThanOrEqual(2);
   });
 
   it('fetches the detail via getPublic on card click and renders PublicItemDetail without an author link', async () => {
