@@ -41,7 +41,7 @@ afterEach(() => {
 describe('AchievementList', () => {
   it('lists the whole catalogue', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     expect(await screen.findByText('初めての結末')).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('未取得').length).toBeGreaterThan(0));
     // 抜き取りで数件だけ見ると、カテゴリ1節が丸ごと落ちても気付けない。ラベルは全件で一意。
@@ -50,16 +50,17 @@ describe('AchievementList', () => {
     }
   });
 
-  it('returns to the ending gallery', async () => {
+  it('offers a tab across to the ending gallery', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: '図鑑へ' }));
-    expect(window.location.hash).toBe('#/endings');
+    renderWithAuth(<AchievementList />);
+    fireEvent.click(await screen.findByRole('button', { name: 'エンディング図鑑' }));
+    expect(window.location.hash).toBe('#/records/endings');
+    window.history.replaceState(null, '', window.location.pathname);
   });
 
   it('shows how many are earned out of the catalogue', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     // ending()の1件は「初めての結末」「ホラーの結末」「短編」の3つを満たす
     // (moods:['ホラー']、判定4回で1〜10回の範囲内)。他の見出し数字と被らない値で厳密に確認する。
     expect(await screen.findByText(`3 / ${CATALOG.length}`)).toBeInTheDocument();
@@ -67,7 +68,7 @@ describe('AchievementList', () => {
 
   it('filters down to the earned achievements', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     fireEvent.click(await screen.findByRole('button', { name: /取得済み/ }));
     expect(screen.getByText('初めての結末')).toBeInTheDocument();
     expect(screen.queryByText('五十の結末')).toBeNull();
@@ -75,7 +76,7 @@ describe('AchievementList', () => {
 
   it('filters down to the unearned achievements', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     fireEvent.click(await screen.findByRole('button', { name: /^未取得/ }));
     expect(screen.queryByText('初めての結末')).toBeNull();
     expect(screen.getByText('五十の結末')).toBeInTheDocument();
@@ -83,7 +84,7 @@ describe('AchievementList', () => {
 
   it('drops the other sections when a category is chosen', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     fireEvent.click(await screen.findByRole('button', { name: '軌跡' }));
     expect(screen.getByText('三日連続')).toBeInTheDocument();
     expect(screen.queryByText('初めての結末')).toBeNull();
@@ -91,7 +92,7 @@ describe('AchievementList', () => {
 
   it('keeps the segment counts on the whole catalogue while a category is chosen', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([ending()]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     fireEvent.click(await screen.findByRole('button', { name: '軌跡' }));
     // 絞り込むたびに数字が動くと「全体でいくつか」が読めなくなる
     // (ending()の1件で「初めての結末」「ホラーの結末」「短編」の3つが取得済みになる)
@@ -100,14 +101,14 @@ describe('AchievementList', () => {
 
   it('tells the visitor to sign in when signed out', async () => {
     const listEndings = vi.spyOn(endingClient, 'listEndings');
-    renderWithAuth(<AchievementList onClose={vi.fn()} />, { user: null });
+    renderWithAuth(<AchievementList />, { user: null });
     expect(await screen.findByText(/ログインが必要です/)).toBeInTheDocument();
     expect(listEndings).not.toHaveBeenCalled();
   });
 
   it('names each chip row group so screen readers can tell them apart', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
-    renderWithAuth(<AchievementList onClose={vi.fn()} />);
+    renderWithAuth(<AchievementList />);
     await screen.findByText('初めての結末');
     expect(screen.getByRole('group', { name: '取得状況で絞り込み' })).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'カテゴリで絞り込み' })).toBeInTheDocument();
