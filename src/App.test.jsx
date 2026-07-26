@@ -82,6 +82,7 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '記録' }));
     await waitFor(() => expect(window.location.hash).toBe('#/records/endings'));
+    expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
   });
 
