@@ -68,7 +68,14 @@ function AppInner() {
       setAuthError(true);
       params.delete('auth_error');
       const qs = params.toString();
-      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+      // hash が現在地の唯一の情報源なので、クエリを畳むついでに落としてはいけない。
+      // replaceState は hashchange を発火しないため、落とすと画面はそのままで
+      // URL だけ現在地を失い、リロードで別の場所へ着地する。
+      window.history.replaceState(
+        null,
+        '',
+        window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
+      );
     }
   }, []);
 

@@ -108,7 +108,35 @@ describe('App', () => {
     window.history.pushState({}, '', '/');
   });
 
-  it('renders UserPage when the hash matches #/u/{userId}, keeping AuthBar visible', async () => {
+  it('keeps the hash when stripping auth_error from the query', async () => {
+    // hash が現在地の唯一の情報源になったので、クエリを畳む replaceState が
+    // hash まで巻き添えにしてはいけない。replaceState は hashchange を発火しないため、
+    // 落とすと画面は記録タブのまま URL だけ "/" になり、リロードで別画面に着地する。
+    window.history.pushState({}, '', '/?auth_error=1#/records/endings');
+    const realReplace = window.history.replaceState.bind(window.history);
+    const urls = [];
+    vi.spyOn(window.history, 'replaceState').mockImplementation((s, t, url) => {
+      urls.push(url);
+      return realReplace(s, t, url);
+    });
+    try {
+      render(<App />);
+      await waitFor(() =>
+        expect(screen.getByText('ログインに失敗しました。もう一度お試しください。')).toBeInTheDocument()
+      );
+      expect(window.location.search).toBe('');
+      expect(window.location.hash).toBe('#/records/endings');
+      expect(await screen.findByRole('heading', { name: 'エンディング図鑑' })).toBeInTheDocument();
+      // 末尾の状態だけを見ると、useRoute の正準化がずれた hash を差し戻すため
+      // 落とした事実が隠れてしまう。クエリを畳む書き換え自体が hash を
+      // 持ったままであることを確かめる。
+      expect(urls.every((u) => String(u).includes('#/records/endings'))).toBe(true);
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('renders UserPage when the hash matches #/u/{userId}, keeping the account menu visible', async () => {
     window.location.hash = '#/u/usr_x';
     vi.stubGlobal(
       'fetch',
@@ -327,6 +355,12 @@ describe('App', () => {
     expect(await screen.findByText('Worldの用意方法')).toBeInTheDocument();
     expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();
     expect(screen.queryByText('丘の上の写真館')).not.toBeInTheDocument();
+
+    // ここまでの3つは「両方の文脈が空の素のウィザード」でも成立してしまうので、
+    // campaignContext まで巻き添えで消していないことを別に確かめる。
+    // campaignContext があれば worldMode は 'existing' で開き、無ければ 'skip' になる。
+    expect(screen.getByText('既存Worldを選ぶ')).toBeInTheDocument();
+    expect(screen.queryByText('世界観を指定しない。AIが自由に構築する。')).not.toBeInTheDocument();
   });
 
   it('clears the session-not-found banner once another route is opened', async () => {
