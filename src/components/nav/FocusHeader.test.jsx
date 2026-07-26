@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import FocusHeader from './FocusHeader.jsx';
+import FocusHeader, { FOCUS_HEADER_HEIGHT } from './FocusHeader.jsx';
 
 afterEach(() => {
   window.history.replaceState(null, '', window.location.pathname);
@@ -46,5 +46,19 @@ describe('FocusHeader', () => {
     render(<FocusHeader title="丘の上の写真館" />);
     const button = screen.getByRole('button', { name: 'ホーム' });
     expect(parseInt(button.style.minHeight, 10)).toBeGreaterThanOrEqual(44);
+  });
+
+  it('stays pinned to the top of the viewport', () => {
+    render(<FocusHeader title="丘の上の写真館" />);
+    const header = screen.getByText('丘の上の写真館').closest('div[style*="sticky"]');
+    expect(header).not.toBeNull();
+    expect(header.style.position).toBe('sticky');
+    expect(header.style.top).toBe('0px');
+  });
+
+  it('has a height matching the exported FOCUS_HEADER_HEIGHT constant', () => {
+    render(<FocusHeader title="丘の上の写真館" />);
+    const header = screen.getByText('丘の上の写真館').closest('div[style*="sticky"]');
+    expect(header.style.height).toBe(`${FOCUS_HEADER_HEIGHT}px`);
   });
 });

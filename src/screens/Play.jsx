@@ -9,7 +9,7 @@ import { putSessionToServer } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
 import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
-import FocusHeader from '../components/nav/FocusHeader.jsx';
+import FocusHeader, { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
@@ -267,15 +267,17 @@ export default function Play({ session, setSession }) {
       {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。 */}
       <FocusHeader title={session.title || 'プレイ中'} />
 
-      {/* ログは下へ伸び続けるので、セッション名の行もスクロール位置に依らず出す。 */}
+      {/* タイトルと離脱導線はFocusHeaderが持つので、ここは完結バッジとシーン/経験値
+          などの文脈情報だけを出す帯にする。ログは下へ伸び続けるので、この帯も
+          スクロール位置に依らずFocusHeaderの直下に出す。 */}
       <div
         style={{
           position: 'sticky',
-          top: 0,
+          top: FOCUS_HEADER_HEIGHT,
           zIndex: 20,
           background: mood.paper,
           borderBottom: `1px solid ${COLORS.line}`,
-          margin: '-24px -20px 16px',
+          margin: '0 -20px 16px',
           // 非ドック時は右上のAuthBar(アバター)と重ならないよう右に余白を空ける。
           padding: docked ? '10px 20px' : '10px 56px 10px 20px',
           display: 'flex',
@@ -283,28 +285,24 @@ export default function Play({ session, setSession }) {
           gap: 12,
         }}
       >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <div
-              style={{
-                fontFamily: F_DISPLAY,
-                fontSize: 16,
-                color: COLORS.ink,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {session.title}
-            </div>
-            {session.endedAt && <Badge variant="brass">完結</Badge>}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
-            <span>シーン: {session.state.current_scene}</span>
-            <span>
-              {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
-            </span>
-          </div>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 10,
+            fontFamily: F_MONO,
+            fontSize: 11,
+            color: COLORS.faint,
+          }}
+        >
+          {session.endedAt && <Badge variant="brass">完結</Badge>}
+          <span>シーン: {session.state.current_scene}</span>
+          <span>
+            {session.ruleset?.growthUnit || '経験値'}: {session.state.xp || 0}
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {!docked && (

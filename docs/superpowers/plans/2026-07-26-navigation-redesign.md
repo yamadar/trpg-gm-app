@@ -1364,15 +1364,28 @@ import { COLORS, F_MONO, F_DISPLAY } from '../../theme.js';
 
 // 集中モード(Play / Setup)のヘッダー。グローバルナビの代わりに
 // 「離脱導線 + 現在地」だけを出す。回遊モードとの差はこの1点に限る。
+// 画面側のログ等が下に伸びてもタイトルと離脱導線を見失わないよう sticky にする。
+// 高さは離脱ボタンの最小タップ域(44px)+上下padding(16px)+下枠線(1px)から固定し、
+// 定数として公開する。画面側が自分のスティッキー要素をこの下に追随させる際、
+// 実測値とズレて隙間や重なりが生じないようにするため。
+export const FOCUS_HEADER_HEIGHT = 61;
+
 export default function FocusHeader({ title, steps, currentStep = 0, exitLabel = 'ホーム', onExit }) {
   return (
     <div
       style={{
+        position: 'sticky',
+        top: 0,
+        // 画面側の追随バーが zIndex: 20 を使うため、常にその上に来るようにする。
+        zIndex: 30,
         display: 'flex',
         alignItems: 'center',
         gap: 12,
+        height: FOCUS_HEADER_HEIGHT,
+        boxSizing: 'border-box',
         padding: '8px 16px',
         borderBottom: `1px solid ${COLORS.line}`,
+        // 下にスクロールするコンテンツが透けないよう不透明にする。
         background: COLORS.card,
       }}
     >
@@ -2898,7 +2911,7 @@ Expected: FAIL — ボタン名が `← ホーム` のため `ホーム` で引�
 - import に追加する:
 
 ```jsx
-import FocusHeader from '../components/nav/FocusHeader.jsx';
+import FocusHeader, { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 ```
 
 - シグネチャから `onExit` を外す:
@@ -2907,13 +2920,16 @@ import FocusHeader from '../components/nav/FocusHeader.jsx';
 export default function Play({ session, setSession }) {
 ```
 
-- `Play.jsx:283` 付近の `<Button variant="ghost" onClick={onExit} ...>← ホーム</Button>` を削除する。セッション名を表示している既存のヘッダー行より前に、`FocusHeader` を置く:
+- `Play.jsx:283` 付近の `<Button variant="ghost" onClick={onExit} ...>← ホーム</Button>` を削除する。既存のヘッダー行より前に `FocusHeader` を置く:
 
 ```jsx
-      <FocusHeader title={session.title} />
+      <FocusHeader title={session.title || 'プレイ中'} />
 ```
 
-`session.title` が空の場合に備え、`title={session.title || 'プレイ中'}` とする。
+- 既存のヘッダー行(スティッキーの完結バッジ/シーン/経験値/PC/挿絵設定の帯)は `FocusHeader` と同じ `session.title` をもう出さない。タイトルと離脱導線は `FocusHeader` 側だけの責務にし、この帯はセッションの文脈情報(完結バッジ・シーン・経験値・PC・挿絵設定)だけを出す帯にする。
+- この帯の `top: 0` は `top: FOCUS_HEADER_HEIGHT` に変える。`FocusHeader` が画面最上部に sticky するようになったため、この帯はその直下に貼り付く必要がある。
+- この帯の `margin: '-24px -20px 16px'` は `margin: '0 -20px 16px'` に変える。`-24px` の上マージンは、この帯が親コンテナ(`padding: '24px 20px 140px'`)の最初の子だった頃にその上パディングを打ち消すためのものだった。今は `FocusHeader` が先に来るため、そのままだと帯が `FocusHeader` の上に重なってしまう。横方向の `-20px` (フルブリード)はそのまま残す。
+- タイトルを取り除いたことで、隣にいた完結バッジが空のflexコンテナに取り残されないよう、バッジをシーン/経験値のメタ情報と同じ行にまとめる。
 
 - [ ] **Step 4: テストが通ることを確認する**
 

@@ -7,6 +7,7 @@ import * as storage from '../storage/index.js';
 import * as sceneImageClient from '../api/sceneImageClient.js';
 import * as endingClient from '../api/endingClient.js';
 import { renderWithAuth } from '../test/renderWithAuth.jsx';
+import { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 
 // 既定 imageGen:false。getConfig をモックすることで、既存テストで挿絵UIが描画されず、
 // かつ getConfig が global.fetch を呼ばないため既存の fetch 呼び出し回数アサーションが不変。
@@ -516,15 +517,18 @@ describe('resource side effects', () => {
     expect('resources' in saved.state).toBe(false);
   });
 
-  it('keeps the header pinned to the top of the viewport', async () => {
+  it('shows the session title exactly once', async () => {
     renderWithAuth(<Harness initialSession={makeSession()} />);
-    // FocusHeaderもセッション名の行も同じテキストを出すため、複数ヒットする。
-    // sticky指定を持つ祖先を持つ方(Play自身のヘッダー行)を選ぶ。
     await waitFor(() => expect(screen.getAllByText('テストセッション').length).toBeGreaterThan(0));
-    const titles = screen.getAllByText('テストセッション');
-    const header = titles.map((el) => el.closest('div[style*="sticky"]')).find(Boolean);
-    expect(header).not.toBeUndefined();
-    expect(header.style.top).toBe('0px');
+    expect(screen.getAllByText('テストセッション')).toHaveLength(1);
+  });
+
+  it('keeps the context bar pinned directly beneath the focus header', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} />);
+    const scene = await screen.findByText(/^シーン:/);
+    const bar = scene.closest('div[style*="sticky"]');
+    expect(bar).not.toBeNull();
+    expect(bar.style.top).toBe(`${FOCUS_HEADER_HEIGHT}px`);
   });
 
   it('exits to home through the focus header', async () => {
@@ -541,7 +545,7 @@ describe('resource side effects', () => {
 
   it('does not show a 完結 badge for a session still in progress', async () => {
     renderWithAuth(<Harness initialSession={makeSession()} />);
-    await waitFor(() => expect(screen.getAllByText('テストセッション').length).toBeGreaterThan(0));
+    await screen.findByText('テストセッション');
     expect(screen.queryByText('完結')).not.toBeInTheDocument();
   });
 
