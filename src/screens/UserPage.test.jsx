@@ -216,6 +216,8 @@ describe('UserPage', () => {
     );
     await waitFor(() => expect(screen.getByText('ユーザーが見つかりません')).toBeInTheDocument());
     expect(screen.queryByText('usr_missing')).not.toBeInTheDocument();
+    // not-found 状態でも自前の戻るボタンを描画しない。
+    expect(screen.queryByText('← 戻る')).not.toBeInTheDocument();
   });
 
   it('shows a fetch-error message on a non-404 failure and never exposes the raw userId in the breadcrumb', async () => {
@@ -231,6 +233,8 @@ describe('UserPage', () => {
     );
     await waitFor(() => expect(screen.getByText(/boom/)).toBeInTheDocument());
     expect(screen.queryByText('usr_1')).not.toBeInTheDocument();
+    // load-error 状態でも自前の戻るボタンを描画しない。
+    expect(screen.queryByText('← 戻る')).not.toBeInTheDocument();
   });
 
   it('registers the display name as the breadcrumb tail once the profile loads', async () => {
