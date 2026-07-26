@@ -8,9 +8,9 @@ import request from 'supertest';
 import { createImportsRouter } from './imports.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
-import { saveWorld, getWorld } from '../storage/worldLibrary.js';
-import { saveCharacter, getCharacter } from '../storage/characterLibrary.js';
-import { saveScenario, getScenario } from '../storage/scenarioLibrary.js';
+import { saveWorld, getWorld, listWorlds } from '../storage/worldLibrary.js';
+import { saveCharacter, getCharacter, listCharacters } from '../storage/characterLibrary.js';
+import { saveScenario, getScenario, listScenarios } from '../storage/scenarioLibrary.js';
 import { publishWorld, publishCharacter, publishScenario } from '../storage/shareLibrary.js';
 
 const OWNER = { id: 'usr_a', displayName: '太郎' };
@@ -288,13 +288,66 @@ describe('imports routes', () => {
       expect(res.body.scenario.id).toBe('untitled');
     });
 
-    it('suffixes the world id when the same pack is imported twice', async () => {
+    // 「この冒険を始める」は何度でも押せる入口なので、押した回数だけ素材が増えては困る。
+    // 2回目以降は取り込み済みの一式をそのまま返す(-2 付きの複製を作らない)。
+    it('reuses the already imported pack instead of duplicating it', async () => {
+      await seedOnePack({ scenarioId: 'hyakki-on-suzaku-oji' });
+      const first = await request(app).post('/api/starters/hyakki-yagyo/import');
+      const second = await request(app).post('/api/starters/hyakki-yagyo/import');
+
+      expect(second.status).toBe(201);
+      expect(second.body.world.id).toBe('hyakki-yagyo');
+      expect(second.body.scenario).toMatchObject({ id: 'hyakki-on-suzaku-oji', worldId: 'hyakki-yagyo' });
+      expect(second.body.pcs[0].name).toBe('pc-one');
+      expect(second.body.npcs[0].name).toBe('npc-one');
+      // 素材ライブラリに増えていないこと(World/Scenario/Character のいずれも1件のまま)
+      expect((await listWorlds(dataStore, 'usr_test')).map((w) => w.id)).toEqual(['hyakki-yagyo']);
+      expect((await listScenarios(dataStore, 'usr_test', 'hyakki-yagyo')).map((s) => s.id)).toEqual([
+        'hyakki-on-suzaku-oji',
+      ]);
+      expect((await listCharacters(dataStore, 'usr_test', 'hyakki-yagyo', 'pc')).map((c) => c.name)).toEqual([
+        'pc-one',
+      ]);
+      expect((await listCharacters(dataStore, 'usr_test', 'hyakki-yagyo', 'npc')).map((c) => c.name)).toEqual([
+        'npc-one',
+      ]);
+      // 中身は取り込み直しではなく最初のものが返る(取り込み後の書き換えを消さないため)
+      expect(second.body.world.raw).toBe(first.body.world.raw);
+    });
+
+    // 取り込んだ後に本文を書き換えてからもう一度押しても、書き換えは消えず複製も増えない。
+    // sourcePublicId は通常の保存経路(PUT)を通っても失われない、という保証でもある。
+    it('keeps edits made after the import when the pack is started again', async () => {
       await seedOnePack();
       await request(app).post('/api/starters/hyakki-yagyo/import');
-      const second = await request(app).post('/api/starters/hyakki-yagyo/import');
-      expect(second.status).toBe(201);
-      expect(second.body.world.id).toBe('hyakki-yagyo-2');
-      expect(second.body.scenario.worldId).toBe('hyakki-yagyo-2');
+      // 素材ライブラリでの編集保存と同じ経路(PUT /api/worlds/:id が呼ぶのはこれ)。
+      await saveWorld(dataStore, textStore, 'usr_test', {
+        id: 'hyakki-yagyo',
+        title: '書き換えた世界',
+        raw: '# 書き換えた本文',
+      });
+
+      const again = await request(app).post('/api/starters/hyakki-yagyo/import');
+
+      expect(again.status).toBe(201);
+      expect(again.body.world).toMatchObject({ id: 'hyakki-yagyo', title: '書き換えた世界', raw: '# 書き換えた本文' });
+      expect((await listWorlds(dataStore, 'usr_test')).map((w) => w.id)).toEqual(['hyakki-yagyo']);
+    });
+
+    // sourcePublicId を持たない、この修正より前に取り込まれた素材。
+    // id とタイトルが取り込み先の形と一致するので、同じ一式の跡として再利用する。
+    it('reuses a pack imported before provenance was recorded', async () => {
+      await seedOnePack();
+      const before = await dataStore.get('users/usr_test/worlds/hyakki-yagyo');
+      await request(app).post('/api/starters/hyakki-yagyo/import');
+      expect(before).toBeNull();
+      const meta = await dataStore.get('users/usr_test/worlds/hyakki-yagyo');
+      await dataStore.set('users/usr_test/worlds/hyakki-yagyo', { ...meta, sourcePublicId: undefined });
+
+      const again = await request(app).post('/api/starters/hyakki-yagyo/import');
+
+      expect(again.body.world.id).toBe('hyakki-yagyo');
+      expect((await listWorlds(dataStore, 'usr_test')).map((w) => w.id)).toEqual(['hyakki-yagyo']);
     });
 
     it('404s for an unknown pack id', async () => {

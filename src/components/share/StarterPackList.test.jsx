@@ -111,6 +111,33 @@ describe('StarterPackList', () => {
     });
   });
 
+  // 取り込みが完了した時点で素材はサーバー側に出来上がっている。一覧が既に外れていても
+  // 結果を親へ渡さないと、「素材だけ増えて画面はどこへも行かない」状態になる。
+  it('still hands the caller the starterContext when the list unmounts mid-import', async () => {
+    vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
+    const pending = deferred();
+    vi.spyOn(starterClient, 'importStarterPack').mockReturnValue(pending.promise);
+    const onImported = vi.fn();
+    const { unmount } = renderWithAuth(<StarterPackList onImported={onImported} />);
+
+    fireEvent.click((await screen.findAllByText('この冒険を始める'))[0]);
+    unmount();
+
+    await act(async () => {
+      pending.resolve({
+        world: { id: 'arkham-1920s', title: 'アーカム 1920s', moods: [], raw: '# 世界' },
+        scenario: { id: 'photo-studio', worldId: 'arkham-1920s', title: '丘の上の写真館', recommendedRuleset: 'coc7e', moods: [], raw: '# シナリオ' },
+        pcs: [],
+        npcs: [],
+      });
+      await pending.promise;
+    });
+
+    expect(onImported).toHaveBeenCalledWith(
+      expect.objectContaining({ rulesetId: 'coc7e', world: expect.objectContaining({ id: 'arkham-1920s' }) })
+    );
+  });
+
   it('shows the error on the failing card and leaves the other card usable', async () => {
     vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
     vi.spyOn(starterClient, 'importStarterPack').mockRejectedValue(new Error('boom'));

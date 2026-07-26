@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { saveCharacter, getCharacter, listCharacters, deleteCharacter, saveCharacterParsed } from '../storage/characterLibrary.js';
+import { saveCharacter, getCharacter, listCharacterSummaries, deleteCharacter, saveCharacterParsed } from '../storage/characterLibrary.js';
 import { unpublishCharacter } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard, kindParamGuard } from './validateId.js';
@@ -11,7 +11,7 @@ export function createCharactersRouter({ dataStore, textStore }) {
   router.param('name', idParamGuard);
 
   router.get('/worlds/:worldId/characters/:kind', asyncHandler(async (req, res) => {
-    res.json(await listCharacters(dataStore, req.userId, req.params.worldId, req.params.kind));
+    res.json(await listCharacterSummaries(dataStore, textStore, req.userId, req.params.worldId, req.params.kind));
   }));
 
   router.get('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {

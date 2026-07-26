@@ -358,6 +358,69 @@ describe('Setup', () => {
     });
   });
 
+  // 名前(=ストレージ上のid)だけでは、並んだPCのどれが誰なのか分からない。
+  // 一覧が返す表示名・抜粋・解析済みのgoal/bondsを、選ぶ前に見せる。
+  it('shows what each existing PC is, not just its storage name', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    characterLibraryClient.listCharacters.mockResolvedValue([
+      {
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'howard-kane',
+        displayName: 'ハワード・ケイン',
+        excerpt: '新聞記者。兄の死の真相を追っている。',
+        parsed: null,
+      },
+      {
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'mabel-thorne',
+        displayName: 'メイベル・ソーン',
+        excerpt: '骨董商。',
+        parsed: { name: 'メイベル・ソーン', goal: '禁書を取り戻す', bonds: '亡き師との約束' },
+      },
+    ]);
+
+    render(<Setup onStart={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ')); // World
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // -> PC
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+
+    expect(await screen.findByText('ハワード・ケイン')).toBeInTheDocument();
+    expect(screen.getByText('新聞記者。兄の死の真相を追っている。')).toBeInTheDocument();
+    expect(screen.getByText('目標: 禁書を取り戻す')).toBeInTheDocument();
+    expect(screen.getByText('因縁: 亡き師との約束')).toBeInTheDocument();
+    // ストレージ上の名前も、表示名と違うときは手掛かりとして残す(選択はこの名前で行う)。
+    expect(screen.getByText('howard-kane')).toBeInTheDocument();
+  });
+
+  // 表示名や抜粋を返さない一覧(旧サーバー)でも、名前だけで選べる状態は保つ。
+  it('falls back to the storage name when the list carries no display name', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    characterLibraryClient.listCharacters.mockResolvedValue([{ worldId: 'w1', kind: 'pc', name: 'alice' }]);
+
+    render(<Setup onStart={vi.fn()} />);
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+
+    expect(await screen.findByText('alice')).toBeInTheDocument();
+  });
+
   it("embeds the selected PC's parsed goal/bonds into the session when the PC is library-linked", async () => {
     worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });

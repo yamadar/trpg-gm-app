@@ -48,9 +48,24 @@ function AppInner() {
   const [uploadingSessions, setUploadingSessions] = useState(false);
   // ウィザードへ引き継ぐ文脈。world.summary や scenario オブジェクトを含み URL には載せられないため、
   // 従来どおりメモリで持つ。#/setup を直接開いた場合は素のウィザードとして開く。
-  const [campaignContext, setCampaignContext] = useState(null);
-  const [starterContext, setStarterContext] = useState(null);
+  //
+  // seq は「ウィザードを開いた回数」。<Setup> の key に使い、文脈が変わったら必ず開き直させる。
+  // Setup は文脈をマウント時の初期stateとしてしか読まないため、これが無いと
+  // 「既に #/setup にいるところへ文脈が届く」場合に取りこぼす。本番のように取り込みが
+  // 遅いと、待ちきれずに「+ 新規プレイ」で先へ進んだ後に取り込みが完了する、という
+  // 順序が普通に起きる。そのとき navigate は hash が既に #/setup なので何もせず、
+  // ウィザードは0段目(Worldの用意方法/空欄のまま進める)のまま取り残されていた。
+  const [wizard, setWizard] = useState({ seq: 0, campaignContext: null, starterContext: null });
   const takeover = useSessionTakeover();
+
+  // ウィザードの入口は「自分が使う文脈」だけでなく「使わない文脈」も必ず落とす。
+  // 離脱経路(ブラウザバック等)は文脈を消さないため、両方が同居すると
+  // Setupがstarter基準でPCステップから開き、シナリオだけ無関係なものが
+  // 選ばれたまま気づかれずに進んでしまう。
+  function openWizard(context) {
+    setWizard((prev) => ({ seq: prev.seq + 1, campaignContext: null, starterContext: null, ...context }));
+    navigate({ name: 'setup' });
+  }
 
   // 直前のルート。プレイ画面から離れたことを検知するために持つ。
   const prevRouteRef = useRef(route);
@@ -142,8 +157,8 @@ function AppInner() {
   async function handleStart(newSession) {
     setSession(newSession);
     await saveSession(newSession);
-    setCampaignContext(null);
-    setStarterContext(null);
+    // 使い切った文脈は捨てる。seq は上げない(ウィザードはこの後アンマウントされる)。
+    setWizard((prev) => ({ ...prev, campaignContext: null, starterContext: null }));
     navigate({ name: 'play', sessionId: newSession.id });
   }
 
@@ -199,46 +214,24 @@ function AppInner() {
             <Home
               sessions={sessions}
               storageOk={storageOk}
-              // ウィザードの入口は「自分が使う文脈」だけでなく「使わない文脈」も必ず落とす。
-              // 離脱経路(ブラウザバック等)は文脈を消さないため、両方が同居すると
-              // Setupがstarter基準でPCステップから開き、シナリオだけ無関係なものが
-              // 選ばれたまま気づかれずに進んでしまう。
-              onNew={() => {
-                setStarterContext(null);
-                setCampaignContext(null);
-                navigate({ name: 'setup' });
-              }}
+              onNew={() => openWizard({})}
               onContinue={(id) => navigate({ name: 'play', sessionId: id })}
-              onNextChapter={(ctx) => {
-                setCampaignContext(ctx);
-                setStarterContext(null);
-                navigate({ name: 'setup' });
-              }}
-              onStartStarter={(ctx) => {
-                setStarterContext(ctx);
-                setCampaignContext(null);
-                navigate({ name: 'setup' });
-              }}
+              onNextChapter={(ctx) => openWizard({ campaignContext: ctx })}
+              onStartStarter={(ctx) => openWizard({ starterContext: ctx })}
             />
           ))}
 
         {route.name === 'setup' && (
           <Setup
+            key={wizard.seq}
             onStart={handleStart}
-            campaignContext={campaignContext}
-            starterContext={starterContext}
+            campaignContext={wizard.campaignContext}
+            starterContext={wizard.starterContext}
           />
         )}
         {route.name === 'library' && <Library route={route} />}
         {route.name === 'browse' && (
-          <Gallery
-            route={route}
-            onStartStarter={(ctx) => {
-              setStarterContext(ctx);
-              setCampaignContext(null);
-              navigate({ name: 'setup' });
-            }}
-          />
+          <Gallery route={route} onStartStarter={(ctx) => openWizard({ starterContext: ctx })} />
         )}
         {route.name === 'records' && route.recordsTab === 'endings' && <EndingGallery />}
         {route.name === 'records' && route.recordsTab === 'achievements' && <AchievementList />}

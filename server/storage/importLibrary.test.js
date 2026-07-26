@@ -7,7 +7,7 @@ import { createFsDataStore } from './dataStore.js';
 import { createFsTextStore } from './textStore.js';
 import { saveWorld } from './worldLibrary.js';
 import { saveRegion, saveCategory } from './worldContentLibrary.js';
-import { saveCharacter, getCharacter } from './characterLibrary.js';
+import { saveCharacter, getCharacter, listCharacters } from './characterLibrary.js';
 import { saveScenario, getScenario } from './scenarioLibrary.js';
 import { worldMetaKey, characterMetaKey, scenarioMetaKey } from './paths.js';
 import { publishWorld, publishCharacter, publishScenario, unpublishWorld } from './shareLibrary.js';
@@ -201,6 +201,47 @@ describe('importCharacter', () => {
     expect(await importCharacter(dataStore, textStore, 'usr_b', 'pub_nope', 'target')).toEqual({
       ok: false,
       reason: 'not_found',
+    });
+  });
+
+  // reuseExisting は「同じ一式を何度でも取り込める入口」用の指定。
+  // 2回目以降に -2 付きの複製を作らず、取り込み済みのキャラクターを返す。
+  describe('importCharacter reuseExisting', () => {
+    async function publishAlice() {
+      await seedWorld('usr_a', 'w1', 'テスト世界');
+      await saveCharacter(dataStore, textStore, 'usr_a', { worldId: 'w1', kind: 'pc', name: 'alice', raw: '# アリス' });
+      const { meta } = await publishCharacter(dataStore, textStore, 'usr_a', 'w1', 'pc', 'alice', OWNER);
+      await saveWorld(dataStore, textStore, 'usr_b', { id: 'target', title: '受け入れ先', raw: 'r' });
+      return meta.publicId;
+    }
+
+    it('returns the already imported character instead of a suffixed copy', async () => {
+      const publicId = await publishAlice();
+      const first = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+      const second = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+
+      expect(first).toMatchObject({ ok: true, reused: false });
+      expect(second).toMatchObject({ ok: true, reused: true });
+      expect(second.meta.name).toBe('alice');
+      expect((await listCharacters(dataStore, 'usr_b', 'target', 'pc')).map((c) => c.name)).toEqual(['alice']);
+    });
+
+    it('does not overwrite what the player changed after the first import', async () => {
+      const publicId = await publishAlice();
+      await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+      await saveCharacter(dataStore, textStore, 'usr_b', { worldId: 'target', kind: 'pc', name: 'alice', raw: '書き換えたシート' });
+
+      const again = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target', { reuseExisting: true });
+
+      expect(again.meta.raw).toBe('書き換えたシート');
+      expect((await listCharacters(dataStore, 'usr_b', 'target', 'pc')).map((c) => c.name)).toEqual(['alice']);
+    });
+
+    it('keeps suffixing when the caller does not ask for reuse', async () => {
+      const publicId = await publishAlice();
+      await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target');
+      const second = await importCharacter(dataStore, textStore, 'usr_b', publicId, 'target');
+      expect(second.meta.name).toBe('alice-2');
     });
   });
 });
