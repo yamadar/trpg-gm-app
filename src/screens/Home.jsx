@@ -22,7 +22,6 @@ import { saveSession } from '../storage/index.js';
 import { makeId } from '../utils/makeId.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { summarizeRolls } from '../engine/rollStats.js';
-import { navigateToEndings } from '../router/useHashRoute.js';
 
 const NOVEL_POLL_MS = 5000;
 
@@ -80,7 +79,7 @@ export function collectUnreadIds(jobs, announced, knownIds) {
     .map(([id]) => id);
 }
 
-export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLibrary, onOpenGallery, onNextChapter, onStartStarter }) {
+export default function Home({ sessions, storageOk, onNew, onContinue, onNextChapter, onStartStarter }) {
   const { user } = useAuth();
   const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated, unread }
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
@@ -702,15 +701,6 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onOpenLib
       <div style={{ display: 'flex', gap: 10, marginBottom: user ? 32 : 8 }}>
         <Button variant="brass" onClick={onNew} disabled={!user}>
           + 新規プレイ
-        </Button>
-        <Button variant="ghost" onClick={onOpenLibrary}>
-          素材ライブラリ
-        </Button>
-        <Button variant="ghost" onClick={onOpenGallery}>
-          公開ギャラリー
-        </Button>
-        <Button variant="ghost" onClick={navigateToEndings}>
-          エンディング図鑑
         </Button>
       </div>
 

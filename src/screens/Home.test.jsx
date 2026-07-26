@@ -25,12 +25,12 @@ beforeEach(() => {
 
 describe('Home', () => {
   it('shows the storage warning when storage is unavailable', () => {
-    renderWithAuth(<Home sessions={[]} storageOk={false} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={[]} storageOk={false} onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.getByText(/保存機能\(IndexedDB\)が使えていない/)).toBeInTheDocument();
   });
 
   it('does not show the warning when storage is available', () => {
-    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.queryByText(/保存機能\(IndexedDB\)が使えていない/)).not.toBeInTheDocument();
   });
 
@@ -44,7 +44,7 @@ describe('Home', () => {
         log: [{ role: 'gm', text: '森の奥から物音がした。' }],
       },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.getByText('セッションA')).toBeInTheDocument();
     expect(screen.getByText(/シーン:/)).toBeInTheDocument();
     expect(screen.getByText(/森の奥から物音がした。/)).toBeInTheDocument();
@@ -52,27 +52,20 @@ describe('Home', () => {
 
   it('shows a placeholder last line when the session has no log yet', () => {
     const sessions = [{ id: 's1', title: 'セッションB', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.getByText('(まだ進行なし)')).toBeInTheDocument();
   });
 
-  it('calls onOpenLibrary when the library button is clicked', () => {
-    const onOpenLibrary = vi.fn();
-    renderWithAuth(<Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={onOpenLibrary} onOpenGallery={vi.fn()} />);
-    fireEvent.click(screen.getByText('素材ライブラリ'));
-    expect(onOpenLibrary).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows the public gallery button and calls onOpenGallery when clicked, even when logged out', () => {
-    const onOpenGallery = vi.fn();
+  // 素材ライブラリ / 公開ギャラリー / エンディング図鑑 はグローバルナビが担うようになった。
+  // 本文に同じ導線を残すと、同じ場所へ行く道が2本あることになる。
+  it('no longer duplicates the global nav destinations in its body', async () => {
     renderWithAuth(
-      <Home sessions={[]} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onOpenGallery={onOpenGallery} />,
-      { user: null }
+      <Home sessions={[]} storageOk onNew={() => {}} onContinue={() => {}} />
     );
-    const button = screen.getByText('公開ギャラリー');
-    expect(button).not.toBeDisabled();
-    fireEvent.click(button);
-    expect(onOpenGallery).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('+ 新規プレイ')).toBeInTheDocument();
+    expect(screen.queryByText('素材ライブラリ')).not.toBeInTheDocument();
+    expect(screen.queryByText('公開ギャラリー')).not.toBeInTheDocument();
+    expect(screen.queryByText('エンディング図鑑')).not.toBeInTheDocument();
   });
 
   it('挿絵のあるセッションにのみ「挿絵付き」ボタンを表示する(小説が既にある場合)', async () => {
@@ -90,7 +83,7 @@ describe('Home', () => {
       },
       { id: 's2', title: '挿絵なし', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'y' }] },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(await screen.findAllByText('挿絵付きでDL')).toHaveLength(1);
   });
 
@@ -103,7 +96,7 @@ describe('Home', () => {
       { id: 's1', title: '打ち切りあり', updatedAt: 2, state: {}, log: [] },
       { id: 's2', title: '打ち切りなし', updatedAt: 1, state: {}, log: [] },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
 
     // 警告は打ち切られたセッションにだけ出る。
     expect(await screen.findAllByText(/末尾が欠けている可能性があります/)).toHaveLength(1);
@@ -113,7 +106,7 @@ describe('Home', () => {
     vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
     vi.spyOn(sessionSyncClient, 'novelizeSession').mockRejectedValue(new Error('upstream down'));
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
 
     fireEvent.click(await screen.findByText('小説化する'));
 
@@ -146,7 +139,7 @@ describe('Home', () => {
       { id: 's1', title: 'A', updatedAt: 2, state: {}, log: [] },
       { id: 's2', title: 'B', updatedAt: 1, state: {}, log: [] },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
 
     // s1の小説化を開始(pendingのまま)
     fireEvent.click(screen.getAllByText('小説化する')[0]);
@@ -173,14 +166,14 @@ describe('Home', () => {
   it('disables new play and novelize when logged out', () => {
     const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
     renderWithAuth(
-      <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />,
+      <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />,
       { user: null }
     );
     expect(screen.getByText('+ 新規プレイ')).toBeDisabled();
     expect(screen.getByText('小説化する')).toBeDisabled();
     expect(screen.getByText(/ログインが必要/)).toBeInTheDocument();
-    // ライブラリと続きから再開は許可されたまま
-    expect(screen.getByText('素材ライブラリ')).not.toBeDisabled();
+    // 続きから再開は許可されたまま
+    expect(screen.getByText('続きから再開')).not.toBeDisabled();
   });
 
   describe('小説の公開/公開解除', () => {
@@ -191,7 +184,7 @@ describe('Home', () => {
         { id: 's2', title: 'セッションB', updatedAt: 1, state: {}, log: [] },
       ];
       renderWithAuth(
-        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />
       );
 
       await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
@@ -205,7 +198,7 @@ describe('Home', () => {
       const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
       const onContinue = vi.fn();
       renderWithAuth(
-        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={onContinue} />
       );
 
       await waitFor(() => expect(shareClient.publishedNovels).toHaveBeenCalled());
@@ -224,7 +217,7 @@ describe('Home', () => {
       );
       const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
       renderWithAuth(
-        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />
       );
 
       await waitFor(() => expect(shareClient.publishedNovels).toHaveBeenCalled());
@@ -238,7 +231,7 @@ describe('Home', () => {
       const unpublishSpy = vi.spyOn(shareClient, 'unpublishNovel').mockResolvedValue();
       const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
       renderWithAuth(
-        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />
       );
 
       await waitFor(() => expect(screen.getByText('公開中')).toBeInTheDocument());
@@ -253,7 +246,7 @@ describe('Home', () => {
       const publishedSpy = vi.spyOn(shareClient, 'publishedNovels');
       const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: {}, log: [] }];
       renderWithAuth(
-        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />,
+        <Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />,
         { user: null }
       );
 
@@ -267,7 +260,7 @@ describe('Home', () => {
   describe('次の章へ(キャンペーン)', () => {
     it('worldIdの無いセッションには「次の章へ」を出さない', () => {
       const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'x' }] }];
-      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
       expect(screen.queryByText('次の章へ')).not.toBeInTheDocument();
     });
 
@@ -291,7 +284,7 @@ describe('Home', () => {
         },
       ];
       renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onNextChapter={onNextChapter} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onNextChapter={onNextChapter} />
       );
       fireEvent.click(screen.getByText('次の章へ'));
       await waitFor(() => expect(putCampaignSpy).toHaveBeenCalled());
@@ -333,7 +326,7 @@ describe('Home', () => {
         },
       ];
       renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onNextChapter={onNextChapter} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onNextChapter={onNextChapter} />
       );
       fireEvent.click(screen.getByText('次の章へ'));
 
@@ -359,7 +352,7 @@ describe('Home', () => {
         { id: 's2', title: '第二章', updatedAt: 2, worldId: 'w1', campaignId: 'cp1', state: {}, log: [{ role: 'gm', text: 'b' }] },
         { id: 's3', title: '単発', updatedAt: 3, state: {}, log: [{ role: 'gm', text: 'c' }] },
       ];
-      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
       expect(await screen.findByText(/影の連鎖/)).toBeInTheDocument();
       await waitFor(() => expect(campaignClient.listCampaigns).toHaveBeenCalledWith('w1'));
       expect(screen.getByText('第一章')).toBeInTheDocument();
@@ -372,7 +365,7 @@ describe('Home', () => {
       const sessions = [
         { id: 's1', title: '孤児セッション', updatedAt: 1, worldId: 'w1', campaignId: 'cp_gone', state: {}, log: [{ role: 'gm', text: 'a' }] },
       ];
-      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
       expect(await screen.findByText('続きから再開')).toBeInTheDocument();
       expect(screen.getByText('孤児セッション')).toBeInTheDocument();
     });
@@ -380,13 +373,13 @@ describe('Home', () => {
 
   it('shows a 完結 badge for a session that has ended', () => {
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 123, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.getByText('完結')).toBeInTheDocument();
   });
 
   it('does not show a 完結 badge for a session still in progress', () => {
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.queryByText('完結')).not.toBeInTheDocument();
   });
 
@@ -394,14 +387,14 @@ describe('Home', () => {
     const sessions = [
       { id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'g', image: { imageId: 'img_a' } }] },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(screen.getByText('挿絵あり')).toBeInTheDocument();
   });
 
   it('renders 公開中 as a badge rather than a button', async () => {
     vi.spyOn(shareClient, 'publishedNovels').mockResolvedValue({ s1: 'pub_1' });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
     const badge = await screen.findByText('公開中');
     expect(badge.tagName).toBe('SPAN');
   });
@@ -411,7 +404,7 @@ describe('Home', () => {
       s1: { status: 'running', error: null, hasNovel: false, stale: false },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     const button = await screen.findByText('小説化中…');
     expect(button).toBeDisabled();
@@ -423,7 +416,7 @@ describe('Home', () => {
       s1: { status: 'running', error: null, elapsedMs: 84000, hasNovel: false, stale: false },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('1:24 経過 ・ 目安 2〜5分')).toBeInTheDocument();
     expect(
@@ -441,7 +434,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -475,7 +468,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -503,7 +496,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       // マウント時の初回取得(実タイマーではないPromiseチェーン)を流す。
       await act(async () => {
@@ -538,7 +531,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -572,7 +565,7 @@ describe('Home', () => {
       s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説をDL')).toBeInTheDocument();
     expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
@@ -584,7 +577,7 @@ describe('Home', () => {
       s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: '黄昏の塔の契約', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説ができました')).toBeInTheDocument();
     expect(screen.getByText('「黄昏の塔の契約」の小説ができました')).toBeInTheDocument();
@@ -597,7 +590,7 @@ describe('Home', () => {
       s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: false },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説をDL')).toBeInTheDocument();
     expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
@@ -615,7 +608,7 @@ describe('Home', () => {
       other_device_session: { status: 'done', error: null, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: 'このクライアントのセッション', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説化する')).toBeInTheDocument();
     expect(screen.queryByText(/の小説ができました/)).not.toBeInTheDocument();
@@ -630,7 +623,7 @@ describe('Home', () => {
       s1: { status: 'running', error: null, elapsedMs: 1000, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説を執筆しています')).toBeInTheDocument();
     expect(screen.queryByText('小説ができました')).not.toBeInTheDocument();
@@ -657,7 +650,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -699,7 +692,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -738,7 +731,7 @@ describe('Home', () => {
       s1: { status: 'done', error: null, elapsedMs: null, hasNovel: true, stale: false, unread: true },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説ができました')).toBeInTheDocument();
     expect(screen.queryByText(/失敗/)).not.toBeInTheDocument();
@@ -758,7 +751,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -793,7 +786,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -808,7 +801,7 @@ describe('Home', () => {
       await act(async () => {
         rerenderWithAuth(
           view.rerender,
-          <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />,
+          <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />,
           null
         );
         await Promise.resolve();
@@ -840,7 +833,7 @@ describe('Home', () => {
     let view;
     try {
       view = renderWithAuth(
-        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />
+        <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />
       );
       await act(async () => {
         await Promise.resolve();
@@ -871,7 +864,7 @@ describe('Home', () => {
     const sessions = [
       { id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'g', image: { imageId: 'img_a' } }] },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説をDL')).toBeInTheDocument();
     expect(screen.getByText('挿絵付きでDL')).toBeInTheDocument();
@@ -885,7 +878,7 @@ describe('Home', () => {
     const sessions = [
       { id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'g', image: { imageId: 'img_a' } }] },
     ];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText('小説化する')).toBeInTheDocument();
     expect(screen.queryByText('挿絵付きでDL')).not.toBeInTheDocument();
@@ -896,7 +889,7 @@ describe('Home', () => {
       s1: { status: 'error', error: 'サーバーの再起動により中断されました。', hasNovel: false, stale: false },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText(/サーバーの再起動により中断されました。/)).toBeInTheDocument();
     expect(screen.getByText('小説化を再試行')).toBeInTheDocument();
@@ -907,7 +900,7 @@ describe('Home', () => {
       s1: { status: 'done', error: null, hasNovel: true, stale: true },
     });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     expect(await screen.findByText(/最新のログを反映していない可能性があります/)).toBeInTheDocument();
   });
@@ -918,7 +911,7 @@ describe('Home', () => {
     const getNovelSpy = vi.spyOn(sessionSyncClient, 'getNovel');
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
     const onContinue = vi.fn();
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={onContinue} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={onContinue} />);
 
     fireEvent.click(await screen.findByText('小説化する'));
 
@@ -936,7 +929,7 @@ describe('Home', () => {
     const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
     vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: vi.fn() });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     fireEvent.click(await screen.findByText('小説をDL'));
 
@@ -953,7 +946,7 @@ describe('Home', () => {
     const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, worldId: 'w1', state: {}, log: [] }];
     renderWithAuth(
-      <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onNextChapter={vi.fn()} />
+      <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onNextChapter={vi.fn()} />
     );
 
     fireEvent.click(await screen.findByText('次の章へ'));
@@ -962,17 +955,10 @@ describe('Home', () => {
     expect(typeof saveSpy.mock.calls.at(-1)[0].endedAt).toBe('number');
   });
 
-  it('navigates to the ending gallery', async () => {
-    renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onOpenGallery={vi.fn()} />);
-    fireEvent.click(screen.getByText('エンディング図鑑'));
-    expect(window.location.hash).toBe('#/endings');
-    window.location.hash = '';
-  });
-
   it('shows the recorded ending title on a finished session', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([{ sessionId: 's1', endingTitle: '灰は星を数えない' }]);
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 500, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
     expect(await screen.findByText(/灰は星を数えない/)).toBeInTheDocument();
     expect(screen.queryByText('エンディングを記録する')).not.toBeInTheDocument();
   });
@@ -981,7 +967,7 @@ describe('Home', () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
     const recordSpy = vi.spyOn(endingClient, 'recordEnding').mockResolvedValue({ sessionId: 's1', endingTitle: '後から付けた題' });
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 500, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     fireEvent.click(await screen.findByText('エンディングを記録する'));
 
@@ -992,7 +978,7 @@ describe('Home', () => {
   it('does not offer to record an ending for a session still in progress', async () => {
     vi.spyOn(endingClient, 'listEndings').mockResolvedValue([]);
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
     await screen.findByText('小説化する');
     expect(screen.queryByText('エンディングを記録する')).not.toBeInTheDocument();
   });
@@ -1008,7 +994,7 @@ describe('Home', () => {
       })
     );
     const sessions = [{ id: 's1', title: 'A', updatedAt: 1, endedAt: 500, state: {}, log: [] }];
-    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} />);
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
 
     // 取得が終わるまでは「完結」バッジは出ていても記録ボタンは出さない。
     await screen.findByText('完結');
@@ -1031,7 +1017,7 @@ describe('Home', () => {
 
     it('offers starter packs when there are no sessions', async () => {
       vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
-      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={vi.fn()} />);
+      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onStartStarter={vi.fn()} />);
       expect(await screen.findByText('はじめての冒険を選ぶ')).toBeInTheDocument();
       expect(await screen.findByText('アーカム 1920s')).toBeInTheDocument();
     });
@@ -1039,14 +1025,14 @@ describe('Home', () => {
     it('does not offer starter packs once a session exists', async () => {
       vi.spyOn(starterClient, 'listStarters').mockResolvedValue({ packs: PACKS, seededAt: 1 });
       const sessions = [{ id: 's1', title: 'セッションA', updatedAt: 1, state: { current_scene: '森', turn_count: 1 }, log: [] }];
-      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={vi.fn()} />);
+      renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onStartStarter={vi.fn()} />);
       await waitFor(() => expect(screen.getByText('セッションA')).toBeInTheDocument());
       expect(screen.queryByText('はじめての冒険を選ぶ')).not.toBeInTheDocument();
     });
 
     it('still renders the action buttons when the manifest cannot be fetched', async () => {
       vi.spyOn(starterClient, 'listStarters').mockRejectedValue(new Error('offline'));
-      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={vi.fn()} />);
+      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onStartStarter={vi.fn()} />);
       expect(await screen.findByText('+ 新規プレイ')).toBeInTheDocument();
     });
 
@@ -1058,7 +1044,7 @@ describe('Home', () => {
         pcs: [], npcs: [],
       });
       const onStartStarter = vi.fn();
-      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onOpenLibrary={vi.fn()} onStartStarter={onStartStarter} />);
+      renderWithAuth(<Home sessions={[]} storageOk onNew={vi.fn()} onContinue={vi.fn()} onStartStarter={onStartStarter} />);
 
       fireEvent.click(await screen.findByText('この冒険を始める'));
 
