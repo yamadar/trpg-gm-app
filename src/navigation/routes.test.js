@@ -71,10 +71,47 @@ describe('parseRoute', () => {
   });
 
   it('parses the user route and keeps rejecting malformed ones', () => {
-    expect(parseRoute('#/u/usr_ab12')).toEqual({ name: 'user', userId: 'usr_ab12' });
+    expect(parseRoute('#/u/usr_ab12')).toEqual({
+      name: 'user',
+      userId: 'usr_ab12',
+      userTab: 'novels',
+      publicId: null,
+    });
     expect(parseRoute('#/u/')).toBeNull();
     expect(parseRoute('#/u/../evil')).toBeNull();
     expect(parseRoute('#/u/..')).toBeNull();
+  });
+
+  it('parses the user tab and the opened item', () => {
+    expect(parseRoute('#/u/usr_1/worlds')).toEqual({
+      name: 'user',
+      userId: 'usr_1',
+      userTab: 'worlds',
+      publicId: null,
+    });
+    expect(parseRoute('#/u/usr_1/worlds/pub_1')).toEqual({
+      name: 'user',
+      userId: 'usr_1',
+      userTab: 'worlds',
+      publicId: 'pub_1',
+    });
+  });
+
+  it('falls back to the default user tab for unknown tabs, and rejects extra segments', () => {
+    expect(parseRoute('#/u/usr_1/nope')).toEqual({
+      name: 'user',
+      userId: 'usr_1',
+      userTab: 'novels',
+      publicId: null,
+    });
+    // starters は公開ギャラリー専用で、ユーザーページのタブには無い。
+    expect(parseRoute('#/u/usr_1/starters')).toEqual({
+      name: 'user',
+      userId: 'usr_1',
+      userTab: 'novels',
+      publicId: null,
+    });
+    expect(parseRoute('#/u/usr_1/worlds/pub_1/extra')).toBeNull();
   });
 
   it('parses setup and play routes', () => {
@@ -106,6 +143,13 @@ describe('buildHash', () => {
     );
     expect(buildHash({ name: 'records', recordsTab: 'achievements' })).toBe('#/records/achievements');
     expect(buildHash({ name: 'user', userId: 'usr_1' })).toBe('#/u/usr_1');
+    expect(buildHash({ name: 'user', userId: 'usr_1', userTab: 'novels', publicId: null })).toBe('#/u/usr_1');
+    expect(buildHash({ name: 'user', userId: 'usr_1', userTab: 'worlds', publicId: null })).toBe(
+      '#/u/usr_1/worlds'
+    );
+    expect(buildHash({ name: 'user', userId: 'usr_1', userTab: 'worlds', publicId: 'pub_1' })).toBe(
+      '#/u/usr_1/worlds/pub_1'
+    );
     expect(buildHash({ name: 'setup' })).toBe('#/setup');
     expect(buildHash({ name: 'play', sessionId: 'ses_1' })).toBe('#/play/ses_1');
     expect(buildHash(null)).toBe('#/');
@@ -121,6 +165,8 @@ describe('buildHash', () => {
       '#/records/endings',
       '#/records/achievements',
       '#/u/usr_1',
+      '#/u/usr_1/worlds',
+      '#/u/usr_1/worlds/pub_1',
       '#/setup',
       '#/play/ses_1',
     ];
@@ -129,6 +175,8 @@ describe('buildHash', () => {
 
   it('rewrites abbreviated and legacy hashes to their canonical form', () => {
     expect(buildHash(parseRoute('#/library'))).toBe('#/library/world');
+    // 既定タブは素の #/u/:userId が正準形。共有済みのURLを書き換えない。
+    expect(buildHash(parseRoute('#/u/usr_1/novels'))).toBe('#/u/usr_1');
     expect(buildHash(parseRoute('#/browse'))).toBe('#/browse/starters');
     expect(buildHash(parseRoute('#/endings'))).toBe('#/records/endings');
     expect(buildHash(parseRoute('#/achievements'))).toBe('#/records/achievements');
@@ -214,6 +262,22 @@ describe('crumbsFor', () => {
 
   it('returns only the home crumb for the user route, whose name is supplied dynamically', () => {
     expect(crumbsFor(parseRoute('#/u/usr_1'))).toEqual([{ key: 'home', label: 'ホーム', hash: '#/' }]);
+    expect(crumbsFor(parseRoute('#/u/usr_1/worlds'))).toEqual([{ key: 'home', label: 'ホーム', hash: '#/' }]);
+  });
+
+  it('adds the profile and tab crumbs above an opened user item', () => {
+    // 表示名は URL から決まらないので dynamicKey を置き、画面側の登録を待つ。
+    expect(crumbsFor(parseRoute('#/u/usr_1/worlds/pub_1'))).toEqual([
+      { key: 'home', label: 'ホーム', hash: '#/' },
+      { key: 'user', dynamicKey: 'user', hash: '#/u/usr_1' },
+      { key: 'userTab', label: '世界観', hash: '#/u/usr_1/worlds' },
+    ]);
+    // 既定タブでも、素の #/u/:userId が一覧へ戻る正しい行き先になる。
+    expect(crumbsFor(parseRoute('#/u/usr_1/novels/pub_1'))[2]).toEqual({
+      key: 'userTab',
+      label: '小説',
+      hash: '#/u/usr_1',
+    });
   });
 });
 

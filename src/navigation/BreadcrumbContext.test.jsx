@@ -1,13 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { BreadcrumbProvider, useBreadcrumbLabel, useBreadcrumbTail } from './BreadcrumbContext.jsx';
+import {
+  BreadcrumbProvider,
+  useBreadcrumbLabel,
+  useBreadcrumbLabels,
+  useBreadcrumbTail,
+} from './BreadcrumbContext.jsx';
 
 function Tail() {
   return <div data-testid="tail">{useBreadcrumbTail() ?? '(none)'}</div>;
 }
 
+function Keyed({ crumbKey }) {
+  return <div data-testid={crumbKey}>{useBreadcrumbLabels()[crumbKey] ?? '(none)'}</div>;
+}
+
 function Screen({ label }) {
   useBreadcrumbLabel(label);
+  return null;
+}
+
+function KeyedScreen({ label, crumbKey }) {
+  useBreadcrumbLabel(label, crumbKey);
   return null;
 }
 
@@ -69,6 +83,40 @@ describe('BreadcrumbContext', () => {
         <Screen label={undefined} />
       </BreadcrumbProvider>
     );
+    expect(screen.getByTestId('tail')).toHaveTextContent('(none)');
+  });
+
+  it('holds a mid-trail label alongside the tail, under its own key', () => {
+    // ユーザーページは「プロフィール段の表示名」と「末尾のアイテム名」を同時に登録する。
+    render(
+      <BreadcrumbProvider>
+        <Tail />
+        <Keyed crumbKey="user" />
+        <KeyedScreen label="Alice" crumbKey="user" />
+        <Screen label="丘の上の写真館" />
+      </BreadcrumbProvider>
+    );
+    expect(screen.getByTestId('user')).toHaveTextContent('Alice');
+    expect(screen.getByTestId('tail')).toHaveTextContent('丘の上の写真館');
+  });
+
+  it('clears only the key it owns when that screen unmounts', () => {
+    const { rerender } = render(
+      <BreadcrumbProvider>
+        <Tail />
+        <Keyed crumbKey="user" />
+        <KeyedScreen key="profile" label="Alice" crumbKey="user" />
+        <Screen key="item" label="丘の上の写真館" />
+      </BreadcrumbProvider>
+    );
+    rerender(
+      <BreadcrumbProvider>
+        <Tail />
+        <Keyed crumbKey="user" />
+        <KeyedScreen key="profile" label="Alice" crumbKey="user" />
+      </BreadcrumbProvider>
+    );
+    expect(screen.getByTestId('user')).toHaveTextContent('Alice');
     expect(screen.getByTestId('tail')).toHaveTextContent('(none)');
   });
 

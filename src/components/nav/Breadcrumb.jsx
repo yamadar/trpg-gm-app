@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import { crumbsFor, wantsDynamicCrumb } from '../../navigation/routes.js';
 import { navigateHash } from '../../navigation/useRoute.js';
-import { useBreadcrumbTail } from '../../navigation/BreadcrumbContext.jsx';
+import { useBreadcrumbLabels, useBreadcrumbTail } from '../../navigation/BreadcrumbContext.jsx';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
 import { COLORS, F_MONO } from '../../theme.js';
 
@@ -10,10 +10,14 @@ const NARROW_VISIBLE = 2;
 
 export default function Breadcrumb({ route }) {
   const wide = useMediaQuery('(min-width: 768px)');
+  const labels = useBreadcrumbLabels();
   const tail = useBreadcrumbTail();
 
-  const crumbs = [...crumbsFor(route)];
-  // 動的ラベルが未登録の間は段を足さない(IDを露出させないため)。
+  // 動的ラベルが未登録の間はその段を出さない(IDを露出させないため)。
+  // 途中の段(dynamicKey)は名前が届くまで丸ごと省き、末尾は wantsDynamicCrumb で判断する。
+  const crumbs = crumbsFor(route)
+    .map((crumb) => (crumb.dynamicKey ? { ...crumb, label: labels[crumb.dynamicKey] ?? null } : crumb))
+    .filter((crumb) => crumb.label != null);
   if (wantsDynamicCrumb(route) && tail) {
     crumbs.push({ key: 'dynamic', label: tail, hash: null });
   }

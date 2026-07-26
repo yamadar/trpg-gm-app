@@ -1,37 +1,38 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../theme.js';
-import Button from '../components/ui/Button.jsx';
 import { getUserProfile, getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
+import TabStrip from '../components/nav/TabStrip.jsx';
+import { navigate } from '../navigation/useRoute.js';
 import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
 
-export default function UserPage({ userId }) {
+export default function UserPage({ route }) {
+  const userId = route.userId;
+  const tab = route.userTab;
+  const publicId = route.publicId;
+
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [profile, setProfile] = useState(null);
 
-  // パンくず末尾に表示名を出す。プロフィール取得前は登録しない(IDを露出させないため)。
-  useBreadcrumbLabel(profile ? profile.displayName : null);
-
-  const [tab, setTab] = useState('novels');
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
-  const detailReqRef = useRef(0);
+
+  // パンくずは「プロフィール段(表示名)」と「末尾(現在地の名前)」を使う。
+  // 詳細を開いている間の現在地は公開アイテムなので、末尾はそのタイトルになる。
+  // どちらも取得前は登録しない(IDを露出させないため)。
+  useBreadcrumbLabel(profile ? profile.displayName : null, 'user');
+  useBreadcrumbLabel(publicId ? (detail ? detail.title : null) : profile ? profile.displayName : null);
 
   useEffect(() => {
     setLoading(true);
     setNotFound(false);
     setLoadError('');
     setProfile(null);
-    setTab('novels');
-    setViewMode('list');
-    setDetail(null);
-    setDetailError('');
 
     let cancelled = false;
     (async () => {
@@ -55,33 +56,42 @@ export default function UserPage({ userId }) {
     };
   }, [userId]);
 
+  // 詳細の取得は URL の publicId に従う。戻る/進むでも同じ経路を通る(Gallery と同じ形)。
+  // 追い越しの防止は cancelled フラグだけで足りる。Reactは次のeffect本体より先に
+  // 前回のクリーンアップを走らせるため、古いリクエストでは必ず cancelled が先に立つ。
   useEffect(() => {
-    setViewMode('list');
-    setDetail(null);
-    setDetailError('');
-  }, [tab]);
-
-  async function openDetail(publicId) {
-    const my = ++detailReqRef.current;
-    setViewMode('detail');
+    if (!publicId) {
+      setDetail(null);
+      setDetailError('');
+      return undefined;
+    }
+    let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
     setDetailError('');
-    try {
-      const item = await getPublic(tab, publicId);
-      if (my !== detailReqRef.current) return; // 別の詳細取得が始まっていたら破棄
-      setDetail(item);
-    } catch (e) {
-      if (my !== detailReqRef.current) return;
-      setDetailError('取得に失敗した: ' + e.message);
-    } finally {
-      if (my === detailReqRef.current) setDetailLoading(false);
-    }
+    (async () => {
+      try {
+        const item = await getPublic(tab, publicId);
+        if (cancelled) return;
+        setDetail(item);
+      } catch (e) {
+        if (cancelled) return;
+        setDetailError('取得に失敗した: ' + e.message);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, publicId]);
+
+  function goToTab(nextTab) {
+    navigate({ name: 'user', userId, userTab: nextTab, publicId: null });
   }
 
-  function backToList() {
-    setViewMode('list');
-    setDetail(null);
+  function openDetail(id) {
+    navigate({ name: 'user', userId, userTab: tab, publicId: id });
   }
 
   const wrapStyle = { maxWidth: 720, margin: '0 auto', padding: '40px 20px' };
@@ -158,50 +168,17 @@ export default function UserPage({ userId }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
-        {TABS.map((t) => (
-          <div
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: tab === t.key ? COLORS.ink : 'transparent',
-              color: tab === t.key ? COLORS.paper : COLORS.faint,
-              border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
-            }}
-          >
-            {t.label}
-          </div>
-        ))}
-      </div>
+      <TabStrip tabs={TABS} active={tab} onSelect={goToTab} />
 
-      <PublicItemList
-        key={tab}
-        type={tab}
-        ownerId={userId}
-        active={viewMode === 'list'}
-        onOpenDetail={openDetail}
-      />
+      <PublicItemList key={tab} type={tab} ownerId={userId} active={!publicId} onOpenDetail={openDetail} />
 
-      {viewMode !== 'list' &&
+      {publicId &&
         (detailLoading ? (
-          <div>
-            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-              ← 一覧に戻る
-            </Button>
-            <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-          </div>
+          <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
         ) : detailError ? (
-          <div>
-            <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-              ← 一覧に戻る
-            </Button>
-            <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-          </div>
+          <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
         ) : (
-          detail && <PublicItemDetail type={tab} item={detail} onBack={backToList} />
+          detail && <PublicItemDetail type={tab} item={detail} onBack={() => goToTab(tab)} />
         ))}
     </div>
   );

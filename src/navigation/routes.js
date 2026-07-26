@@ -1,11 +1,13 @@
 import { LIBRARY_TABS, WORLD_SCOPED_LIBRARY_TABS } from '../constants/libraryTabs.js';
-import { GALLERY_TABS } from '../constants/publicContent.js';
+import { GALLERY_TABS, PUBLIC_TABS } from '../constants/publicContent.js';
 
 export { LIBRARY_TABS };
 
 const LIBRARY_TAB_KEYS = LIBRARY_TABS.map((t) => t.key);
 const BROWSE_TAB_KEYS = GALLERY_TABS.map((t) => t.key);
 const RECORDS_TAB_KEYS = ['endings', 'achievements'];
+const USER_TAB_KEYS = PUBLIC_TABS.map((t) => t.key);
+const DEFAULT_USER_TAB = 'novels';
 
 const ID_RE = /^[A-Za-z0-9._-]+$/;
 
@@ -33,7 +35,7 @@ export function parseRoute(hash) {
     .filter(Boolean);
   if (segments.length === 0) return { name: 'home' };
 
-  const [head, a, b] = segments;
+  const [head, a, b, c] = segments;
   switch (head) {
     case 'library': {
       if (segments.length > 3) return null;
@@ -57,8 +59,13 @@ export function parseRoute(hash) {
       return segments.length === 1 ? { name: 'records', recordsTab: 'endings' } : null;
     case 'achievements':
       return segments.length === 1 ? { name: 'records', recordsTab: 'achievements' } : null;
-    case 'u':
-      return segments.length === 2 && isId(a) ? { name: 'user', userId: a } : null;
+    case 'u': {
+      if (segments.length < 2 || segments.length > 4 || !isId(a)) return null;
+      const userTab = USER_TAB_KEYS.includes(b) ? b : DEFAULT_USER_TAB;
+      // PUBLIC_TABS は4つとも PublicItemList / PublicItemDetail に載るため、
+      // browse の starters のような「詳細を持たないタブ」の例外はここには無い。
+      return { name: 'user', userId: a, userTab, publicId: isId(c) ? c : null };
+    }
     case 'setup':
       return segments.length === 1 ? { name: 'setup' } : null;
     case 'play':
@@ -82,7 +89,11 @@ export function buildHash(route) {
     case 'records':
       return `#/records/${route.recordsTab}`;
     case 'user':
-      return `#/u/${route.userId}`;
+      if (route.publicId) return `#/u/${route.userId}/${route.userTab}/${route.publicId}`;
+      // 素の #/u/:userId は既に共有され得る公開URL。既定タブのときはこの形を正準形に保つ。
+      return route.userTab && route.userTab !== DEFAULT_USER_TAB
+        ? `#/u/${route.userId}/${route.userTab}`
+        : `#/u/${route.userId}`;
     case 'setup':
       return '#/setup';
     case 'play':
@@ -97,6 +108,7 @@ const NAV_TAB_KEYS = NAV_TABS.map((t) => t.key);
 const LIBRARY_LABELS = Object.fromEntries(LIBRARY_TABS.map((t) => [t.key, t.label]));
 const BROWSE_LABELS = Object.fromEntries(GALLERY_TABS.map((t) => [t.key, t.label]));
 const RECORDS_LABELS = { endings: 'エンディング図鑑', achievements: '実績' };
+const USER_LABELS = Object.fromEntries(PUBLIC_TABS.map((t) => [t.key, t.label]));
 
 // パンくずの上位段はグローバルナビの項目そのもの。ラベルと遷移先が
 // ナビバーと食い違わないよう NAV_TABS から引く。
@@ -117,6 +129,8 @@ export function isFocusRoute(route) {
 
 // URL だけから決まるパンくずの段。末尾の動的ラベル(World名・公開アイテム名・表示名)は
 // 画面側が BreadcrumbContext へ登録するため、ここには含めない。
+// 途中の段に動的ラベルが要る場合(ユーザーページのプロフィール段)は dynamicKey を
+// 置き、Breadcrumb 側が同じキーで登録された名前を埋める(未登録の間はその段を出さない)。
 export function crumbsFor(route) {
   if (!route) return [HOME_CRUMB];
   switch (route.name) {
@@ -150,8 +164,22 @@ export function crumbsFor(route) {
           hash: `#/records/${route.recordsTab}`,
         },
       ];
-    case 'home':
+    // 一覧を見ている間は表示名そのものが末尾の段になるのでホームだけでよい。
+    // 詳細を開いている間だけ「プロフィール › タブ」を上位段として挟み、
+    // 末尾(公開アイテム名)から一覧へ戻れるようにする。
     case 'user':
+      return route.publicId
+        ? [
+            HOME_CRUMB,
+            { key: 'user', dynamicKey: 'user', hash: `#/u/${route.userId}` },
+            {
+              key: 'userTab',
+              label: USER_LABELS[route.userTab],
+              hash: buildHash({ name: 'user', userId: route.userId, userTab: route.userTab }),
+            },
+          ]
+        : [HOME_CRUMB];
+    case 'home':
     default:
       return [HOME_CRUMB];
   }

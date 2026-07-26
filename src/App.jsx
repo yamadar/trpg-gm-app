@@ -242,7 +242,7 @@ function AppInner() {
         )}
         {route.name === 'records' && route.recordsTab === 'endings' && <EndingGallery />}
         {route.name === 'records' && route.recordsTab === 'achievements' && <AchievementList />}
-        {route.name === 'user' && <UserPage userId={route.userId} />}
+        {route.name === 'user' && <UserPage route={route} />}
         {/* 集中モードのシェルはナビを出さないので、読み込み中に何も描かないと
             真っ白で戻る手段の無い画面になる。ホームと同じ表示で埋める。 */}
         {route.name === 'play' &&
