@@ -4,7 +4,6 @@ import { parseRoute, buildHash } from './routes.js';
 const HOME = { name: 'home' };
 
 // jsdom や一部環境では hash 代入が hashchange を発火しないため明示的に通知する。
-// (旧 useHashRoute.js と同じ理由)
 function notify() {
   window.dispatchEvent(new Event('hashchange'));
 }
