@@ -21,10 +21,18 @@ async function findAvailable(base, exists) {
 // 複数見つかったら id の昇順で最初の1つ。既に -2 / -3 が生えている環境でも、
 // 毎回いちばん最初に取り込んだものへ戻り、選び先が呼び出しごとに揺れないようにする。
 function findReusable(metas, publicId, base, label, labelOf) {
+  const suffixNum = (id) => {
+    const s = String(id);
+    if (s === base) return 0;
+    const prefix = `${base}-`;
+    if (!s.startsWith(prefix)) return Number.POSITIVE_INFINITY;
+    const n = Number(s.slice(prefix.length));
+    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+  };
   return (
     metas
       .filter((m) => (m.sourcePublicId ? m.sourcePublicId === publicId : m.id === base && labelOf(m) === label))
-      .sort((a, b) => String(a.id).localeCompare(String(b.id)))[0] ?? null
+      .sort((a, b) => suffixNum(a.id) - suffixNum(b.id) || String(a.id).localeCompare(String(b.id)))[0] ?? null
   );
 }
 
