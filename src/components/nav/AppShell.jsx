@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { navTabFor, isFocusRoute } from '../../navigation/routes.js';
 import { navigateHash } from '../../navigation/useRoute.js';
 import { useMediaQuery } from '../../hooks/useMediaQuery.js';
@@ -23,6 +24,18 @@ const NARROW_TABBAR_SPACE = `calc(${NARROW_TABBAR_BASE}px + max(0px, env(safe-ar
 export default function AppShell({ route, children }) {
   const wide = useMediaQuery('(min-width: 768px)');
   const focus = isFocusRoute(route);
+  const mainRef = useRef(null);
+
+  // スキップリンクの既定動作(hash を '#main' にする)は使えない。hash はこのアプリの
+  // ルーティング入力そのもので、'#main' は parseRoute が解釈できず(routes.js の default)
+  // ホームへ落ちるため、キーボード利用者が本文へ飛ぶどころか画面から追い出される。
+  // セマンティクスと読み上げのため href は残し、遷移だけ止めて自前でフォーカスを移す。
+  function skipToMain(e) {
+    e.preventDefault();
+    // tabIndex=-1 を付けてあるので main 自身がフォーカスを受け取れる。
+    // focus() はブラウザ側で本文位置へのスクロールも伴う。
+    mainRef.current?.focus();
+  }
 
   // 集中モード(Play / Setup)はヘッダーを画面側の FocusHeader に任せ、シェルは何も出さない。
   if (focus) {
@@ -37,6 +50,7 @@ export default function AppShell({ route, children }) {
     <>
       <a
         href="#main"
+        onClick={skipToMain}
         style={{
           position: 'absolute',
           left: -9999,
@@ -102,7 +116,13 @@ export default function AppShell({ route, children }) {
         </div>
       </header>
 
-      <main id="main" style={{ paddingBottom: wide ? 0 : NARROW_TABBAR_SPACE }}>
+      <main
+        id="main"
+        ref={mainRef}
+        // スキップリンクからフォーカスを受け取るためだけの -1。Tab の巡回順には入らない。
+        tabIndex={-1}
+        style={{ paddingBottom: wide ? 0 : NARROW_TABBAR_SPACE }}
+      >
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 

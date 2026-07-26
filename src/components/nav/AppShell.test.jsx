@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { screen, within, fireEvent } from '@testing-library/react';
 import AppShell from './AppShell.jsx';
 import { BreadcrumbProvider } from '../../navigation/BreadcrumbContext.jsx';
 import { parseRoute } from '../../navigation/routes.js';
@@ -17,6 +17,11 @@ function renderShell(hash, { user } = {}) {
 }
 
 describe('AppShell', () => {
+  afterEach(() => {
+    // hash を触るテストがあるため、次のテストへ持ち越さない。
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  });
+
   it('shows the global nav and breadcrumb on browsing routes', () => {
     renderShell('#/library/character');
     expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toBeInTheDocument();
@@ -63,6 +68,27 @@ describe('AppShell', () => {
     renderShell('#/');
     const skip = screen.getByRole('link', { name: '本文へスキップ' });
     expect(skip).toHaveAttribute('href', '#main');
+  });
+
+  it('moves focus to the content region without disturbing the routing hash', () => {
+    // hash はルーティングの入力そのものなので、スキップリンクが '#main' を書き込むと
+    // parseRoute が解釈できずホームへ飛ばされる。href は残したまま遷移だけを止め、
+    // フォーカスは自前で本文へ移す。
+    window.location.hash = '#/library/world';
+    renderShell('#/library/world');
+
+    const skip = screen.getByRole('link', { name: '本文へスキップ' });
+    // fireEvent は preventDefault されると false を返す。jsdom はアンカーの
+    // フラグメント遷移を実行しないため、hash の比較だけでは既定動作の停止を確かめられない。
+    expect(fireEvent.click(skip)).toBe(false);
+
+    expect(window.location.hash).toBe('#/library/world');
+    expect(document.getElementById('main')).toHaveFocus();
+  });
+
+  it('lets the content region receive focus without joining the tab order', () => {
+    renderShell('#/');
+    expect(document.getElementById('main')).toHaveAttribute('tabindex', '-1');
   });
 
   it('reserves room for the bottom tab bar including the safe-area inset', () => {

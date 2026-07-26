@@ -85,6 +85,9 @@ describe('parseRoute', () => {
 
   it('returns null for unknown hashes and for extra segments', () => {
     expect(parseRoute('#/foo')).toBeNull();
+    // ページ内アンカー用の hash も解釈できない = ホームへ落ちる。だからシェルの
+    // スキップリンクは hash を書き換えてはいけない(AppShell.jsx 参照)。
+    expect(parseRoute('#main')).toBeNull();
     expect(parseRoute('#/setup/extra')).toBeNull();
     expect(parseRoute('#/library/character/w1/extra')).toBeNull();
   });
