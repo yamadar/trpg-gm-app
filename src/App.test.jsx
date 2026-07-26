@@ -75,9 +75,10 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'さがす' }));
     await waitFor(() => expect(window.location.hash).toBe('#/browse/starters'));
 
-    // タブ切り替えがURLに乗るのはGalleryをroute駆動にするTask 12から。ここでは
-    // 未ログインのまま公開一覧を見られること(画面内タブ切り替え)だけを確かめる。
+    // Task 12でGalleryがroute駆動になったため、タブ切り替えもURLに乗る。
+    // 未ログインのまま公開一覧を見られること(画面内タブ切り替え)も併せて確かめる。
     fireEvent.click(await screen.findByText('小説'));
+    await waitFor(() => expect(window.location.hash).toBe('#/browse/novels'));
     expect(await screen.findByText('まだ公開されたものがありません')).toBeInTheDocument();
 
     vi.unstubAllGlobals();

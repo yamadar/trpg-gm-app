@@ -1,77 +1,92 @@
 import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_MONO } from '../theme.js';
-import Button from '../components/ui/Button.jsx';
 import { getPublic } from '../api/shareClient.js';
 import PublicItemDetail from '../components/share/PublicItemDetail.jsx';
 import PublicItemList from '../components/share/PublicItemList.jsx';
 import StarterPackList from '../components/share/StarterPackList.jsx';
-import { navigateToUser } from '../router/useHashRoute.js';
+import { navigate } from '../navigation/useRoute.js';
+import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { GALLERY_TABS as TABS } from '../constants/publicContent.js';
 
-export default function Gallery({ onClose, onStartStarter }) {
-  const [tab, setTab] = useState('starters');
+export default function Gallery({ route, onStartStarter }) {
+  const tab = route.browseTab;
+  const publicId = route.publicId;
 
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'detail'
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const detailReqRef = useRef(0);
 
+  // 詳細の取得は URL の publicId に従う。戻る/進むでも同じ経路を通る。
   useEffect(() => {
-    setViewMode('list');
-    setDetail(null);
-    setDetailError('');
-  }, [tab]);
-
-  async function openDetail(publicId) {
+    if (!publicId) {
+      setDetail(null);
+      setDetailError('');
+      return undefined;
+    }
     const my = ++detailReqRef.current;
-    setViewMode('detail');
+    let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
     setDetailError('');
-    try {
-      const item = await getPublic(tab, publicId);
-      if (my !== detailReqRef.current) return; // 別の詳細取得が始まっていたら破棄
-      setDetail(item);
-    } catch (e) {
-      if (my !== detailReqRef.current) return;
-      setDetailError('取得に失敗した: ' + e.message);
-    } finally {
-      if (my === detailReqRef.current) setDetailLoading(false);
-    }
+    (async () => {
+      try {
+        const item = await getPublic(tab, publicId);
+        if (cancelled || my !== detailReqRef.current) return;
+        setDetail(item);
+      } catch (e) {
+        if (cancelled || my !== detailReqRef.current) return;
+        setDetailError('取得に失敗した: ' + e.message);
+      } finally {
+        if (!cancelled && my === detailReqRef.current) setDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, publicId]);
+
+  useBreadcrumbLabel(detail ? detail.title : null);
+
+  function goToTab(nextTab) {
+    navigate({ name: 'browse', browseTab: nextTab, publicId: null });
   }
 
-  function backToList() {
-    setViewMode('list');
-    setDetail(null);
+  function openDetail(id) {
+    navigate({ name: 'browse', browseTab: tab, publicId: id });
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '40px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink }}>公開ギャラリー</div>
-        <Button variant="ghost" onClick={onClose}>
-          閉じる
-        </Button>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 20px 40px' }}>
+      <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink, marginBottom: 24 }}>
+        公開ギャラリー
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
-        {TABS.map((t) => (
-          <div
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: tab === t.key ? COLORS.ink : 'transparent',
-              color: tab === t.key ? COLORS.paper : COLORS.faint,
-              border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
-            }}
-          >
-            {t.label}
-          </div>
-        ))}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => goToTab(t.key)}
+              aria-current={active ? 'page' : undefined}
+              style={{
+                minHeight: 44,
+                padding: '6px 14px',
+                borderRadius: 3,
+                cursor: 'pointer',
+                fontFamily: F_MONO,
+                fontSize: 12,
+                background: active ? COLORS.ink : 'transparent',
+                color: active ? COLORS.paper : COLORS.faint,
+                fontWeight: active ? 600 : 400,
+                border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* starters は公開アイテムの一覧/詳細ではなく「まとめて取り込む単位」なので、
@@ -83,33 +98,23 @@ export default function Gallery({ onClose, onStartStarter }) {
           <PublicItemList
             key={tab}
             type={tab}
-            active={viewMode === 'list'}
+            active={!publicId}
             onOpenDetail={openDetail}
-            onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+            onAuthorClick={(ownerId) => navigate({ name: 'user', userId: ownerId })}
           />
 
-          {viewMode !== 'list' &&
+          {publicId &&
             (detailLoading ? (
-              <div>
-                <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-                  ← 一覧に戻る
-                </Button>
-                <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
-              </div>
+              <div style={{ fontFamily: F_MONO, fontSize: 13, color: COLORS.faint }}>読み込み中…</div>
             ) : detailError ? (
-              <div>
-                <Button variant="ghost" onClick={backToList} style={{ marginBottom: 16 }}>
-                  ← 一覧に戻る
-                </Button>
-                <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
-              </div>
+              <div style={{ color: COLORS.stamp, fontSize: 13 }}>{detailError}</div>
             ) : (
               detail && (
                 <PublicItemDetail
                   type={tab}
                   item={detail}
-                  onBack={backToList}
-                  onAuthorClick={(ownerId) => navigateToUser(ownerId)}
+                  onBack={() => goToTab(tab)}
+                  onAuthorClick={(ownerId) => navigate({ name: 'user', userId: ownerId })}
                 />
               )
             ))}
