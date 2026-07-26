@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { COLORS, F_DISPLAY, F_MONO } from '../theme.js';
-import Button from '../components/ui/Button.jsx';
+import { LIBRARY_TABS, WORLD_SCOPED_LIBRARY_TABS } from '../constants/libraryTabs.js';
+import { navigate } from '../navigation/useRoute.js';
+import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import WorldTab from './library/WorldTab.jsx';
 import CharacterTab from './library/CharacterTab.jsx';
 import ScenarioTab from './library/ScenarioTab.jsx';
@@ -9,19 +11,11 @@ import RulesetTab from './library/RulesetTab.jsx';
 import { listWorlds } from '../api/worldLibraryClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
-const TABS = [
-  { key: 'world', label: 'World' },
-  { key: 'character', label: 'Character' },
-  { key: 'scenario', label: 'Scenario' },
-  { key: 'campaign', label: 'Campaign' },
-  { key: 'ruleset', label: 'Ruleset' },
-];
-
-export default function Library({ onClose }) {
+export default function Library({ route }) {
   const { user, loading: authLoading } = useAuth();
-  const [tab, setTab] = useState('world');
+  const tab = route.libraryTab;
+  const selectedWorldId = route.worldId;
   const [worlds, setWorlds] = useState([]);
-  const [selectedWorldId, setSelectedWorldId] = useState(null);
   const [worldsError, setWorldsError] = useState('');
 
   const refreshWorlds = useCallback(async () => {
@@ -37,13 +31,24 @@ export default function Library({ onClose }) {
     refreshWorlds();
   }, [refreshWorlds]);
 
+  // パンくず末尾に World 名を出す。未取得のうちは登録しない(IDを露出させないため)。
+  const selectedWorld = worlds.find((w) => w.id === selectedWorldId);
+  useBreadcrumbLabel(selectedWorld ? selectedWorld.title : null);
+
+  function goToTab(nextTab) {
+    // World スコープ外のタブへ移るときは worldId を落とす。
+    const keepWorld = WORLD_SCOPED_LIBRARY_TABS.includes(nextTab) ? selectedWorldId : null;
+    navigate({ name: 'library', libraryTab: nextTab, worldId: keepWorld });
+  }
+
+  function goToWorld(worldId) {
+    navigate({ name: 'library', libraryTab: tab, worldId: worldId || null });
+  }
+
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '40px 20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink }}>素材ライブラリ</div>
-        <Button variant="ghost" onClick={onClose}>
-          閉じる
-        </Button>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 20px 40px' }}>
+      <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink, marginBottom: 24 }}>
+        素材ライブラリ
       </div>
 
       {!user && !authLoading ? (
@@ -56,33 +61,42 @@ export default function Library({ onClose }) {
             <div style={{ color: COLORS.stamp, fontSize: 13, marginBottom: 12 }}>{worldsError}</div>
           )}
 
-          <div style={{ display: 'flex', gap: 6, marginBottom: 16, fontFamily: F_MONO, fontSize: 12 }}>
-            {TABS.map((t) => (
-              <div
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 3,
-                  cursor: 'pointer',
-                  background: tab === t.key ? COLORS.ink : 'transparent',
-                  color: tab === t.key ? COLORS.paper : COLORS.faint,
-                  border: `1px solid ${tab === t.key ? COLORS.ink : COLORS.line}`,
-                }}
-              >
-                {t.label}
-              </div>
-            ))}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            {LIBRARY_TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => goToTab(t.key)}
+                  aria-current={active ? 'page' : undefined}
+                  style={{
+                    minHeight: 44,
+                    padding: '6px 14px',
+                    borderRadius: 3,
+                    cursor: 'pointer',
+                    fontFamily: F_MONO,
+                    fontSize: 12,
+                    background: active ? COLORS.ink : 'transparent',
+                    color: active ? COLORS.paper : COLORS.faint,
+                    fontWeight: active ? 600 : 400,
+                    border: `1px solid ${active ? COLORS.ink : COLORS.line}`,
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
 
-          {(tab === 'character' || tab === 'scenario' || tab === 'campaign') && (
+          {WORLD_SCOPED_LIBRARY_TABS.includes(tab) && (
             <div style={{ marginBottom: 16 }}>
               <select
                 value={selectedWorldId || ''}
-                onChange={(e) => setSelectedWorldId(e.target.value || null)}
+                onChange={(e) => goToWorld(e.target.value)}
                 style={{
                   fontFamily: F_MONO,
                   fontSize: 13,
+                  minHeight: 44,
                   padding: '8px 10px',
                   border: `1px solid ${COLORS.line}`,
                   borderRadius: 4,
@@ -104,7 +118,7 @@ export default function Library({ onClose }) {
             <WorldTab
               worlds={worlds}
               selectedWorldId={selectedWorldId}
-              onSelectWorld={setSelectedWorldId}
+              onSelectWorld={goToWorld}
               onWorldsChanged={refreshWorlds}
             />
           )}
