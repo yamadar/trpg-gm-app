@@ -11,6 +11,11 @@ import RulesetTab from './library/RulesetTab.jsx';
 import { listWorlds } from '../api/worldLibraryClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
+// World ピッカー(<select>)を出すタブ。WORLD_SCOPED_LIBRARY_TABS と違い、
+// world タブは含めない。world タブでは WorldTab 自身が World のカード一覧を
+// 描画するため、ここでピッカーを重ねると同じ選択肢が二重に表示されてしまう。
+const WORLD_PICKER_TABS = WORLD_SCOPED_LIBRARY_TABS.filter((t) => t !== 'world');
+
 export default function Library({ route }) {
   const { user, loading: authLoading } = useAuth();
   const tab = route.libraryTab;
@@ -88,7 +93,15 @@ export default function Library({ route }) {
             })}
           </div>
 
-          {WORLD_SCOPED_LIBRARY_TABS.includes(tab) && (
+          {/*
+            WORLD_SCOPED_LIBRARY_TABS は「URLの3セグメント目にworldIdを取れるか」を
+            答えるための定数で、world タブもそこに含まれる(WorldTab が選択中の
+            World を詳細表示するため)。しかし「ピッカーを出すべきか」は別の問いで、
+            world タブは WorldTab 自身が World のカード一覧を描画するため、
+            ここで重ねてドロップダウンを出すと同じ選択を二重に提供してしまう。
+            そのため World タブだけを除いた専用の配列で判定する。
+          */}
+          {WORLD_PICKER_TABS.includes(tab) && (
             <div style={{ marginBottom: 16 }}>
               <select
                 value={selectedWorldId || ''}

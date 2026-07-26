@@ -2230,6 +2230,11 @@ import CampaignTab from './library/CampaignTab.jsx';
 import RulesetTab from './library/RulesetTab.jsx';
 import { listWorlds } from '../api/worldLibraryClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+
+// World ピッカー(<select>)を出すタブ。WORLD_SCOPED_LIBRARY_TABS と違い、
+// world タブは含めない。world タブでは WorldTab 自身が World のカード一覧を
+// 描画するため、ここでピッカーを重ねると同じ選択肢が二重に表示されてしまう。
+const WORLD_PICKER_TABS = WORLD_SCOPED_LIBRARY_TABS.filter((t) => t !== 'world');
 ```
 
 （`const TABS = [...]` のブロックは削除する）
@@ -2314,7 +2319,15 @@ export default function Library({ route }) {
             })}
           </div>
 
-          {WORLD_SCOPED_LIBRARY_TABS.includes(tab) && (
+          {/*
+            WORLD_SCOPED_LIBRARY_TABS は「URLの3セグメント目にworldIdを取れるか」を
+            答えるための定数で、world タブもそこに含まれる(WorldTab が選択中の
+            World を詳細表示するため)。しかし「ピッカーを出すべきか」は別の問いで、
+            world タブは WorldTab 自身が World のカード一覧を描画するため、
+            ここで重ねてドロップダウンを出すと同じ選択を二重に提供してしまう。
+            そのため World タブだけを除いた専用の配列で判定する。
+          */}
+          {WORLD_PICKER_TABS.includes(tab) && (
             <div style={{ marginBottom: 16 }}>
               <select
                 value={selectedWorldId || ''}
@@ -2360,6 +2373,8 @@ export default function Library({ route }) {
 ```
 
 > `WorldTab` は `selectedWorldId` を「詳細/編集で開いている World」として使う（`WorldTab.jsx:50-85` で当該 World の regions/categories を取得し、`:287` の `onSelectWorld(w.id)` で開く）。したがって `world` タブも `worldId` を URL に載せる必要があり、`WORLD_SCOPED_LIBRARY_TABS` に `world` を含めてある。`#/library/world/w1` は「W1 を開いた World タブ」を意味する。`ruleset` だけが World に依存しないため、そこへ移ると `worldId` は落ちる。
+>
+> ただし `WORLD_SCOPED_LIBRARY_TABS` が答えるのは「URLの3セグメント目にworldIdを取れるか」だけであり、「World ピッカー（`<select>`）を出すべきか」とは別の問いである。`world` タブでは `WorldTab` 自身が World のカード一覧を描画する（`WorldTab.jsx:281-324`）ため、同じ選択肢のドロップダウンを重ねて出すと二重表示になる。そのためピッカーの表示条件は `WORLD_SCOPED_LIBRARY_TABS` から `world` を除いた `WORLD_PICKER_TABS`（= `character` / `scenario` / `campaign`）で判定し、`world` タブと `ruleset` タブの両方でピッカーを出さない。
 
 - [ ] **Step 4: テストが通ることを確認する**
 
