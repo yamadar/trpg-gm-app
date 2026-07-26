@@ -11,7 +11,13 @@ export const COLORS = {
   stamp: '#A13D3D',
   stampDark: '#7E2E2E',
   line: '#C9BFA3',
-  faint: '#B8AE93',
+  // 操作部品(入力欄・ghostボタン)の輪郭用。lineは紙地に対し1.47:1しかなく、
+  // 「ここが入力欄である」ことを境界線で示せていなかった(WCAG 1.4.11は非テキストに3:1を要求)。
+  // 装飾目的のカード枠はlineのまま、部品の輪郭だけをこちらに寄せる。
+  lineStrong: '#89826F', // paper 3.08:1 / card 3.40:1
+  // 補助テキスト。旧値#B8AE93は紙地に対し1.78:1(要4.5:1)で、ヒント文や未選択タブが
+  // 事実上読めなかった。セピアの色味は保ったまま輝度だけ落とした値。
+  faint: '#635E4F', // paper 5.21:1 / card 5.75:1 / paperDark 4.61:1
 };
 
 const FONT_LINK =
@@ -27,10 +33,9 @@ export const inputStyle = {
   fontSize: 14,
   color: COLORS.inkSoft,
   background: COLORS.paper,
-  border: `1px solid ${COLORS.line}`,
+  border: `1px solid ${COLORS.lineStrong}`,
   borderRadius: 4,
   padding: '10px 12px',
-  outline: 'none',
   boxSizing: 'border-box',
 };
 

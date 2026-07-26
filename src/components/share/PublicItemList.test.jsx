@@ -29,6 +29,41 @@ afterEach(() => {
 });
 
 describe('PublicItemList', () => {
+  // 以前は一覧カードが <div onClick> で、キーボードからは1件も開けなかった
+  // (Tab が止まるのは検索・絞り込み・作者名だけ)。
+  it('exposes each item as a button so the list is reachable by keyboard', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [
+        { publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'u1', publishedAt: PUBLISHED_AT },
+        { publicId: 'p2', title: 'World B', ownerName: 'Bob', ownerId: 'u2', publishedAt: PUBLISHED_AT },
+      ],
+      total: 2,
+      hasMore: false,
+    });
+    const onOpenDetail = vi.fn();
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={onOpenDetail} />);
+
+    const item = await screen.findByRole('button', { name: 'World A' });
+    fireEvent.click(item);
+    expect(onOpenDetail).toHaveBeenCalledWith('p1');
+    expect(screen.getByRole('button', { name: 'World B' })).toBeInTheDocument();
+  });
+
+  // 作者ボタンが全部同じ「Alice」だと、Tab 順に並んだときどれがどれか区別できない。
+  it('gives each author button a name that identifies its item', async () => {
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'u1', publishedAt: PUBLISHED_AT }],
+      total: 1,
+      hasMore: false,
+    });
+    const onAuthorClick = vi.fn();
+    renderWithAuth(<PublicItemList type="worlds" onOpenDetail={vi.fn()} onAuthorClick={onAuthorClick} />);
+
+    const author = await screen.findByRole('button', { name: 'World A の作者 Alice のページ' });
+    fireEvent.click(author);
+    expect(onAuthorClick).toHaveBeenCalledWith('u1');
+  });
+
   it('performs the initial fetch with default params, renders items with author link + date, and wires card/author clicks', async () => {
     const listSpy = vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
       items: [{ publicId: 'p1', title: 'World A', ownerName: 'Alice', ownerId: 'u1', publishedAt: PUBLISHED_AT }],

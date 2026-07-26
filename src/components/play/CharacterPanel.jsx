@@ -55,6 +55,7 @@ export default function CharacterPanel({ session, docked, onClose, onRecall }) {
         <div style={{ fontFamily: F_DISPLAY, fontSize: 16, color: COLORS.ink }}>PCシート</div>
         {!docked && (
           <button
+            type="button"
             aria-label="パネルを閉じる"
             onClick={onClose}
             style={{ background: 'none', border: 'none', fontSize: 18, color: COLORS.faint, cursor: 'pointer' }}
@@ -99,6 +100,7 @@ export default function CharacterPanel({ session, docked, onClose, onRecall }) {
       {onRecall && (
         <div style={{ marginTop: 16 }}>
           <button
+            type="button"
             onClick={handleRecall}
             disabled={recalling}
             style={{
