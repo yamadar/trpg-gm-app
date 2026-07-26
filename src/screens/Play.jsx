@@ -9,6 +9,7 @@ import { putSessionToServer } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
 import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import FocusHeader from '../components/nav/FocusHeader.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
@@ -17,7 +18,7 @@ import RollStatsLine from '../components/ui/RollStatsLine.jsx';
 import { recordEnding } from '../api/endingClient.js';
 import { summarizeRolls } from '../engine/rollStats.js';
 
-export default function Play({ session, setSession, onExit }) {
+export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -263,8 +264,10 @@ export default function Play({ session, setSession, onExit }) {
         ...(docked ? { paddingRight: PANEL_W + 20 } : {}),
       }}
     >
-      {/* ログは下へ伸び続けるので、ホームへの導線をスクロール位置に依らず出す。
-          「← ホーム」を左に置くのは、右上に固定されているAuthBarとの重なりを避けるため。 */}
+      {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。 */}
+      <FocusHeader title={session.title || 'プレイ中'} />
+
+      {/* ログは下へ伸び続けるので、セッション名の行もスクロール位置に依らず出す。 */}
       <div
         style={{
           position: 'sticky',
@@ -280,9 +283,6 @@ export default function Play({ session, setSession, onExit }) {
           gap: 12,
         }}
       >
-        <Button variant="ghost" onClick={onExit} style={{ fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}>
-          ← ホーム
-        </Button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <div
