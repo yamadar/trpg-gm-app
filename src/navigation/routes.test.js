@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { parseRoute, buildHash, NAV_TABS, LIBRARY_TABS } from './routes.js';
+import {
+  parseRoute,
+  buildHash,
+  NAV_TABS,
+  LIBRARY_TABS,
+  navTabFor,
+  isFocusRoute,
+  crumbsFor,
+  wantsDynamicCrumb,
+} from './routes.js';
 
 describe('parseRoute', () => {
   it('parses the home route', () => {
@@ -138,5 +147,84 @@ describe('NAV_TABS', () => {
       'campaign',
       'ruleset',
     ]);
+  });
+});
+
+describe('navTabFor', () => {
+  it('maps browsing routes onto their nav tab', () => {
+    expect(navTabFor(parseRoute('#/'))).toBe('home');
+    expect(navTabFor(parseRoute('#/library/character'))).toBe('library');
+    expect(navTabFor(parseRoute('#/browse/worlds'))).toBe('browse');
+    expect(navTabFor(parseRoute('#/records/achievements'))).toBe('records');
+  });
+
+  it('returns null where no tab should be highlighted', () => {
+    expect(navTabFor(parseRoute('#/setup'))).toBeNull();
+    expect(navTabFor(parseRoute('#/play/ses_1'))).toBeNull();
+    expect(navTabFor(parseRoute('#/u/usr_1'))).toBeNull();
+    expect(navTabFor(null)).toBeNull();
+  });
+});
+
+describe('isFocusRoute', () => {
+  it('treats setup and play as focus mode', () => {
+    expect(isFocusRoute(parseRoute('#/setup'))).toBe(true);
+    expect(isFocusRoute(parseRoute('#/play/ses_1'))).toBe(true);
+  });
+
+  it('treats every other route as browsing mode', () => {
+    expect(isFocusRoute(parseRoute('#/'))).toBe(false);
+    expect(isFocusRoute(parseRoute('#/library/world'))).toBe(false);
+    expect(isFocusRoute(parseRoute('#/u/usr_1'))).toBe(false);
+    expect(isFocusRoute(null)).toBe(false);
+  });
+});
+
+describe('crumbsFor', () => {
+  it('returns a single home crumb on the home route', () => {
+    expect(crumbsFor(parseRoute('#/'))).toEqual([{ key: 'home', label: 'ホーム', hash: '#/' }]);
+  });
+
+  it('builds library crumbs from the tab labels', () => {
+    expect(crumbsFor(parseRoute('#/library/character/w1'))).toEqual([
+      { key: 'home', label: 'ホーム', hash: '#/' },
+      { key: 'library', label: '素材', hash: '#/library/world' },
+      { key: 'libraryTab', label: 'Character', hash: '#/library/character' },
+    ]);
+  });
+
+  it('builds browse crumbs from the gallery tab labels', () => {
+    expect(crumbsFor(parseRoute('#/browse/worlds/pub_1'))).toEqual([
+      { key: 'home', label: 'ホーム', hash: '#/' },
+      { key: 'browse', label: 'さがす', hash: '#/browse/starters' },
+      { key: 'browseTab', label: '世界観', hash: '#/browse/worlds' },
+    ]);
+  });
+
+  it('builds records crumbs', () => {
+    expect(crumbsFor(parseRoute('#/records/achievements'))).toEqual([
+      { key: 'home', label: 'ホーム', hash: '#/' },
+      { key: 'records', label: '記録', hash: '#/records/endings' },
+      { key: 'recordsTab', label: '実績', hash: '#/records/achievements' },
+    ]);
+  });
+
+  it('returns only the home crumb for the user route, whose name is supplied dynamically', () => {
+    expect(crumbsFor(parseRoute('#/u/usr_1'))).toEqual([{ key: 'home', label: 'ホーム', hash: '#/' }]);
+  });
+});
+
+describe('wantsDynamicCrumb', () => {
+  it('is true exactly where a name must come from the screen', () => {
+    expect(wantsDynamicCrumb(parseRoute('#/library/character/w1'))).toBe(true);
+    expect(wantsDynamicCrumb(parseRoute('#/browse/worlds/pub_1'))).toBe(true);
+    expect(wantsDynamicCrumb(parseRoute('#/u/usr_1'))).toBe(true);
+  });
+
+  it('is false where the URL already names the location', () => {
+    expect(wantsDynamicCrumb(parseRoute('#/library/character'))).toBe(false);
+    expect(wantsDynamicCrumb(parseRoute('#/browse/worlds'))).toBe(false);
+    expect(wantsDynamicCrumb(parseRoute('#/records/endings'))).toBe(false);
+    expect(wantsDynamicCrumb(null)).toBe(false);
   });
 });

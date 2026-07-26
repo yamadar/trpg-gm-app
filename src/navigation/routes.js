@@ -92,3 +92,71 @@ export function buildHash(route) {
       return '#/';
   }
 }
+
+const NAV_TAB_KEYS = NAV_TABS.map((t) => t.key);
+const LIBRARY_LABELS = Object.fromEntries(LIBRARY_TABS.map((t) => [t.key, t.label]));
+const BROWSE_LABELS = Object.fromEntries(GALLERY_TABS.map((t) => [t.key, t.label]));
+const RECORDS_LABELS = { endings: 'エンディング図鑑', achievements: '実績' };
+
+const HOME_CRUMB = { key: 'home', label: 'ホーム', hash: '#/' };
+
+// グローバルナビでハイライトすべきタブ。該当しない画面(集中モード・ユーザーページ)は null。
+export function navTabFor(route) {
+  if (!route) return null;
+  return NAV_TAB_KEYS.includes(route.name) ? route.name : null;
+}
+
+// 集中モード = 1つのタスクを完遂する画面。グローバルナビを出さない。
+export function isFocusRoute(route) {
+  return !!route && (route.name === 'setup' || route.name === 'play');
+}
+
+// URL だけから決まるパンくずの段。末尾の動的ラベル(World名・公開アイテム名・表示名)は
+// 画面側が BreadcrumbContext へ登録するため、ここには含めない。
+export function crumbsFor(route) {
+  if (!route) return [HOME_CRUMB];
+  switch (route.name) {
+    case 'library':
+      return [
+        HOME_CRUMB,
+        { key: 'library', label: '素材', hash: '#/library/world' },
+        {
+          key: 'libraryTab',
+          label: LIBRARY_LABELS[route.libraryTab],
+          hash: `#/library/${route.libraryTab}`,
+        },
+      ];
+    case 'browse':
+      return [
+        HOME_CRUMB,
+        { key: 'browse', label: 'さがす', hash: '#/browse/starters' },
+        {
+          key: 'browseTab',
+          label: BROWSE_LABELS[route.browseTab],
+          hash: `#/browse/${route.browseTab}`,
+        },
+      ];
+    case 'records':
+      return [
+        HOME_CRUMB,
+        { key: 'records', label: '記録', hash: '#/records/endings' },
+        {
+          key: 'recordsTab',
+          label: RECORDS_LABELS[route.recordsTab],
+          hash: `#/records/${route.recordsTab}`,
+        },
+      ];
+    case 'home':
+    case 'user':
+    default:
+      return [HOME_CRUMB];
+  }
+}
+
+// 末尾に動的ラベルの段を持つ route かどうか。false のときは登録待ちの空段を出さない。
+export function wantsDynamicCrumb(route) {
+  if (!route) return false;
+  if (route.name === 'library') return !!route.worldId;
+  if (route.name === 'browse') return !!route.publicId;
+  return route.name === 'user';
+}
