@@ -1470,10 +1470,13 @@ git commit -m "feat(nav): 集中モード用ヘッダーを追加する"
 - Create: `src/components/nav/AccountMenu.test.jsx`
 - Delete: `src/components/auth/AuthBar.jsx`
 - Delete: `src/components/auth/AuthBar.test.jsx`
+- Modify: `src/App.jsx`（改名の追随のみ）
 
 **Interfaces:**
 - Consumes: `src/auth/AuthContext.jsx` の `useAuth`、`src/api/authClient.js` の `patchMe`、Task 3 の `navigate`
 - Produces: `AccountMenu()` — props なし
+
+> **`App.jsx` の追随について。** `src/App.jsx` は `AuthBar` を import して4箇所で描画している。改名しておきながら参照を壊れたまま残すのは改名が未完了なだけなので、**このタスクで import 行と4つの JSX タグ名だけを直す**。`view` state・ルーティング・レイアウトには触れない（それは Task 10）。これを次タスク送りにすると `npm test` が中間状態で赤くなり、Task 1〜9 は全体緑という制約に反する。
 
 - [ ] **Step 1: 既存テストを移設先の名前で写す**
 
@@ -1502,7 +1505,7 @@ Expected: FAIL — `Failed to resolve import "./AccountMenu.jsx"`
 git mv src/components/auth/AuthBar.jsx src/components/nav/AccountMenu.jsx
 ```
 
-`src/components/nav/AccountMenu.jsx` に次の3点の変更を加える。
+`src/components/nav/AccountMenu.jsx` に次の4点の変更を加える。
 
 1. import の差し替え（`navigateToUser` は `navigate` へ）:
 
@@ -1511,6 +1514,14 @@ import { navigate } from '../../navigation/useRoute.js';
 ```
 
 （`import { navigateToUser } from '../../router/useHashRoute.js';` の行を上記に置き換える）
+
+**注意:** 相対パスは大半が `../../` で深さが同じため変更不要だが、**`LoginModal` だけは例外**。`LoginModal.jsx` は `src/components/auth/` に残るため、同階層参照から1つ上へ辿る形に変える:
+
+```jsx
+import LoginModal from '../auth/LoginModal.jsx';
+```
+
+（`import LoginModal from './LoginModal.jsx';` の行を置き換える）
 
 2. コンポーネント名と、`position: fixed` の撤去:
 

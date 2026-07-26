@@ -12,7 +12,7 @@ import AchievementList from './screens/AchievementList.jsx';
 import { useHashRoute, clearHash } from './router/useHashRoute.js';
 import { AuthProvider } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
-import AuthBar from './components/auth/AuthBar.jsx';
+import AccountMenu from './components/nav/AccountMenu.jsx';
 import ConfirmModal from './components/library/ConfirmModal.jsx';
 
 export default function App() {
@@ -84,7 +84,7 @@ function AppInner() {
           color: COLORS.ink,
         }}
       >
-        <AuthBar />
+        <AccountMenu />
         <UserPage userId={routeUserId} />
       </div>
     );
@@ -99,7 +99,7 @@ function AppInner() {
           color: COLORS.ink,
         }}
       >
-        <AuthBar />
+        <AccountMenu />
         <EndingGallery onClose={clearHash} />
       </div>
     );
@@ -114,7 +114,7 @@ function AppInner() {
           color: COLORS.ink,
         }}
       >
-        <AuthBar />
+        <AccountMenu />
         <AchievementList onClose={clearHash} />
       </div>
     );
@@ -128,7 +128,7 @@ function AppInner() {
         color: COLORS.ink,
       }}
     >
-      <AuthBar />
+      <AccountMenu />
       <ConfirmModal
         open={takeover.pendingCount > 0}
         message={`このブラウザに保存されたセッション${takeover.pendingCount}件をアカウントに保存しますか?`}

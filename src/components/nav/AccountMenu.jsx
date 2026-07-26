@@ -4,8 +4,8 @@ import Button from '../ui/Button.jsx';
 import Field from '../ui/Field.jsx';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { patchMe } from '../../api/authClient.js';
-import { navigateToUser } from '../../router/useHashRoute.js';
-import LoginModal from './LoginModal.jsx';
+import { navigate } from '../../navigation/useRoute.js';
+import LoginModal from '../auth/LoginModal.jsx';
 
 const menuItemStyle = {
   textAlign: 'left',
@@ -19,7 +19,7 @@ const menuItemStyle = {
   borderRadius: 4,
 };
 
-export default function AuthBar() {
+export default function AccountMenu() {
   const { user, loading, refresh, logout } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -37,7 +37,8 @@ export default function AuthBar() {
 
   if (loading) return null;
 
-  const wrapStyle = { position: 'fixed', top: 12, right: 16, zIndex: 90 };
+  // シェルのヘッダー内に置くため浮かせない(旧AuthBarはposition:fixedで本文と無関係に浮いていた)。
+  const wrapStyle = { position: 'relative' };
 
   if (!user) {
     return (
@@ -115,7 +116,7 @@ export default function AuthBar() {
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
-                navigateToUser(user.id);
+                navigate({ name: 'user', userId: user.id });
               }}
             >
               自分のページ
