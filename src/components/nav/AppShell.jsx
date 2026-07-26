@@ -122,6 +122,7 @@ export default function AppShell({ route, children }) {
           }}
         >
           <button
+            type="button"
             onClick={() => navigateHash('#/')}
             style={{
               background: 'transparent',
