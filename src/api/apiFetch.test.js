@@ -53,4 +53,20 @@ describe('apiFetch', () => {
     const err = await apiFetch('/api/x').catch((e) => e);
     expect(err.body).toBeNull();
   });
+
+  // JSONとしては妥当でも構造を持たない本文は、添えると呼び出し側の err.body?.error が
+  // 「本文なし」と区別できなくなる。素の値は本文なしと同じ扱いにする。
+  it('leaves the body null for json payloads that are not objects', async () => {
+    for (const payload of ['"boom"', '123', 'true', 'null']) {
+      stubFetch(500, payload);
+      const err = await apiFetch('/api/x').catch((e) => e);
+      expect(err.body).toBeNull();
+    }
+  });
+
+  it('attaches a json array error body', async () => {
+    stubFetch(422, '[{"field":"title"}]');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.body).toEqual([{ field: 'title' }]);
+  });
 });
