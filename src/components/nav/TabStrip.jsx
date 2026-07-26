@@ -23,7 +23,9 @@ export default function TabStrip({ tabs, active, onSelect }) {
               fontFamily: F_MONO,
               fontSize: 12,
               background: isActive ? COLORS.ink : 'transparent',
-              color: isActive ? COLORS.paper : COLORS.faint,
+              // 非選択もラベルは操作対象。faint(#B8AE93)は card 上で約1.9:1しかなく
+              // WCAG AA(4.5:1)に届かないため、5.15:1 の brassDark を使う。
+              color: isActive ? COLORS.paper : COLORS.brassDark,
               fontWeight: isActive ? 600 : 400,
               border: `1px solid ${isActive ? COLORS.ink : COLORS.line}`,
             }}

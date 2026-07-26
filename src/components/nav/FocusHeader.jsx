@@ -96,8 +96,9 @@ export default function FocusHeader({ title, steps, currentStep = 0, exitLabel =
               <span
                 aria-current={i === currentStep ? 'step' : undefined}
                 style={{
-                  // 色だけに頼らず太さでも現在地を示す。
-                  color: i === currentStep ? COLORS.ink : COLORS.faint,
+                  // 色だけに頼らず太さでも現在地を示す。未到達のステップも読ませる文字なので、
+                  // コントラストが AA に届かない faint ではなく brassDark にする。
+                  color: i === currentStep ? COLORS.ink : COLORS.brassDark,
                   fontWeight: i === currentStep ? 600 : 400,
                 }}
               >

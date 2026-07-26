@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import GlobalNav from './GlobalNav.jsx';
+import { COLORS } from '../../theme.js';
 
 afterEach(() => {
   window.history.replaceState(null, '', window.location.pathname);
@@ -49,5 +50,15 @@ describe('GlobalNav', () => {
       expect(parseInt(button.style.minHeight, 10)).toBeGreaterThanOrEqual(44);
       expect(parseInt(button.style.minWidth, 10)).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  it('keeps inactive tab labels readable, not faint', () => {
+    // 非選択タブも押せる文字なので AA に届かない COLORS.faint は使わない。
+    // 現在地は色ではなく太字と下線(boxShadow)で示している。
+    render(<GlobalNav activeTab="home" />);
+    const inactive = screen.getByRole('button', { name: '素材' });
+    expect(inactive).toHaveStyle({ color: COLORS.brassDark });
+    expect(inactive.style.fontWeight).toBe('400');
+    expect(screen.getByRole('button', { name: 'ホーム' }).style.fontWeight).toBe('600');
   });
 });

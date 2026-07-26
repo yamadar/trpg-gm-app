@@ -52,8 +52,9 @@ export default function GlobalNav({ activeTab }) {
                 fontFamily: F_MONO,
                 fontSize: wide ? 13 : 10,
                 letterSpacing: 0.5,
-                // 色だけに頼らず太さと下線でも現在地を示す。
-                color: active ? COLORS.ink : COLORS.faint,
+                // 色だけに頼らず太さと下線でも現在地を示す。非選択タブも押せる文字なので、
+                // コントラストが AA に届かない faint ではなく brassDark(card 上 5.15:1)にする。
+                color: active ? COLORS.ink : COLORS.brassDark,
                 fontWeight: active ? 600 : 400,
                 boxShadow: active ? `inset 0 -2px 0 ${COLORS.brass}` : 'none',
               }}

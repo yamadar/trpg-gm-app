@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import FocusHeader from './FocusHeader.jsx';
+import { COLORS } from '../../theme.js';
 
 afterEach(() => {
   window.history.replaceState(null, '', window.location.pathname);
@@ -70,5 +71,13 @@ describe('FocusHeader', () => {
     const borderWidth = parseInt(header.style.borderBottomWidth, 10);
 
     expect(parseInt(header.style.height, 10)).toBe(buttonMinHeight + verticalPadding + borderWidth);
+  });
+
+  it('keeps the not-yet-current step labels readable, not faint', () => {
+    // 未到達のステップも読ませる文字なので AA に届かない COLORS.faint は使わない。
+    // 現在地は色ではなく太字と aria-current で示している。
+    render(<FocusHeader title="準備" steps={['世界観', 'シナリオ']} currentStep={0} />);
+    expect(screen.getByText('シナリオ')).toHaveStyle({ color: COLORS.brassDark });
+    expect(screen.getByText('世界観').style.fontWeight).toBe('600');
   });
 });

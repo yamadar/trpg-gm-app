@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import Breadcrumb from './Breadcrumb.jsx';
 import { BreadcrumbProvider, useBreadcrumbLabel } from '../../navigation/BreadcrumbContext.jsx';
 import { parseRoute } from '../../navigation/routes.js';
+import { COLORS } from '../../theme.js';
 
 afterEach(() => {
   window.history.replaceState(null, '', window.location.pathname);
@@ -106,5 +107,15 @@ describe('Breadcrumb', () => {
     } finally {
       window.matchMedia = originalMatchMedia;
     }
+  });
+
+  it('keeps ancestor crumb links readable, not faint', () => {
+    // 上位段はリンク。AA に届かない COLORS.faint ではなく brassDark を使い、
+    // 現在地(最後の段)との差は太字と下線の有無で示す。
+    renderCrumbs('#/library/character');
+    const ancestor = screen.getByRole('button', { name: '素材' });
+    expect(ancestor).toHaveStyle({ color: COLORS.brassDark });
+    expect(ancestor.style.textDecoration).toBe('underline');
+    expect(screen.getByText('Character')).toHaveStyle({ color: COLORS.ink });
   });
 });

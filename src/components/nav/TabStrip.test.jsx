@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TabStrip from './TabStrip.jsx';
+import { COLORS } from '../../theme.js';
 
 const TABS = [
   { key: 'a', label: 'あ' },
@@ -35,5 +36,14 @@ describe('TabStrip', () => {
     expect(tab).toHaveAttribute('type', 'button');
     fireEvent.click(tab);
     expect(onSelect).toHaveBeenCalledWith('b');
+  });
+
+  it('keeps inactive labels readable, not faint', () => {
+    // 非選択タブも押せる文字。COLORS.faint は card 上で約1.9:1しかなく AA(4.5:1)に
+    // 届かないため使わない。現在地は色ではなく反転と太字で示している。
+    render(<TabStrip tabs={TABS} active="a" onSelect={() => {}} />);
+    const inactive = screen.getByRole('button', { name: 'い' });
+    expect(inactive).toHaveStyle({ color: COLORS.brassDark });
+    expect(inactive).not.toHaveStyle({ color: COLORS.faint });
   });
 });

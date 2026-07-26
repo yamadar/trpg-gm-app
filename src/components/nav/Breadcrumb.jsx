@@ -80,7 +80,8 @@ export default function Breadcrumb({ route }) {
                     cursor: 'pointer',
                     fontFamily: F_MONO,
                     fontSize: 12,
-                    color: COLORS.faint,
+                    // 上位段はリンク。faint は card 上で AA に届かないため brassDark を使う。
+                    color: COLORS.brassDark,
                     textDecoration: 'underline',
                   }}
                 >
