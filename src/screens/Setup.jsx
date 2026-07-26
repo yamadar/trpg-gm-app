@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../theme.js';
+import { COLORS, F_DISPLAY, F_BODY, inputStyle } from '../theme.js';
 import { RULESETS } from '../data/rulesets.js';
 import { summarizeWorld, generateScenario } from '../api/session.js';
 import { listWorlds, getWorld } from '../api/worldLibraryClient.js';
@@ -16,8 +16,10 @@ import Field from '../components/ui/Field.jsx';
 import FileImportRow from '../components/FileImportRow.jsx';
 import { combineEntries } from '../utils/fileImport.js';
 import { extractPcName, composePcRaw } from '../utils/pcName.js';
+import FocusHeader from '../components/nav/FocusHeader.jsx';
+import { navigateHash } from '../navigation/useRoute.js';
 
-export default function Setup({ onStart, onCancel, campaignContext = null, starterContext = null }) {
+export default function Setup({ onStart, campaignContext = null, starterContext = null }) {
   // starterContext はスターターパックを一括インポートした直後の状態。World/Scenario/Ruleset を
   // 選択済みにして PC 選択(step 3)から開く。PCまで自動選択しないのは、どちらを演じるかが
   // 初回ユーザーの最初の選択であり、「PCはWorldに属していて選ぶもの」を最短で伝えるため。
@@ -324,347 +326,334 @@ export default function Setup({ onStart, onCancel, campaignContext = null, start
   }
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '40px 20px' }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 6,
-          marginBottom: 24,
-          fontFamily: F_MONO,
-          fontSize: 11,
-          color: COLORS.faint,
-        }}
-      >
-        {steps.map((s, i) => (
-          <div
-            key={s}
-            style={{
-              padding: '4px 10px',
-              borderRadius: 3,
-              background: i === step ? COLORS.ink : 'transparent',
-              color: i === step ? COLORS.paper : COLORS.faint,
-              border: `1px solid ${i === step ? COLORS.ink : COLORS.line}`,
-            }}
-          >
-            {i + 1}. {s}
-          </div>
-        ))}
-      </div>
-
-      <Card style={{ minHeight: 320 }}>
-        {step === 0 && (
-          <>
-            <Field label="Worldの用意方法">
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant={worldMode === 'existing' ? 'primary' : 'ghost'} onClick={() => setWorldMode('existing')}>
-                  既存を選ぶ
-                </Button>
-                <Button variant={worldMode === 'new' ? 'primary' : 'ghost'} onClick={() => setWorldMode('new')}>
-                  新規に用意する
-                </Button>
-                <Button variant={worldMode === 'skip' ? 'primary' : 'ghost'} onClick={() => setWorldMode('skip')}>
-                  空欄のまま進める
-                </Button>
-              </div>
-            </Field>
-
-            {worldMode === 'existing' && (
-              <Field label="既存Worldを選ぶ">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {existingWorlds.map((w) => (
-                    <Card
-                      key={w.id}
-                      onClick={() => selectWorld(w.id)}
-                      style={{
-                        cursor: 'pointer',
-                        borderColor: selectedWorld?.id === w.id ? COLORS.brass : COLORS.line,
-                      }}
-                    >
-                      <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
-                    </Card>
-                  ))}
-                  {existingWorlds.length === 0 && (
-                    <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-                      素材ライブラリにWorldがまだ無い。公開ギャラリーの「おすすめ」から一式を取り込むか、「新規に用意する」で自分で書く。
-                    </div>
-                  )}
+    <div>
+      <FocusHeader
+        title="新規プレイ"
+        steps={steps}
+        currentStep={step}
+        exitLabel="やめる"
+        onExit={() => navigateHash('#/')}
+      />
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: '40px 20px' }}>
+        <Card style={{ minHeight: 320 }}>
+          {step === 0 && (
+            <>
+              <Field label="Worldの用意方法">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant={worldMode === 'existing' ? 'primary' : 'ghost'} onClick={() => setWorldMode('existing')}>
+                    既存を選ぶ
+                  </Button>
+                  <Button variant={worldMode === 'new' ? 'primary' : 'ghost'} onClick={() => setWorldMode('new')}>
+                    新規に用意する
+                  </Button>
+                  <Button variant={worldMode === 'skip' ? 'primary' : 'ghost'} onClick={() => setWorldMode('skip')}>
+                    空欄のまま進める
+                  </Button>
                 </div>
               </Field>
-            )}
 
-            {worldMode === 'new' && (
-              <>
-                <Field label="タイトル">
+              {worldMode === 'existing' && (
+                <Field label="既存Worldを選ぶ">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {existingWorlds.map((w) => (
+                      <Card
+                        key={w.id}
+                        onClick={() => selectWorld(w.id)}
+                        style={{
+                          cursor: 'pointer',
+                          borderColor: selectedWorld?.id === w.id ? COLORS.brass : COLORS.line,
+                        }}
+                      >
+                        <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{w.title}</div>
+                      </Card>
+                    ))}
+                    {existingWorlds.length === 0 && (
+                      <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
+                        素材ライブラリにWorldがまだ無い。公開ギャラリーの「おすすめ」から一式を取り込むか、「新規に用意する」で自分で書く。
+                      </div>
+                    )}
+                  </div>
+                </Field>
+              )}
+
+              {worldMode === 'new' && (
+                <>
+                  <Field label="タイトル">
+                    <input
+                      value={worldTitle}
+                      onChange={(e) => setWorldTitle(e.target.value)}
+                      placeholder="World名"
+                      style={inputStyle}
+                    />
+                  </Field>
+                  <Field
+                    label="世界観"
+                    hint="資料を貼るか、分割済みファイル(またはフォルダ)をそのまま取り込める。長ければ自動で要約してから使う。"
+                  >
+                    <FileImportRow
+                      entries={worldFiles}
+                      onImport={(entries) => {
+                        const merged = [...worldFiles, ...entries];
+                        setWorldFiles(merged);
+                        setWorldRaw(combineEntries(merged));
+                      }}
+                      onClear={() => {
+                        setWorldFiles([]);
+                        setWorldRaw('');
+                      }}
+                    />
+                    <textarea
+                      value={worldRaw}
+                      onChange={(e) => setWorldRaw(e.target.value)}
+                      rows={10}
+                      placeholder="世界観の資料を貼る、ファイルを取り込む"
+                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+                    />
+                  </Field>
+                </>
+              )}
+
+              {worldMode === 'skip' && (
+                <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft }}>
+                  世界観を指定しない。AIが自由に構築する。
+                </div>
+              )}
+            </>
+          )}
+
+          {step === 1 && (
+            <>
+              <Field label="シナリオの用意方法">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    variant={scenarioMode === 'existing' ? 'primary' : 'ghost'}
+                    onClick={() => setScenarioMode('existing')}
+                    disabled={!worldId}
+                  >
+                    既存を選ぶ
+                  </Button>
+                  <Button
+                    variant={scenarioMode === 'paste' ? 'primary' : 'ghost'}
+                    onClick={() => setScenarioMode('paste')}
+                  >
+                    自分で用意する
+                  </Button>
+                  <Button
+                    variant={scenarioMode === 'generate' ? 'primary' : 'ghost'}
+                    onClick={() => setScenarioMode('generate')}
+                  >
+                    AIに作ってもらう
+                  </Button>
+                </div>
+              </Field>
+
+              {scenarioMode === 'existing' && (
+                <Field label="既存Scenarioを選ぶ">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {existingScenarios.map((s) => (
+                      <Card
+                        key={s.id}
+                        onClick={() => selectScenario(s.id)}
+                        style={{
+                          cursor: 'pointer',
+                          borderColor: selectedScenario?.id === s.id ? COLORS.brass : COLORS.line,
+                        }}
+                      >
+                        <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{s.title}</div>
+                      </Card>
+                    ))}
+                    {existingScenarios.length === 0 && (
+                      <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
+                        このWorldにはScenarioがまだ無い。「自分で用意する」で貼り付けるか、「AIに作ってもらう」を選ぶ。
+                      </div>
+                    )}
+                  </div>
+                </Field>
+              )}
+
+              {scenarioMode === 'paste' && (
+                <>
+                  <Field label="タイトル">
+                    <input
+                      value={scenarioTitle}
+                      onChange={(e) => setScenarioTitle(e.target.value)}
+                      placeholder="シナリオタイトル"
+                      style={inputStyle}
+                    />
+                  </Field>
+                  <Field label="シナリオ本文" hint="分割済みファイル(章ごと等)をそのまま取り込める。">
+                    <FileImportRow
+                      entries={scenarioFiles}
+                      onImport={(entries) => {
+                        const merged = [...scenarioFiles, ...entries];
+                        setScenarioFiles(merged);
+                        setScenarioRaw(combineEntries(merged));
+                      }}
+                      onClear={() => {
+                        setScenarioFiles([]);
+                        setScenarioRaw('');
+                      }}
+                    />
+                    <textarea
+                      value={scenarioRaw}
+                      onChange={(e) => setScenarioRaw(e.target.value)}
+                      rows={8}
+                      placeholder="シナリオ本文を貼る、またはファイルを取り込む"
+                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+                    />
+                  </Field>
+                </>
+              )}
+
+              {scenarioMode === 'generate' && (
+                <Field label="やりたいジャンル・要望" hint="例:「推理物がしたい」「洋館からの脱出」等">
                   <input
-                    value={worldTitle}
-                    onChange={(e) => setWorldTitle(e.target.value)}
-                    placeholder="World名"
+                    value={genre}
+                    onChange={(e) => setGenre(e.target.value)}
+                    placeholder="例: 冒険者らしい探索と戦闘がしたい"
                     style={inputStyle}
                   />
                 </Field>
-                <Field
-                  label="世界観"
-                  hint="資料を貼るか、分割済みファイル(またはフォルダ)をそのまま取り込める。長ければ自動で要約してから使う。"
-                >
-                  <FileImportRow
-                    entries={worldFiles}
-                    onImport={(entries) => {
-                      const merged = [...worldFiles, ...entries];
-                      setWorldFiles(merged);
-                      setWorldRaw(combineEntries(merged));
-                    }}
-                    onClear={() => {
-                      setWorldFiles([]);
-                      setWorldRaw('');
-                    }}
-                  />
-                  <textarea
-                    value={worldRaw}
-                    onChange={(e) => setWorldRaw(e.target.value)}
-                    rows={10}
-                    placeholder="世界観の資料を貼る、ファイルを取り込む"
-                    style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
-                  />
-                </Field>
-              </>
-            )}
+              )}
+            </>
+          )}
 
-            {worldMode === 'skip' && (
-              <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft }}>
-                世界観を指定しない。AIが自由に構築する。
-              </div>
-            )}
-          </>
-        )}
-
-        {step === 1 && (
-          <>
-            <Field label="シナリオの用意方法">
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button
-                  variant={scenarioMode === 'existing' ? 'primary' : 'ghost'}
-                  onClick={() => setScenarioMode('existing')}
-                  disabled={!worldId}
-                >
-                  既存を選ぶ
-                </Button>
-                <Button
-                  variant={scenarioMode === 'paste' ? 'primary' : 'ghost'}
-                  onClick={() => setScenarioMode('paste')}
-                >
-                  自分で用意する
-                </Button>
-                <Button
-                  variant={scenarioMode === 'generate' ? 'primary' : 'ghost'}
-                  onClick={() => setScenarioMode('generate')}
-                >
-                  AIに作ってもらう
-                </Button>
+          {step === 2 && (
+            <Field label="ルール性向" hint="判定の出方(成功度の段階・大失敗の出やすさ)がルールごとに変わる。CoC7e風はハード/イクストリーム成功が加わり、正気度(SAN)も追加される。開始後は変更できない。">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {allRulesets.map((r) => (
+                  <Card
+                    key={r.id}
+                    onClick={() => setRulesetId(r.id)}
+                    style={{
+                      cursor: 'pointer',
+                      borderColor: rulesetId === r.id ? COLORS.brass : COLORS.line,
+                      background: rulesetId === r.id ? COLORS.paperDark : COLORS.card,
+                    }}
+                  >
+                    <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
+                      {r.label}
+                    </div>
+                    <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
+                      {r.desc}
+                    </div>
+                  </Card>
+                ))}
               </div>
             </Field>
+          )}
 
-            {scenarioMode === 'existing' && (
-              <Field label="既存Scenarioを選ぶ">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {existingScenarios.map((s) => (
-                    <Card
-                      key={s.id}
-                      onClick={() => selectScenario(s.id)}
-                      style={{
-                        cursor: 'pointer',
-                        borderColor: selectedScenario?.id === s.id ? COLORS.brass : COLORS.line,
-                      }}
-                    >
-                      <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{s.title}</div>
-                    </Card>
-                  ))}
-                  {existingScenarios.length === 0 && (
-                    <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-                      このWorldにはScenarioがまだ無い。「自分で用意する」で貼り付けるか、「AIに作ってもらう」を選ぶ。
-                    </div>
-                  )}
+          {step === 3 && (
+            <>
+              <Field label="PCの用意方法">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button
+                    variant={pcMode === 'existing' ? 'primary' : 'ghost'}
+                    onClick={() => setPcMode('existing')}
+                    disabled={!worldId}
+                  >
+                    既存を選ぶ
+                  </Button>
+                  <Button variant={pcMode === 'new' ? 'primary' : 'ghost'} onClick={() => setPcMode('new')}>
+                    自由記述で新規作成
+                  </Button>
                 </div>
               </Field>
-            )}
 
-            {scenarioMode === 'paste' && (
-              <>
-                <Field label="タイトル">
-                  <input
-                    value={scenarioTitle}
-                    onChange={(e) => setScenarioTitle(e.target.value)}
-                    placeholder="シナリオタイトル"
-                    style={inputStyle}
-                  />
+              {pcMode === 'existing' && (
+                <Field label="既存PCを選ぶ">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {existingPCs.map((c) => (
+                      <Card
+                        key={c.name}
+                        onClick={() => selectPC(c.name)}
+                        style={{
+                          cursor: 'pointer',
+                          borderColor: selectedPC?.name === c.name ? COLORS.brass : COLORS.line,
+                        }}
+                      >
+                        <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{c.name}</div>
+                      </Card>
+                    ))}
+                    {existingPCs.length === 0 && (
+                      <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
+                        このWorldにはPCがまだ無い。「自由記述で新規作成」で書くか、素材ライブラリのCharacterタブで先に作る。
+                      </div>
+                    )}
+                  </div>
                 </Field>
-                <Field label="シナリオ本文" hint="分割済みファイル(章ごと等)をそのまま取り込める。">
-                  <FileImportRow
-                    entries={scenarioFiles}
-                    onImport={(entries) => {
-                      const merged = [...scenarioFiles, ...entries];
-                      setScenarioFiles(merged);
-                      setScenarioRaw(combineEntries(merged));
-                    }}
-                    onClear={() => {
-                      setScenarioFiles([]);
-                      setScenarioRaw('');
-                    }}
-                  />
-                  <textarea
-                    value={scenarioRaw}
-                    onChange={(e) => setScenarioRaw(e.target.value)}
-                    rows={8}
-                    placeholder="シナリオ本文を貼る、またはファイルを取り込む"
-                    style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
-                  />
-                </Field>
-              </>
-            )}
+              )}
 
-            {scenarioMode === 'generate' && (
-              <Field label="やりたいジャンル・要望" hint="例:「推理物がしたい」「洋館からの脱出」等">
+              {pcMode === 'new' && (
+                <>
+                  <Field
+                    label="PC名"
+                    hint="物語の地の文で主人公を指す名前。小説にしたときに他の登場人物と取り違えられないために必要。"
+                  >
+                    <input
+                      value={pcName}
+                      onChange={(e) => setPcName(e.target.value)}
+                      placeholder="例: カイ・アーレンス"
+                      style={inputStyle}
+                    />
+                  </Field>
+                  <Field
+                    label="PC設定"
+                    hint="自由記述でよい。goal(目標)・bonds(因縁・関係)を書いておくと、GMがそれを絡めた展開を作りやすくなる。"
+                  >
+                    <textarea
+                      value={pcRaw}
+                      onChange={(e) => setPcRaw(e.target.value)}
+                      rows={8}
+                      placeholder={'能力値・スキル: ...\ngoal: ...\nbonds: ...'}
+                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+                    />
+                  </Field>
+                </>
+              )}
+            </>
+          )}
+
+          {step === 4 && (
+            <>
+              <Field label="セッション名">
                 <input
-                  value={genre}
-                  onChange={(e) => setGenre(e.target.value)}
-                  placeholder="例: 冒険者らしい探索と戦闘がしたい"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="任意(未入力なら日付から自動生成)"
                   style={inputStyle}
                 />
               </Field>
-            )}
-          </>
-        )}
-
-        {step === 2 && (
-          <Field label="ルール性向" hint="判定の出方(成功度の段階・大失敗の出やすさ)がルールごとに変わる。CoC7e風はハード/イクストリーム成功が加わり、正気度(SAN)も追加される。開始後は変更できない。">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {allRulesets.map((r) => (
-                <Card
-                  key={r.id}
-                  onClick={() => setRulesetId(r.id)}
-                  style={{
-                    cursor: 'pointer',
-                    borderColor: rulesetId === r.id ? COLORS.brass : COLORS.line,
-                    background: rulesetId === r.id ? COLORS.paperDark : COLORS.card,
-                  }}
-                >
-                  <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
-                    {r.label}
-                  </div>
-                  <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft }}>
-                    {r.desc}
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </Field>
-        )}
-
-        {step === 3 && (
-          <>
-            <Field label="PCの用意方法">
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button
-                  variant={pcMode === 'existing' ? 'primary' : 'ghost'}
-                  onClick={() => setPcMode('existing')}
-                  disabled={!worldId}
-                >
-                  既存を選ぶ
-                </Button>
-                <Button variant={pcMode === 'new' ? 'primary' : 'ghost'} onClick={() => setPcMode('new')}>
-                  自由記述で新規作成
-                </Button>
+              <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft }}>
+                世界観・シナリオ・ルール・PCの準備ができたらゲームを開始する。
+                {worldMode === 'new' && ' 世界観は開始時に素材ライブラリへ保存され、自動で地域/カテゴリに分割される。'}
+                {scenarioMode === 'generate' && ' シナリオはAIが開始時に生成する。'}
               </div>
-            </Field>
+            </>
+          )}
+        </Card>
 
-            {pcMode === 'existing' && (
-              <Field label="既存PCを選ぶ">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {existingPCs.map((c) => (
-                    <Card
-                      key={c.name}
-                      onClick={() => selectPC(c.name)}
-                      style={{
-                        cursor: 'pointer',
-                        borderColor: selectedPC?.name === c.name ? COLORS.brass : COLORS.line,
-                      }}
-                    >
-                      <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{c.name}</div>
-                    </Card>
-                  ))}
-                  {existingPCs.length === 0 && (
-                    <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.faint }}>
-                      このWorldにはPCがまだ無い。「自由記述で新規作成」で書くか、素材ライブラリのCharacterタブで先に作る。
-                    </div>
-                  )}
-                </div>
-              </Field>
-            )}
+        {error && <div style={{ color: COLORS.stamp, fontSize: 13, marginTop: 12 }}>{error}</div>}
+        {libraryWarning && <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 8 }}>{libraryWarning}</div>}
 
-            {pcMode === 'new' && (
-              <>
-                <Field
-                  label="PC名"
-                  hint="物語の地の文で主人公を指す名前。小説にしたときに他の登場人物と取り違えられないために必要。"
-                >
-                  <input
-                    value={pcName}
-                    onChange={(e) => setPcName(e.target.value)}
-                    placeholder="例: カイ・アーレンス"
-                    style={inputStyle}
-                  />
-                </Field>
-                <Field
-                  label="PC設定"
-                  hint="自由記述でよい。goal(目標)・bonds(因縁・関係)を書いておくと、GMがそれを絡めた展開を作りやすくなる。"
-                >
-                  <textarea
-                    value={pcRaw}
-                    onChange={(e) => setPcRaw(e.target.value)}
-                    rows={8}
-                    placeholder={'能力値・スキル: ...\ngoal: ...\nbonds: ...'}
-                    style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
-                  />
-                </Field>
-              </>
-            )}
-          </>
-        )}
-
-        {step === 4 && (
-          <>
-            <Field label="セッション名">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="任意(未入力なら日付から自動生成)"
-                style={inputStyle}
-              />
-            </Field>
-            <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft }}>
-              世界観・シナリオ・ルール・PCの準備ができたらゲームを開始する。
-              {worldMode === 'new' && ' 世界観は開始時に素材ライブラリへ保存され、自動で地域/カテゴリに分割される。'}
-              {scenarioMode === 'generate' && ' シナリオはAIが開始時に生成する。'}
-            </div>
-          </>
-        )}
-      </Card>
-
-      {error && <div style={{ color: COLORS.stamp, fontSize: 13, marginTop: 12 }}>{error}</div>}
-      {libraryWarning && <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 8 }}>{libraryWarning}</div>}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 20 }}>
-        <Button variant="ghost" onClick={step === 0 ? onCancel : () => setStep(step - 1)} disabled={busy}>
-          {step === 0 ? 'やめる' : '戻る'}
-        </Button>
-        {step < steps.length - 1 ? (
-          <Button variant="primary" onClick={() => setStep(step + 1)} disabled={pcNameMissing}>
-            次へ
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 20 }}>
+          <Button
+            variant="ghost"
+            onClick={() => setStep(step - 1)}
+            disabled={busy || step === 0}
+          >
+            戻る
           </Button>
-        ) : (
-          <Button variant="brass" onClick={handleStart} disabled={busy}>
-            {busy ? '準備中…' : 'ゲーム開始'}
-          </Button>
-        )}
+          {step < steps.length - 1 ? (
+            <Button variant="primary" onClick={() => setStep(step + 1)} disabled={pcNameMissing}>
+              次へ
+            </Button>
+          ) : (
+            <Button variant="brass" onClick={handleStart} disabled={busy}>
+              {busy ? '準備中…' : 'ゲーム開始'}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

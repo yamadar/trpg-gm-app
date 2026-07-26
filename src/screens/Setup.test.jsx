@@ -20,8 +20,31 @@ beforeEach(() => {
 });
 
 describe('Setup', () => {
+  it('shows every wizard step in the focus header and marks the current one', () => {
+    render(<Setup onStart={() => {}} />);
+    for (const s of ['世界観', 'シナリオ', 'ルール', 'PC', '確認']) {
+      expect(screen.getByText(s)).toBeInTheDocument();
+    }
+    expect(screen.getByText('世界観')).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('leaves the wizard through the focus header, from any step', () => {
+    render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    expect(window.location.hash).toBe('#/');
+    window.history.replaceState(null, '', window.location.pathname);
+  });
+
+  it('keeps the footer back button as a step-level control', () => {
+    render(<Setup onStart={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: '次へ' }));
+    expect(screen.getByText('シナリオ')).toHaveAttribute('aria-current', 'step');
+    fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+    expect(screen.getByText('世界観')).toHaveAttribute('aria-current', 'step');
+  });
+
   it('renders the first wizard step (世界観) with the three World-source mode buttons', async () => {
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     await waitFor(() => expect(worldLibraryClient.listWorlds).toHaveBeenCalled());
     expect(screen.getByText('既存を選ぶ')).toBeInTheDocument();
     expect(screen.getByText('新規に用意する')).toBeInTheDocument();
@@ -29,7 +52,7 @@ describe('Setup', () => {
   });
 
   it('shows the step indicator for all 5 steps', () => {
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     // ステップタブ("1. 世界観"等)とForm 0のField labelの両方が"世界観"を含みうるため、
     // 厳密一致のgetByTextではなく部分一致のgetAllByTextで存在確認する。
     ['世界観', 'シナリオ', 'ルール', 'PC', '確認'].forEach((label) => {
@@ -41,7 +64,7 @@ describe('Setup', () => {
     worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
 
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     fireEvent.click(screen.getByText('既存を選ぶ'));
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -50,13 +73,13 @@ describe('Setup', () => {
 
   it('points the empty world state at the gallery', async () => {
     vi.spyOn(worldLibraryClient, 'listWorlds').mockResolvedValue([]);
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     fireEvent.click(screen.getByText('既存を選ぶ'));
     expect(await screen.findByText(/公開ギャラリーの「おすすめ」/)).toBeInTheDocument();
   });
 
   it('disables the Scenario "既存を選ぶ" button until a World is selected', () => {
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     fireEvent.click(screen.getByText('次へ')); // World(デフォルトskip) -> Scenario
     expect(screen.getByText('既存を選ぶ')).toBeDisabled();
     fireEvent.click(screen.getByText('既存を選ぶ'));
@@ -77,7 +100,7 @@ describe('Setup', () => {
     });
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World: 既存
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -127,7 +150,7 @@ describe('Setup', () => {
     });
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World: 既存
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -167,7 +190,7 @@ describe('Setup', () => {
     });
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World: 既存
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -205,7 +228,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('自動生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('新規に用意する'));
     // slugifyは英数字とハイフン以外を除去するため、日本語タイトルだと"untitled"にfallbackしてしまい
     // slugify自体の変換が検証できない。ここでは意図的にASCIIタイトルを使い、生成idの中身を検証する。
@@ -237,7 +260,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('新規に用意する'));
     fireEvent.change(screen.getByPlaceholderText('World名'), { target: { value: 'テスト世界' } });
     fireEvent.change(screen.getByPlaceholderText(/世界観の資料を貼る/), { target: { value: '世界観の原文' } });
@@ -263,7 +286,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
 
     fireEvent.click(screen.getByText('次へ')); // -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
@@ -305,7 +328,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -334,7 +357,7 @@ describe('Setup', () => {
     const getOrParseSpy = vi.spyOn(characterSheetCache, 'getOrParseCharacter');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
@@ -350,7 +373,7 @@ describe('Setup', () => {
   });
 
   it('blocks the PC step until a PC name is entered in the new-PC mode', () => {
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
@@ -369,7 +392,7 @@ describe('Setup', () => {
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
     vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
 
-    render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+    render(<Setup onStart={vi.fn()} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -394,7 +417,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -433,7 +456,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -462,7 +485,6 @@ describe('Setup', () => {
     render(
       <Setup
         onStart={vi.fn()}
-        onCancel={vi.fn()}
         campaignContext={{
           worldId: 'w1',
           world: { raw: 'World原文', summary: 'World要約' },
@@ -485,7 +507,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('次へ')); // World(skip) -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
@@ -515,7 +537,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -539,7 +561,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('次へ')); // -> PC
@@ -577,7 +599,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('Waterdeep')).toBeInTheDocument());
     fireEvent.click(screen.getByText('Waterdeep'));
@@ -619,7 +641,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成シナリオ');
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     fireEvent.click(screen.getByText('既存を選ぶ')); // World
     await waitFor(() => expect(screen.getByText('World1')).toBeInTheDocument());
     fireEvent.click(screen.getByText('World1'));
@@ -660,7 +682,7 @@ describe('Setup', () => {
       rulesetId: 'simple',
       campaignId: 'cp1',
     };
-    render(<Setup onStart={onStart} onCancel={vi.fn()} campaignContext={campaignContext} />);
+    render(<Setup onStart={onStart} campaignContext={campaignContext} />);
     // シナリオ→ルール→PC→確認→開始(Worldは前埋め済み)
     fireEvent.click(screen.getByText('次へ')); // -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
@@ -679,7 +701,7 @@ describe('Setup', () => {
     vi.spyOn(sessionApi, 'generateScenario').mockRejectedValue(new Error('LLM down'));
     const onStart = vi.fn();
 
-    render(<Setup onStart={onStart} onCancel={vi.fn()} />);
+    render(<Setup onStart={onStart} />);
     // World(既定skip) -> Scenario(既定paste空) -> Ruleset -> PC -> 確認
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('次へ'));
@@ -712,7 +734,7 @@ describe('Setup', () => {
       // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
       // 既存テストの慣習(Worldが決まっている状態では必ずモックする)に倣う。
       vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
-      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
+      render(<Setup onStart={vi.fn()} starterContext={STARTER} />);
 
       // ステップ表示バーは常に5段すべてのラベルを描くため現在地の証拠にならない。
       // PCステップでしか描かれないField labelで判定する。
@@ -728,7 +750,7 @@ describe('Setup', () => {
       // Scenarioステップの一覧はlistScenarios(worldId)の結果から描画されるため、既存テストの
       // 慣習(Worldが決まっている状態でScenarioステップへ進むテストは必ずモックする)に倣う。
       vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
-      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} starterContext={STARTER} />);
+      render(<Setup onStart={vi.fn()} starterContext={STARTER} />);
 
       fireEvent.click(await screen.findByText('戻る')); // → ルール
       fireEvent.click(screen.getByText('戻る')); // → シナリオ
@@ -748,7 +770,7 @@ describe('Setup', () => {
       // 既存テストの慣習(Worldが決まっている状態では必ずモックする)に倣う。
       vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([STARTER.scenario]);
       const onStart = vi.fn();
-      render(<Setup onStart={onStart} onCancel={vi.fn()} starterContext={STARTER} />);
+      render(<Setup onStart={onStart} starterContext={STARTER} />);
 
       fireEvent.click(await screen.findByText('howard-kane'));
       fireEvent.click(screen.getByText('次へ')); // → 確認
@@ -765,7 +787,7 @@ describe('Setup', () => {
     });
 
     it('behaves exactly as before when starterContext is absent', () => {
-      render(<Setup onStart={vi.fn()} onCancel={vi.fn()} />);
+      render(<Setup onStart={vi.fn()} />);
       // 0段目でしか描かれないField labelで、PCステップから開いていないことを示す。
       expect(screen.getByText('Worldの用意方法')).toBeInTheDocument();
       expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();

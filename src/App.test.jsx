@@ -224,10 +224,9 @@ describe('App', () => {
     // PCステップでしか描かれないField labelを見る。
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
-    // ウィザードから離脱する。Setup自身の離脱ボタンがrouteを動かすようになるのは
-    // Task 16からなので、ここではURLを直接ホームへ戻す。
+    // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
     // (離脱時にcontextを消していないことこそが、この後の検証の前提になる)
-    act(() => navigate({ name: 'home' }));
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
     expect(await findHome()).toBeInTheDocument();
 
     // 改めて「+ 新規プレイ」から入り直す。
@@ -314,8 +313,9 @@ describe('App', () => {
     fireEvent.click(await screen.findByText('この冒険を始める'));
     expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
 
-    // ブラウザバック相当。離脱時に文脈を消していないことがこの後の前提になる。
-    act(() => navigate({ name: 'home' }));
+    // ウィザードを離脱する(FocusHeaderの「やめる」はどのステップからでも押せる)。
+    // 離脱時に文脈を消していないことがこの後の前提になる。
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
     await findHome();
 
     // 別セッションの「次の章へ」からウィザードへ入り直す。
