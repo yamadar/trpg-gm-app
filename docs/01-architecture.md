@@ -74,5 +74,8 @@
 - フロントエンドのルーティングはハッシュベースの簡易実装(`src/router/useHashRoute.js`)。`#/u/{userId}`というURLハッシュのみを解釈し、公開ギャラリーの公開者名クリック等から`navigateToUser(userId)`で遷移する。それ以外の画面遷移(home/setup/library/gallery/play)は`App.jsx`内のstateで管理され、URL(ハッシュ以外)には反映されない。
 - 環境変数`BASE_URL`(OAuthのredirect_uriおよびCSRF目的のOrigin検証の基準URL)と`DATA_DIR`(dataStore/textStoreの永続化先ディレクトリ)を前提とする。本番運用ではプラットフォームの永続ディスクを`DATA_DIR`にマウントする(ファイルシステムベースの実装のため、再起動やデプロイでディスクが失われるとユーザー・セッション・素材データも失われる)。プロキシ/ロードバランサ配下での実行を想定し`app.set('trust proxy', 1)`を設定している。
 - 開発時は単一の`package.json`から`concurrently`でフロントエンド(Vite dev server)とバックエンド(Express)を同時起動する。フロントは5173、バックエンドは8787で動き、`/api`・`/auth`はViteのproxy設定(`vite.config.js`)経由でバックエンドへ転送される。
-- 本番は**Expressの単一プロセスがAPIとフロントの両方を配信する**。`NODE_ENV=production`(または`STATIC_DIR`の明示指定)のとき、`server/index.js`が全APIルーターの後段で`dist/`を`express.static`で配信し、`/api/*`・`/auth/*`以外の未知のGETには`index.html`を返す(SPAフォールバック)。開発時はViteが配信するためこの配信は無効。
+- 本番は**Expressの単一プロセスがAPIとフロントの両方を配信する**。`STATIC_DIR`が指定されたとき、`server/index.js`が全APIルーターの後段でその配下を`express.static`で配信し、`/api/*`・`/auth/*`以外の未知のGETには`index.html`を返す(SPAフォールバック)。未設定なら配信しない(開発時はViteが5173で配信するため不要)。相対パスはリポジトリルート基準で解決するので、本番は`STATIC_DIR=dist`でよい。
+- **本番挙動を左右する設定は`NODE_ENV`ではなく専用の環境変数に分離している**(`resolveSecureCookies`/`resolveStaticDir`、`server/index.js`)。`NODE_ENV`はnpmのdevDependencies省略(`omit=dev`)やライブラリ側の最適化など無関係な意味を同時に背負うため、ビルド都合の変更でセッションクッキーのSecure属性が黙って外れる事故を避ける狙いがある。
+  - `SECURE_COOKIES`: セッションクッキーのSecure属性。`true`/`false`(`1`/`0`・`yes`/`no`・`on`/`off`も可)。未設定時は`BASE_URL`のスキームから決まる(Secure属性付きクッキーはHTTPSでしか保存されないため、https=有効・http=無効以外に妥当な既定値がない)。解釈できない値は起動時に例外にする(タイプミスで黙ってSecureが外れる方が危険なため)。
+  - `STATIC_DIR`: 上記の静的配信元。
 - 具体的なデプロイ手順(Render)と本番運用上の注意は[09-deployment.md](09-deployment.md)、Blueprint定義はリポジトリ直下の`render.yaml`にある。

@@ -34,12 +34,14 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | Language / Runtime | Node |
 | Region | Singapore(日本から最も近い) |
 | Branch | `main` |
-| Build Command | `npm ci --include=dev && npm run build` |
-| Start Command | `npm start` |
+| Build Command | `npm ci && npm run build` |
+| Start Command | `NODE_ENV=production npm start` |
 | Instance Type | Starter($7/月)以上 |
 | Health Check Path | `/api/config` |
 
-> **注意**: Build Commandに`--include=dev`が必要。`NODE_ENV=production`環境下の`npm install`はdevDependenciesを省略するため、`vite`が入らずビルドが失敗する。
+> **注意**: `NODE_ENV` を**サービスの環境変数に置かないこと**。Renderの環境変数はビルドと実行の両方に適用されるが、`NODE_ENV=production` はnpmの `omit=dev` を意味するため、ビルド時の `npm ci` が `vite` を含むdevDependenciesを省略し `vite: not found` で失敗する。ランタイムにだけ渡したいので、上記のようにStart Commandへ書く。
+>
+> このアプリ自身の挙動は `NODE_ENV` ではなく `SECURE_COOKIES` と `STATIC_DIR` で決まる(`server/index.js`)ため、Start Commandに置いても設定が見えなくなる心配はない。
 
 続いて **Settings → Disks → Add Disk** で永続ディスクを追加する。
 
@@ -55,7 +57,8 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 
 | 変数 | 値 | 必須 |
 |---|---|---|
-| `NODE_ENV` | `production` | ✅ これがないと`dist/`の配信もSecure Cookieも有効にならない |
+| `STATIC_DIR` | `dist` | ✅ ビルド済みフロントの配信元。未設定だと画面が表示されない。相対パスはリポジトリルート基準 |
+| `SECURE_COOKIES` | `true` | ✅ セッションクッキーのSecure属性。未設定でも`BASE_URL`がhttpsなら有効になるが、本番では明示する |
 | `DATA_DIR` | `/data` | ✅ ディスクのマウントパスと一致させる |
 | `BASE_URL` | `https://<サービス名>.onrender.com`(末尾スラッシュなし) | ✅ |
 | `ANTHROPIC_API_KEY` | Anthropicのキー | ✅ |
@@ -150,11 +153,13 @@ tar czf /tmp/gmdesk-$(date +%Y%m%d).tar.gz -C /data .
 
 | 症状 | 原因と対処 |
 |---|---|
-| ビルドが`vite: not found`で失敗 | Build Commandに`--include=dev`が無い |
+| ビルドが`vite: not found`で失敗 | サービスの環境変数に`NODE_ENV=production`が入っている。npmが`omit=dev`と解釈しdevDependenciesを入れない。環境変数から外し、Start Command側に書く |
 | 更新系APIが全部403 | `BASE_URL`が実アクセス元と不一致(スキーム・末尾スラッシュ・wwwの有無) |
 | OAuthが`redirect_uri_mismatch` | プロバイダ側のコールバックURLと`${BASE_URL}/auth/{provider}/callback`が不一致 |
 | 再デプロイでデータが消える | `DATA_DIR`がディスクのマウントパス(`/data`)を指していない |
-| ログインが毎回切れる | 同上(セッションは`auth/sessions/*`としてディスクに保存される)。または`NODE_ENV`が`production`でなくSecure Cookieが無効 |
+| ログインが毎回切れる | 同上(セッションは`auth/sessions/*`としてディスクに保存される) |
+| 画面が真っ白 / APIのJSONが直接見える | `STATIC_DIR`が未設定。`dist`を設定して再デプロイする |
+| サーバーが起動せず`SECURE_COOKIES must be one of true/false` | `SECURE_COOKIES`の値がタイプミス。Secureが黙って無効化されるのを防ぐため起動時に停止する仕様 |
 | APIのURLでHTMLが返る | SPAフォールバックの除外条件から外れている。`/api/`・`/auth/`配下は除外される(`server/index.js`) |
 | 画像生成のUIが出ない | `GEMINI_API_KEY`が未設定(`GET /api/config`が`imageGen:false`を返す) |
 

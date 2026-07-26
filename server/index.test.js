@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { createApp } from './index.js';
+import { createApp, resolveSecureCookies, resolveStaticDir } from './index.js';
 import { createTestUserSession } from './auth/testHelpers.js';
 
 let dir;
@@ -171,5 +171,126 @@ describe('createApp', () => {
     expect(res.body.items.length).toBe(1);
     expect(res.body.items[0].ownerId).toBe(a.user.id);
     expect(res.body.items[0].title).toBe('Aの世界');
+  });
+});
+
+describe('resolveSecureCookies', () => {
+  const HTTPS = 'https://gmdesk.example.com';
+  const HTTP = 'http://localhost:5173';
+
+  it('honors an explicit true value', () => {
+    for (const v of ['1', 'true', 'TRUE', 'yes', 'on', ' true ']) {
+      expect(resolveSecureCookies(v, HTTP)).toBe(true);
+    }
+  });
+
+  it('honors an explicit false value even on https', () => {
+    for (const v of ['0', 'false', 'FALSE', 'no', 'off']) {
+      expect(resolveSecureCookies(v, HTTPS)).toBe(false);
+    }
+  });
+
+  // 未設定時の既定はBASE_URLのスキーム由来。NODE_ENVは一切参照しない。
+  it('defaults to true for an https BASE_URL', () => {
+    expect(resolveSecureCookies(undefined, HTTPS)).toBe(true);
+    expect(resolveSecureCookies('', HTTPS)).toBe(true);
+  });
+
+  it('defaults to false for an http BASE_URL', () => {
+    expect(resolveSecureCookies(undefined, HTTP)).toBe(false);
+  });
+
+  // タイプミスで黙ってSecureが外れると本番で気付けないため、起動を止める。
+  it('throws on an unparseable value instead of silently falling back', () => {
+    expect(() => resolveSecureCookies('ture', HTTPS)).toThrow(/SECURE_COOKIES/);
+    expect(() => resolveSecureCookies('production', HTTPS)).toThrow(/SECURE_COOKIES/);
+  });
+});
+
+describe('resolveStaticDir', () => {
+  it('returns null when unset, leaving the client to Vite in development', () => {
+    expect(resolveStaticDir(undefined)).toBeNull();
+    expect(resolveStaticDir('')).toBeNull();
+    expect(resolveStaticDir('   ')).toBeNull();
+  });
+
+  it('resolves a relative path against the repository root', () => {
+    expect(resolveStaticDir('dist')).toBe(path.join(import.meta.dirname, '..', 'dist'));
+  });
+
+  it('passes an absolute path through unchanged', () => {
+    expect(resolveStaticDir('/srv/gmdesk/dist')).toBe('/srv/gmdesk/dist');
+  });
+});
+
+describe('static serving', () => {
+  const INDEX_HTML = '<!doctype html><html><body><div id="root"></div></body></html>';
+  let staticDir;
+
+  function buildApp({ withStatic = true } = {}) {
+    return createApp({
+      apiKey: 'test-key',
+      env: { BASE_URL: 'http://localhost:5173' },
+      dataDir: path.join(dir, 'data'),
+      staticDir: withStatic ? staticDir : null,
+    });
+  }
+
+  beforeEach(async () => {
+    staticDir = path.join(dir, 'dist');
+    await fs.mkdir(path.join(staticDir, 'assets'), { recursive: true });
+    await fs.writeFile(path.join(staticDir, 'index.html'), INDEX_HTML);
+    await fs.writeFile(path.join(staticDir, 'assets', 'app.js'), 'export default 1;\n');
+  });
+
+  it('serves index.html at the root', async () => {
+    const res = await request(buildApp()).get('/');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.text).toContain('id="root"');
+  });
+
+  it('serves built assets', async () => {
+    const res = await request(buildApp()).get('/assets/app.js');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('export default 1;');
+  });
+
+  it('falls back to index.html for unknown client routes', async () => {
+    const res = await request(buildApp()).get('/library');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+  });
+
+  it('does not shadow public API routes', async () => {
+    const res = await request(buildApp()).get('/api/config');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ imageGen: false });
+  });
+
+  // 認証必須APIの401がSPAのHTMLに化けると、クライアントがログイン切れを
+  // 検知できなくなる。/api・/auth 配下はフォールバック対象外。
+  it('keeps authenticated API routes returning JSON 401, not HTML', async () => {
+    const res = await request(buildApp()).get('/api/sessions');
+    expect(res.status).toBe(401);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+  });
+
+  // Expressの既定404ページ自体がtext/htmlなので、SPAシェルが返っていないことは
+  // ステータスと本文で判定する。
+  it('does not fall back for unknown /auth paths', async () => {
+    const res = await request(buildApp()).get('/auth/does-not-exist');
+    expect(res.status).toBe(404);
+    expect(res.text).not.toContain('id="root"');
+  });
+
+  it('does not fall back for non-GET requests to unknown paths', async () => {
+    const res = await request(buildApp()).post('/library');
+    expect(res.status).toBe(404);
+  });
+
+  it('serves nothing when no staticDir is configured', async () => {
+    const res = await request(buildApp({ withStatic: false })).get('/');
+    expect(res.status).toBe(404);
   });
 });

@@ -8,11 +8,13 @@ services:
     plan: starter # 永続ディスクを付けるにはfree不可。starter($7/月)以上
     region: singapore # 日本から最も近いリージョン
     branch: main
-    # NODE_ENV=production 環境下の `npm install` はdevDependenciesを省略するため、
-    # ビルドに必要なvite/@vitejs/plugin-reactが入らずビルドが失敗する。
-    # --include=dev を明示して回避する。
-    buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm start
+    buildCommand: npm ci && npm run build
+    # NODE_ENVはランタイム側だけに渡す。envVarsに置くとビルド時にも効いてしまい、
+    # `npm ci` がdevDependenciesを省略してviteが入らずビルドが落ちる
+    # (NODE_ENV=production は npm の omit=dev を意味する)。
+    # アプリ自身の挙動はNODE_ENVではなくSECURE_COOKIES/STATIC_DIRで決まるので、
+    # ここに置いても設定が隠れることはない。
+    startCommand: NODE_ENV=production npm start
     healthCheckPath: /api/config # 認証不要で200を返すエンドポイント
     # ファイルシステムを唯一の永続層として使う設計(server/storage/*)のため、
     # 複数インスタンスでのディスク共有はできない。必ず1インスタンスで運用する。
@@ -22,12 +24,16 @@ services:
       mountPath: /data
       sizeGB: 5 # 場面挿絵PNGが増えるので、使用量を見て拡張する(縮小は不可)
     envVars:
-      - key: NODE_ENV
-        value: production
       - key: NODE_VERSION
         value: "20"
       - key: DATA_DIR
         value: /data
+      # ビルド済みフロントの配信元。相対パスはリポジトリルート基準で解決される。
+      - key: STATIC_DIR
+        value: dist
+      # セッションクッキーのSecure属性。HTTPS配信なので必ずtrue。
+      - key: SECURE_COOKIES
+        value: "true"
       # 以下は sync: false。ダッシュボードで手動設定する(リポジトリに値を置かない)
       - key: BASE_URL # 例: https://trpg-gm-app.onrender.com(末尾スラッシュなし)
         sync: false
