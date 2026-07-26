@@ -19,7 +19,7 @@
 - ナビ項目は未ログイン時も消さない。押した先で「ログインが必要です」を案内する。
 - タップ領域は 44×44px 以上。アクティブ状態を色だけで区別しない。タブは `<div onClick>` ではなく `<button>` を使う。
 - 日本語コメント・日本語 UI 文言。既存コードのスタイル（インラインスタイル、`COLORS` / `F_MONO` / `F_BODY` / `F_DISPLAY`）に合わせる。
-- 各タスクの終了時点で `npm test` が全件通ること。
+- 各タスクの終了時点で、そのタスクが対象とするテストファイルが通ること。`npm test` 全体の緑は Task 1〜9 と Task 17 で必須。Task 10〜16 は移行の中間状態として全体が赤くなることを許容する（`App.jsx` が新 props を渡す一方、各画面がまだ旧 props のため）。Task 16 の終了時点で全体が緑に戻る。
 - 作業は `main` から作成したワークツリーで行う（`superpowers:using-git-worktrees` を実行時に使用）。
 
 ## File Structure
@@ -97,8 +97,10 @@ export const LIBRARY_TABS = [
   { key: 'ruleset', label: 'Ruleset' },
 ];
 
-// World を選んでいないと一覧が引けないタブ。URL の3セグメント目に worldId を取る。
-export const WORLD_SCOPED_LIBRARY_TABS = ['character', 'scenario', 'campaign'];
+// World に紐づくタブ。URL の3セグメント目に worldId を取る。
+// world タブ自身も選択中の World を詳細/編集表示するため(src/screens/library/WorldTab.jsx)含める。
+// ruleset だけが World に依存しない。
+export const WORLD_SCOPED_LIBRARY_TABS = ['world', 'character', 'scenario', 'campaign'];
 ```
 
 - [ ] **Step 2: 失敗するテストを書く**
@@ -133,8 +135,11 @@ describe('parseRoute', () => {
     expect(parseRoute('#/library/nope')).toEqual({ name: 'library', libraryTab: 'world', worldId: null });
   });
 
-  it('ignores a worldId on library tabs that are not world-scoped', () => {
-    expect(parseRoute('#/library/world/w1')).toEqual({ name: 'library', libraryTab: 'world', worldId: null });
+  it('keeps a worldId on the world tab, which opens that world for editing', () => {
+    expect(parseRoute('#/library/world/w1')).toEqual({ name: 'library', libraryTab: 'world', worldId: 'w1' });
+  });
+
+  it('ignores a worldId on the ruleset tab, which is not world-scoped', () => {
     expect(parseRoute('#/library/ruleset/w1')).toEqual({ name: 'library', libraryTab: 'ruleset', worldId: null });
   });
 
@@ -2286,7 +2291,7 @@ export default function Library({ route }) {
 }
 ```
 
-> `WorldTab` の `onSelectWorld` は `world` タブ上でのみ呼ばれる。`world` は World スコープ外のため `goToWorld` は `#/library/world` のままとなり、URL に worldId は載らない。これは `parseRoute` の仕様（`world` タブは worldId を持たない）と一致する。
+> `WorldTab` は `selectedWorldId` を「詳細/編集で開いている World」として使う（`WorldTab.jsx:50-85` で当該 World の regions/categories を取得し、`:287` の `onSelectWorld(w.id)` で開く）。したがって `world` タブも `worldId` を URL に載せる必要があり、`WORLD_SCOPED_LIBRARY_TABS` に `world` を含めてある。`#/library/world/w1` は「W1 を開いた World タブ」を意味する。`ruleset` だけが World に依存しないため、そこへ移ると `worldId` は落ちる。
 
 - [ ] **Step 4: テストが通ることを確認する**
 
