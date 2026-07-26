@@ -52,13 +52,47 @@ function parseLimit(value, def) {
   return Number.isFinite(n) && n >= 0 ? n : def;
 }
 
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
+const FALSE_VALUES = new Set(['0', 'false', 'no', 'off']);
+
+// セッションクッキーのSecure属性は`SECURE_COOKIES`で明示制御する。NODE_ENVは
+// npmのdevDependencies省略やライブラリ側の最適化など無関係な意味を同時に背負って
+// おり、セキュリティ設定の根拠にすると「ビルド都合でNODE_ENVを変えたらSecureが
+// 黙って外れる」事故を招くため、専用の変数に分離している。
+//
+// 未設定時はBASE_URLのスキームから導く(Secure属性付きクッキーはHTTPSでしか
+// 保存されないため、https=有効・http=無効以外に妥当な既定値がない)。
+// 値が不正なときは起動を止める。タイプミスで黙ってSecureが外れる方が危険。
+export function resolveSecureCookies(value, baseUrl) {
+  const s = String(value ?? '').trim().toLowerCase();
+  if (TRUE_VALUES.has(s)) return true;
+  if (FALSE_VALUES.has(s)) return false;
+  if (s !== '') {
+    throw new Error(
+      `SECURE_COOKIES must be one of true/false, 1/0, yes/no, on/off (got: ${value})`,
+    );
+  }
+  return new URL(baseUrl).protocol === 'https:';
+}
+
+// ビルド済みフロント(dist/)の配信は`STATIC_DIR`が指定されたときだけ行う。
+// 開発時はViteのdevサーバーが5173でフロントを配信し、/api・/auth だけを
+// このサーバーへプロキシする(vite.config.js)ため、配信は不要。
+// 相対パスはリポジトリルート基準で解決するので、本番では`STATIC_DIR=dist`でよい。
+export function resolveStaticDir(value) {
+  const s = String(value ?? '').trim();
+  if (s === '') return null;
+  return path.isAbsolute(s) ? s : path.join(__dirname, '..', s);
+}
+
 export function createApp({
   apiKey = process.env.ANTHROPIC_API_KEY,
   env = process.env,
   dataDir = env.DATA_DIR || path.join(__dirname, 'data'),
   fetchImpl = fetch,
   baseUrl = resolveBaseUrl(env.BASE_URL),
-  secureCookies = env.NODE_ENV === 'production',
+  secureCookies = resolveSecureCookies(env.SECURE_COOKIES, baseUrl),
+  staticDir = resolveStaticDir(env.STATIC_DIR),
 } = {}) {
   const app = express();
   app.set('trust proxy', 1);
@@ -110,6 +144,23 @@ export function createApp({
   app.use('/api', createRulesetsRouter({ dataStore }));
   app.use('/api', createPublishRouter({ dataStore, textStore }));
   app.use('/api', createImportsRouter({ dataStore, textStore }));
+
+  // 静的配信はAPIルーターより後にマウントする。先に置くと dist/ 側の
+  // ファイル名と衝突したパスがAPIより優先されてしまうため。
+  if (staticDir) {
+    app.use(express.static(staticDir));
+    // SPAフォールバック: クライアントルーティング用に、未知のGETへ index.html を返す。
+    // /api・/auth 配下は対象外にして、存在しないAPIパスがHTMLで200を返すのを防ぐ
+    // (認証必須APIの401もここで握り潰さない)。
+    app.use((req, res, next) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+      if (req.path === '/api' || req.path === '/auth') return next();
+      if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) return next();
+      res.sendFile(path.join(staticDir, 'index.html'), (err) => {
+        if (err) next(err);
+      });
+    });
+  }
 
   app.use((err, req, res, next) => {
     console.error(err);
