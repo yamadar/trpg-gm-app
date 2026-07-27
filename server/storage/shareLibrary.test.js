@@ -147,13 +147,13 @@ describe('publishCharacter', () => {
       worldId: 'w1',
       kind: 'pc',
       name: 'alice',
-      raw: '# アリスのシート',
+      raw: 'PC名: アリス\n# アリスのシート',
     });
     const { ok, meta } = await publishCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice', OWNER);
     expect(ok).toBe(true);
-    expect(meta).toMatchObject({ kind: 'pc', name: 'alice', title: 'alice', ownerId: 'usr_1', ownerName: '太郎' });
+    expect(meta).toMatchObject({ kind: 'pc', name: 'alice', title: 'アリス', ownerId: 'usr_1', ownerName: '太郎' });
     expect(meta.publicId).toMatch(/^pub_[0-9a-f]{12}$/);
-    expect(await textStore.read(publicCharacterDocPath(meta.publicId))).toBe('# アリスのシート');
+    expect(await textStore.read(publicCharacterDocPath(meta.publicId))).toBe('PC名: アリス\n# アリスのシート');
     expect(await dataStore.get(publishCharacterMapKey('usr_1', 'w1', 'pc', 'alice'))).toEqual({
       publicId: meta.publicId,
     });
@@ -165,6 +165,27 @@ describe('publishCharacter', () => {
       ok: false,
       reason: 'not_found',
     });
+  });
+
+  it('uses the NPC名 line as the public title', async () => {
+    await seedWorld('usr_1');
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'npc',
+      name: 'guild-master.md',
+      raw: 'NPC名: ギルドマスター・ノーラ\n立場: 冒険者ギルド長',
+    });
+    const { meta } = await publishCharacter(
+      dataStore,
+      textStore,
+      'usr_1',
+      'w1',
+      'npc',
+      'guild-master.md',
+      OWNER
+    );
+    expect(meta.title).toBe('ギルドマスター・ノーラ');
+    expect(meta.name).toBe('guild-master.md');
   });
 
   it('carries worldId and worldTitle (from the owner\'s world meta)', async () => {
@@ -437,6 +458,27 @@ describe('queryPublic', () => {
     const { items, total } = await queryPublic(dataStore, 'scenarios', { q: 'dragon' });
     expect(total).toBe(3);
     expect(items.map((m) => m.publicId).sort()).toEqual(['pub_1', 'pub_2', 'pub_3']);
+  });
+
+  it('backfills a legacy character title from its PC/NPC name before display and search', async () => {
+    await dataStore.set(publicMetaKey('characters', 'pub_old'), {
+      publicId: 'pub_old',
+      ownerId: 'usr_1',
+      ownerName: '太郎',
+      publishedAt: Date.now(),
+      updatedAt: Date.now(),
+      title: 'guild-master.md',
+      name: 'guild-master.md',
+      kind: 'npc',
+    });
+    await textStore.write(
+      publicCharacterDocPath('pub_old'),
+      'NPC名: ギルドマスター・ノーラ\n立場: 冒険者ギルド長'
+    );
+
+    const result = await queryPublic(dataStore, 'characters', { q: 'ノーラ' }, textStore);
+    expect(result.total).toBe(1);
+    expect(result.items[0].title).toBe('ギルドマスター・ノーラ');
   });
 
   it('filters moods with OR semantics and ignores unknown moods', async () => {

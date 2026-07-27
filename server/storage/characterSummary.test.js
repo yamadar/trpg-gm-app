@@ -13,7 +13,13 @@ describe('summarizeSheet', () => {
     expect(summarizeSheet('PC名：　メイベル　\n骨董商').displayName).toBe('メイベル');
   });
 
-  it('leaves the display name empty when the sheet has no PC名 line', () => {
+  it('takes an NPC display name from the NPC名 line', () => {
+    const { displayName, excerpt } = summarizeSheet('NPC名: オルヴァク\n遊牧民の族長。');
+    expect(displayName).toBe('オルヴァク');
+    expect(excerpt).toBe('遊牧民の族長。');
+  });
+
+  it('leaves the display name empty when the sheet has no PC/NPC名 line', () => {
     const { displayName, excerpt } = summarizeSheet('放浪の剣士。故郷を焼かれている。');
     expect(displayName).toBe('');
     expect(excerpt).toBe('放浪の剣士。故郷を焼かれている。');

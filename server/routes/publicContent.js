@@ -22,14 +22,21 @@ export function createPublicContentRouter({ dataStore, textStore }) {
       return;
     }
     const moods = String(req.query.moods ?? '').split(',').filter(Boolean);
-    res.json(await queryPublic(dataStore, req.params.type, {
-      q: req.query.q,
-      moods,
-      ruleset: req.query.ruleset || undefined,
-      ownerId: req.query.ownerId || undefined,
-      limit: req.query.limit,
-      offset: req.query.offset,
-    }));
+    res.json(
+      await queryPublic(
+        dataStore,
+        req.params.type,
+        {
+          q: req.query.q,
+          moods,
+          ruleset: req.query.ruleset || undefined,
+          ownerId: req.query.ownerId || undefined,
+          limit: req.query.limit,
+          offset: req.query.offset,
+        },
+        textStore
+      )
+    );
   }));
 
   router.get('/public/:type/:publicId', asyncHandler(async (req, res) => {

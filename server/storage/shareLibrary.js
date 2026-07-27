@@ -13,6 +13,7 @@ import { getScenario } from './scenarioLibrary.js';
 import { listRegions, getRegion, listCategories, getCategory } from './worldContentLibrary.js';
 import { MOODS } from './moods.js';
 import { stripImageMarkers } from '../novelMarkers.js';
+import { summarizeSheet } from './characterSummary.js';
 
 function newPublicId() {
   return `pub_${crypto.randomBytes(6).toString('hex')}`;
@@ -76,8 +77,9 @@ export async function publishCharacter(dataStore, textStore, userId, worldId, ki
   const publicId = await resolvePublicId(dataStore, mapKey);
   await textStore.write(publicCharacterDocPath(publicId), character.raw);
   const worldMeta = await dataStore.get(worldMetaKey(userId, worldId));
+  const { displayName } = summarizeSheet(character.raw);
   const meta = await buildMeta(dataStore, 'characters', publicId, owner, {
-    title: name,
+    title: displayName || character.parsed?.name || name,
     kind,
     name,
     worldId,
@@ -159,8 +161,21 @@ export async function listPublic(dataStore, type) {
   return metas.sort((a, b) => b.publishedAt - a.publishedAt);
 }
 
-export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId, limit, offset } = {}) {
-  const all = await listPublic(dataStore, type);
+async function withCharacterDisplayName(textStore, meta) {
+  if (!textStore) return meta;
+  const raw = (await textStore.read(publicCharacterDocPath(meta.publicId))) ?? '';
+  const { displayName } = summarizeSheet(raw);
+  return displayName ? { ...meta, title: displayName } : meta;
+}
+
+export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId, limit, offset } = {}, textStore) {
+  const listed = await listPublic(dataStore, type);
+  // 旧公開データはtitleへ内部識別子を保存している。本文から表示名を補完し、
+  // 再公開されていない既存カードもPC/NPC名で表示・検索できるようにする。
+  const all =
+    type === 'characters'
+      ? await Promise.all(listed.map((meta) => withCharacterDisplayName(textStore, meta)))
+      : listed;
   const norm = (s) => String(s ?? '').toLowerCase();
   const query = norm(q).trim();
   const moodSet = new Set((moods ?? []).filter((m) => MOODS.includes(m)));
@@ -205,6 +220,10 @@ export async function getPublicItem(dataStore, textStore, type, publicId) {
   const meta = await dataStore.get(publicMetaKey(type, publicId));
   if (!meta) return null;
   const raw = (await textStore.read(ITEM_DOC_PATH[type](publicId))) ?? '';
+  if (type === 'characters') {
+    const { displayName } = summarizeSheet(raw);
+    return { ...meta, ...(displayName ? { title: displayName } : {}), raw };
+  }
   return { ...meta, raw };
 }
 

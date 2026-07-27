@@ -93,14 +93,14 @@ describe('publicContent routes — authentication-free gallery read', () => {
 
       // Publish character 1
       await dataStore.set(characterMetaKey(userId, worldId, 'pc', 'hero'), { id: 'hero', worldId, kind: 'pc', name: 'hero', revealed: null, parsed: null, parsedHash: null, updatedAt: Date.now() });
-      await textStore.write(characterDocPath(userId, worldId, 'pc', 'hero'), '## Hero');
+      await textStore.write(characterDocPath(userId, worldId, 'pc', 'hero'), 'PC名: 勇者アレン\n## Hero');
       const char1 = await publishCharacter(dataStore, textStore, userId, worldId, 'pc', 'hero', owner);
       expect(char1.ok).toBe(true);
 
       // Publish character 2 later
       await new Promise((resolve) => setTimeout(resolve, 10));
       await dataStore.set(characterMetaKey(userId, worldId, 'npc', 'villain'), { id: 'villain', worldId, kind: 'npc', name: 'villain', revealed: null, parsed: null, parsedHash: null, updatedAt: Date.now() });
-      await textStore.write(characterDocPath(userId, worldId, 'npc', 'villain'), '## Villain');
+      await textStore.write(characterDocPath(userId, worldId, 'npc', 'villain'), 'NPC名: 魔王ベル\n## Villain');
       const char2 = await publishCharacter(dataStore, textStore, userId, worldId, 'npc', 'villain', owner);
       expect(char2.ok).toBe(true);
 
@@ -108,10 +108,10 @@ describe('publicContent routes — authentication-free gallery read', () => {
       expect(res.status).toBe(200);
       expect(res.body.items.length).toBe(2);
       expect(res.body.items[0].publicId).toBe(char2.meta.publicId);
-      expect(res.body.items[0].title).toBe('villain');
+      expect(res.body.items[0].title).toBe('魔王ベル');
       expect(res.body.items[0].kind).toBe('npc');
       expect(res.body.items[1].publicId).toBe(char1.meta.publicId);
-      expect(res.body.items[1].title).toBe('hero');
+      expect(res.body.items[1].title).toBe('勇者アレン');
       expect(res.body.items[1].kind).toBe('pc');
     });
 

@@ -480,23 +480,43 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
     return (
       <Card key={s.id} style={{ cursor: 'pointer' }} onClick={() => onContinue(s.id)}>
         {/* 情報層 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
-              <div style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}>{s.title}</div>
-              {s.state?.current_scene && (
-                <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark, whiteSpace: 'nowrap' }}>
-                  シーン: {s.state.current_scene}
-                  {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
-                </div>
-              )}
+            <div
+              style={{
+                fontFamily: F_DISPLAY,
+                fontSize: 15,
+                color: COLORS.ink,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {s.title}
             </div>
+            {s.state?.current_scene && (
+              <div
+                style={{
+                  fontFamily: F_MONO,
+                  fontSize: 11,
+                  color: COLORS.brassDark,
+                  marginTop: 4,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                シーン: {s.state.current_scene}
+                {typeof s.state.turn_count === 'number' ? ` / ${s.state.turn_count}手` : ''}
+              </div>
+            )}
             <div
               style={{
                 fontFamily: F_BODY,
                 fontSize: 13,
                 color: COLORS.inkSoft,
                 opacity: 0.8,
+                marginTop: 4,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',

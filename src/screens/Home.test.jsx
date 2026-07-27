@@ -45,8 +45,13 @@ describe('Home', () => {
       },
     ];
     renderWithAuth(<Home sessions={sessions} storageOk={true} onNew={vi.fn()} onContinue={vi.fn()} />);
-    expect(screen.getByText('セッションA')).toBeInTheDocument();
-    expect(screen.getByText(/シーン:/)).toBeInTheDocument();
+    const title = screen.getByText('セッションA');
+    const scene = screen.getByText(/シーン:/);
+    expect(title).toBeInTheDocument();
+    expect(scene).toBeInTheDocument();
+    expect(title.nextElementSibling).toBe(scene);
+    expect(title.parentElement).not.toHaveStyle({ display: 'flex' });
+    expect(title).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' });
     expect(screen.getByText(/森の奥から物音がした。/)).toBeInTheDocument();
   });
 
