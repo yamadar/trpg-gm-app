@@ -8,10 +8,10 @@ let app;
 
 function buildApp(opts = {}) {
   const apiKey = 'apiKey' in opts ? opts.apiKey : 'test-key';
-  const { fetchImpl = vi.fn(), usage, model = 'gemini-text' } = opts;
+  const { fetchImpl = vi.fn(), usage, model = 'gemini-text', retryBaseDelayMs = 0 } = opts;
   app = express();
   app.use(express.json());
-  app.use('/api', createMessagesRouter({ apiKey, model, fetchImpl, usage }));
+  app.use('/api', createMessagesRouter({ apiKey, model, fetchImpl, usage, retryBaseDelayMs }));
 }
 
 describe('POST /messages', () => {
@@ -53,6 +53,41 @@ describe('POST /messages', () => {
     const res = await request(app).post('/api/messages').send({ model: 'x', messages: [] });
 
     expect(res.status).toBe(502);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries Gemini generation up to three attempts and returns a successful retry', async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new Error('temporary failure 1'))
+      .mockRejectedValueOnce(new Error('temporary failure 2'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'recovered' }] }, finishReason: 'STOP' }],
+        }),
+      });
+    buildApp({ fetchImpl });
+
+    const res = await request(app).post('/api/messages').send({ messages: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.content[0].text).toBe('recovered');
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns the last Gemini error after three consecutive failures', async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new Error('first error'))
+      .mockRejectedValueOnce(new Error('second error'))
+      .mockRejectedValueOnce(new Error('last error'));
+    buildApp({ fetchImpl });
+
+    const res = await request(app).post('/api/messages').send({ messages: [] });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'last error' });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it('returns 502 with the block reason when Gemini rejects the prompt', async () => {

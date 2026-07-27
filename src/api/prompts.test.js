@@ -138,6 +138,25 @@ describe('buildSystemBlocks', () => {
     expect(text).toContain('narrative・choices・state_updateのいずれにも含めない');
     expect(text).toContain('fumble');
   });
+
+  it('keeps narrative prose in plain form even when recent turns use polite form', () => {
+    const session = makeSession({
+      state: {
+        current_scene: '波止場',
+        flags: {},
+        history_summary: '',
+        recent_log: [{ role: 'gm', text: '港には深い霧が立ち込めています。' }],
+      },
+    });
+    const text = staticText(session);
+    const description = TURN_OUTPUT_FORMAT.schema.properties.narrative.description;
+
+    expect(text).toContain('必ず常体');
+    expect(text).toContain('直近のログが敬体でも引きずらず');
+    expect(text).toContain('NPCの台詞はこの制約の対象外');
+    expect(description).toContain('常体');
+    expect(description).toContain('です・ます調は使わない');
+  });
 });
 
 describe('ending_reached', () => {

@@ -3,8 +3,20 @@ import { asyncHandler } from './asyncHandler.js';
 import { generateText, GeminiTextApiError } from '../textProvider.js';
 
 const MESSAGES_TIMEOUT_MS = 120000;
+const MAX_GENERATION_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 500;
 
-export function createMessagesRouter({ apiKey, model, fetchImpl = fetch, usage }) {
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function createMessagesRouter({
+  apiKey,
+  model,
+  fetchImpl = fetch,
+  usage,
+  retryBaseDelayMs = RETRY_BASE_DELAY_MS,
+}) {
   const router = Router();
 
   router.post('/messages', asyncHandler(async (req, res) => {
@@ -34,14 +46,22 @@ export function createMessagesRouter({ apiKey, model, fetchImpl = fetch, usage }
       }
     }
     try {
-      const data = await generateText({
-        apiKey,
-        model,
-        request: req.body,
-        fetchImpl,
-        timeoutMs: MESSAGES_TIMEOUT_MS,
-      });
-      res.json(data);
+      for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt += 1) {
+        try {
+          const data = await generateText({
+            apiKey,
+            model,
+            request: req.body,
+            fetchImpl,
+            timeoutMs: MESSAGES_TIMEOUT_MS,
+          });
+          res.json(data);
+          return;
+        } catch (e) {
+          if (attempt === MAX_GENERATION_ATTEMPTS) throw e;
+          await wait(retryBaseDelayMs * attempt);
+        }
+      }
     } catch (e) {
       const status = e instanceof GeminiTextApiError && e.status >= 400 && e.status < 500 ? e.status : 502;
       res.status(status).json({ error: e.message });

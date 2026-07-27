@@ -28,11 +28,13 @@ const COMPOSER_RESERVE = 140;
 // 文字列なので、同じ場面が続いていても言い回しが揺れて「シーン変化」と判定されうる。
 // 変化の検出だけに任せると挿絵が毎ターン挟まるため、最低間隔で頻度に上限を掛ける。
 const AUTO_ILLUSTRATE_MIN_TURNS = 3;
+export const SLOW_RESPONSE_NOTICE_MS = 12000;
 
 export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [slowResponse, setSlowResponse] = useState(false);
   const [error, setError] = useState('');
   const [saveWarning, setSaveWarning] = useState('');
   const [narrating, setNarrating] = useState(false);
@@ -124,7 +126,9 @@ export default function Play({ session, setSession }) {
         return false;
       }
       setBusy(true);
+      setSlowResponse(false);
       setError('');
+      const slowResponseTimer = setTimeout(() => setSlowResponse(true), SLOW_RESPONSE_NOTICE_MS);
       try {
         const { result, roll, resourceChange } = await takeTurn(session, playerText, { allowRoll });
         const norm = normalizeTurnResult(result);
@@ -205,6 +209,8 @@ export default function Play({ session, setSession }) {
         setError('GM応答の取得に失敗した: ' + e.message);
         return false;
       } finally {
+        clearTimeout(slowResponseTimer);
+        setSlowResponse(false);
         setBusy(false);
       }
     },
@@ -509,7 +515,10 @@ export default function Play({ session, setSession }) {
             // 応答待ちであることは目でも支援技術でも取れるようにする。ログが空の
             // セッション開始直後は、この一行だけが「動いている」ことの唯一の手掛かりになる。
             <div role="status" style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
-              GMが考えている…
+              <div>GMが考えている…</div>
+              {slowResponse && (
+                <div style={{ marginTop: 4 }}>通常より時間がかかっています。応答を待っています…</div>
+              )}
             </div>
           )}
           {error && <div style={{ color: COLORS.stamp, fontSize: 13 }}>{error}</div>}

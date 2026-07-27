@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
-import Play from './Play.jsx';
+import Play, { SLOW_RESPONSE_NOTICE_MS } from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
 import * as storage from '../storage/index.js';
 import * as sceneImageClient from '../api/sceneImageClient.js';
@@ -84,6 +84,49 @@ describe('Play', () => {
     renderWithAuth(<Harness initialSession={makeSession()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     expect(screen.getByText('進む')).toBeInTheDocument();
+  });
+
+  it('shows a delayed-response notice after 12 seconds and clears it when generation completes', async () => {
+    vi.useFakeTimers();
+    let resolveResponse;
+    global.fetch.mockReturnValueOnce(new Promise((resolve) => {
+      resolveResponse = resolve;
+    }));
+
+    try {
+      renderWithAuth(<Harness initialSession={makeSession()} />);
+      expect(screen.getByText('GMが考えている…')).toBeInTheDocument();
+      expect(screen.queryByText(/通常より時間がかかっています/)).not.toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(SLOW_RESPONSE_NOTICE_MS);
+      });
+      expect(screen.getByText('通常より時間がかかっています。応答を待っています…')).toBeInTheDocument();
+
+      await act(async () => {
+        resolveResponse({
+          ok: true,
+          json: async () => ({
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                narrative: '待った末に物語が始まった。',
+                state_update: {},
+                choices: [],
+              }),
+            }],
+          }),
+        });
+        await Promise.resolve();
+      });
+
+      await vi.waitFor(() => {
+        expect(screen.getByText('待った末に物語が始まった。')).toBeInTheDocument();
+        expect(screen.queryByText(/通常より時間がかかっています/)).not.toBeInTheDocument();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not request an opening scene when the log already has entries', async () => {
