@@ -228,6 +228,18 @@ describe('generateNovel', () => {
     expect(systemOf(fetchImpl)).toContain('主人公の名前は「カイ」である');
   });
 
+  it('limits full names and epithets to places where they help the reader', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, pcName: '「不倒の」ジャッカル', fetchImpl });
+
+    const system = systemOf(fetchImpl);
+    expect(system).toContain('主人公の名前は「「不倒の」ジャッカル」である');
+    expect(system).toContain('毎回そのまま繰り返す指定ではない');
+    expect(system).toContain('姓名・二つ名・肩書きを含む完全な名前表記');
+    expect(system).toContain('二つ名や肩書きを毎回付けないこと');
+    expect(system).toContain('場面と人物同士の関係に自然な姓・名・略称');
+  });
+
   // 名無しのまま遊び終わった既存セッションの救済。呼称をモデルに一つ決めさせる。
   it('tells the model to coin one consistent designation when pcName is empty', async () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
@@ -236,7 +248,7 @@ describe('generateNovel', () => {
     const system = systemOf(fetchImpl);
     expect(system).toContain('一つだけ定め');
     expect(system).not.toContain('主人公の名前は「');
-    // 固定の呼び名を作らせる前に、まずログから読み取れる名前を優先させる文言を検証する。
+    // 基本呼称を作らせる前に、まずログから読み取れる名前を優先させる文言を検証する。
     // これが無いと旧文言(「名前はログに存在しない」と断言するだけ)でも通ってしまう。
     expect(system).toContain('ログから読み取れるならその名前を使い');
   });
