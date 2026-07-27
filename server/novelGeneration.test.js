@@ -249,6 +249,40 @@ describe('generateNovel', () => {
     }
   });
 
+  it('isolates speech patterns by speaker when novelizing multiple characters', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({
+      ...BASE,
+      transcript: [
+        'PL: 任せるガル',
+        'GM: ミケが「行くにゃ」と言った。ハンゾウは「承知したでござる」と応じた。',
+      ].join('\n'),
+      pcName: 'ジャッカル',
+      fetchImpl,
+    });
+
+    const system = systemOf(fetchImpl);
+    expect(system).toContain('一人のキャラクターだけに属する設定');
+    expect(system).toContain('話者本人の台詞だけから口調を判断');
+    expect(system).toContain('PCの口調をNPCへ、NPCの口調をPCや別のNPCへ転用しない');
+    expect(system).toContain('PL行の語尾・口癖・方言・一人称は主人公本人だけ');
+    expect(system).toContain('他の人物の特徴的な語尾・口癖・方言で補わない');
+    expect(system).toContain('台詞が切り替わるたびに話者を再確認');
+    expect(system).toContain('進行ログの一部で口調が別人物と混ざっていても');
+  });
+
+  it('keeps speaker-specific speech rules in continuation requests', async () => {
+    const fetchImpl = sequenceFetch(
+      { text: '「先へ行くにゃ」', stop_reason: 'max_tokens' },
+      { text: 'とミケは言った。', stop_reason: 'end_turn' },
+    );
+    await generateNovel({ ...BASE, fetchImpl });
+
+    const continuation = bodyOf(fetchImpl, 1).contents.at(-1).parts[0].text;
+    expect(continuation).toContain('話者本人の口調だけを維持');
+    expect(continuation).toContain('直前に話した別人物の語尾・口癖・方言を混ぜない');
+  });
+
   // 一人称では主人公が「私」等になり、他の人物と衝突しない。主人公の行は不要。
   it('drops the protagonist rule in first person but keeps the rule for the rest of the cast', async () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
