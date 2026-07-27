@@ -29,6 +29,10 @@ export async function getPublic(type, publicId) {
   return apiFetch(`/api/public/${encodeURIComponent(type)}/${encodeURIComponent(publicId)}`);
 }
 
+export function publicNovelImageUrl(publicId, imageId) {
+  return `/api/public/novels/${encodeURIComponent(publicId)}/images/${encodeURIComponent(imageId)}`;
+}
+
 export async function publishWorld(worldId) {
   return apiFetch(`/api/publish/worlds/${encodeURIComponent(worldId)}`, { method: 'POST' });
 }

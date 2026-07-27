@@ -1,7 +1,14 @@
 import { scenarioMetaKey, scenarioDocPath } from './paths.js';
 
+// rawはユーザー入力そのものをsource of truthとして保存する。directorGuideはrawを
+// 書き換えた本文ではなく、AI GMが進行判断に使う派生データ。
 // sourcePublicId の扱いは saveWorld と同じ(取り込み元の印を編集保存で失わせない)。
-export async function saveScenario(dataStore, textStore, userId, { worldId, id, title, raw, recommendedRuleset, moods, sourcePublicId }) {
+export async function saveScenario(
+  dataStore,
+  textStore,
+  userId,
+  { worldId, id, title, raw, recommendedRuleset, moods, sourcePublicId, directorGuide },
+) {
   await textStore.write(scenarioDocPath(userId, worldId, id), raw);
   const prev = await dataStore.get(scenarioMetaKey(userId, worldId, id));
   const meta = {
@@ -11,6 +18,9 @@ export async function saveScenario(dataStore, textStore, userId, { worldId, id, 
     recommendedRuleset: recommendedRuleset ?? null,
     moods: Array.isArray(moods) ? moods : [],
     sourcePublicId: sourcePublicId ?? prev?.sourcePublicId ?? null,
+    // rawの更新と古いガイドの組み合わせを残さない。解析結果を同時に渡さない
+    // 内部保存経路ではnullへ戻し、誤った進行判断より原文単独を優先する。
+    directorGuide: directorGuide ?? null,
     updatedAt: Date.now(),
   };
   await dataStore.set(scenarioMetaKey(userId, worldId, id), meta);
@@ -27,7 +37,11 @@ export async function getScenario(dataStore, textStore, userId, worldId, id) {
 export async function listScenarios(dataStore, userId, worldId) {
   const keys = await dataStore.list(`users/${userId}/worlds/${worldId}/scenarios`);
   const metas = await Promise.all(keys.map((k) => dataStore.get(k)));
-  return metas.filter(Boolean).map((m) => ({ ...m, moods: m.moods ?? [] }));
+  // 進行ガイドは大きく、一覧カードでは不要。シナリオ選択後のgetScenarioで取得する。
+  return metas.filter(Boolean).map(({ directorGuide: _directorGuide, ...m }) => ({
+    ...m,
+    moods: m.moods ?? [],
+  }));
 }
 
 export async function deleteScenario(dataStore, textStore, userId, worldId, id) {

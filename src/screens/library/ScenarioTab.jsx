@@ -300,7 +300,7 @@ export default function ScenarioTab({ worldId }) {
             </select>
           </Field>
           <Button variant="brass" onClick={handleCreate} disabled={busy || !newTitle.trim()}>
-            {busy ? '作成中…' : '作成する'}
+            {busy ? 'AI解析・作成中…' : '作成する'}
           </Button>
         </Card>
       )}
@@ -342,7 +342,7 @@ export default function ScenarioTab({ worldId }) {
           </Field>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button variant="brass" onClick={handleSave} disabled={busy}>
-              {busy ? '保存中…' : '保存する'}
+              {busy ? 'AI解析・保存中…' : '保存する'}
             </Button>
             <Button variant="ghost" onClick={() => setDeleteTarget(selectedId)} disabled={busy}>
               削除

@@ -8,6 +8,7 @@ import request from 'supertest';
 import { createPublicContentRouter } from './publicContent.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
+import { createFsImageStore } from '../storage/imageStore.js';
 import {
   publishWorld,
   publishCharacter,
@@ -25,25 +26,29 @@ import {
   scenarioDocPath,
   sessionKey,
   sessionNovelDocPath,
+  sessionNovelMetaKey,
+  sessionImagePath,
 } from '../storage/paths.js';
 import { findOrCreateUser, updateUserProfile } from '../auth/users.js';
 
 let dir;
 let dataStore;
 let textStore;
+let imageStore;
 let app;
 
 function buildApp() {
   app = express();
   app.use(express.json());
   // NOTE: no req.userId middleware — this router is authentication-free
-  app.use('/api', createPublicContentRouter({ dataStore, textStore }));
+  app.use('/api', createPublicContentRouter({ dataStore, textStore, imageStore }));
 }
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'public-content-route-test-'));
   dataStore = createFsDataStore(dir);
   textStore = createFsTextStore(dir);
+  imageStore = createFsImageStore(dir);
   buildApp();
 });
 
@@ -327,17 +332,20 @@ describe('publicContent routes — authentication-free gallery read', () => {
       expect(res.body.updatedAt).toBeDefined();
     });
 
-    it('returns novel detail with raw content', async () => {
+    it('returns novel detail with image mapping and serves its public image without auth', async () => {
       const owner = { id: 'usr_8', displayName: 'Henry' };
       const userId = 'usr_8';
       const sessionId = 'sess_epic';
 
       // Set up session
       await dataStore.set(sessionKey(userId, sessionId), { id: sessionId, title: 'Epic Adventure' });
-      const novelText = '# The Adventure Begins\nOnce upon a time in a far away land...';
+      const novelText = '# The Adventure Begins\n〈挿絵1〉\nOnce upon a time in a far away land...';
       await textStore.write(sessionNovelDocPath(userId, sessionId), novelText);
+      await dataStore.set(sessionNovelMetaKey(userId, sessionId), { imageIds: ['img_scene1'] });
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      await imageStore.write(sessionImagePath(userId, sessionId, 'img_scene1'), png);
 
-      const pub = await publishNovel(dataStore, textStore, userId, sessionId, owner);
+      const pub = await publishNovel(dataStore, textStore, userId, sessionId, owner, imageStore);
       expect(pub.ok).toBe(true);
 
       const res = await request(app).get(`/api/public/novels/${pub.meta.publicId}`);
@@ -345,10 +353,18 @@ describe('publicContent routes — authentication-free gallery read', () => {
       expect(res.body.publicId).toBe(pub.meta.publicId);
       expect(res.body.title).toBe('Epic Adventure');
       expect(res.body.raw).toBe(novelText);
+      expect(res.body.imageIds).toEqual(['img_scene1']);
       expect(res.body.ownerId).toBe('usr_8');
       expect(res.body.ownerName).toBe('Henry');
       expect(res.body.publishedAt).toBeDefined();
       expect(res.body.updatedAt).toBeDefined();
+
+      const imageRes = await request(app).get(
+        `/api/public/novels/${pub.meta.publicId}/images/img_scene1`
+      );
+      expect(imageRes.status).toBe(200);
+      expect(imageRes.headers['content-type']).toBe('image/png');
+      expect(imageRes.body).toEqual(png);
     });
 
     it('returns 404 when publicId does not exist for worlds', async () => {

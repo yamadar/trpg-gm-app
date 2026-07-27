@@ -150,6 +150,14 @@ export function publicNovelDocPath(publicId) {
   return `public/novels/${publicId}/novel.md`;
 }
 
+export function publicNovelImageDir(publicId) {
+  return `public/novels/${publicId}/images`;
+}
+
+export function publicNovelImagePath(publicId, imageId) {
+  return `public/novels/${publicId}/images/${imageId}.png`;
+}
+
 export function publishWorldMapKey(userId, worldId) {
   return `users/${userId}/publish/worlds/${worldId}`;
 }

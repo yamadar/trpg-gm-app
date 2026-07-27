@@ -217,10 +217,11 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
     try {
       async function trySaveToLibrary(fn) {
         try {
-          await fn();
+          return await fn();
         } catch (e) {
           console.error('library save failed', e);
           setLibraryWarning('素材ライブラリへの保存に失敗した(セッションはこのまま開始できる): ' + e.message);
+          return null;
         }
       }
 
@@ -251,19 +252,22 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
 
       const pcForGen = pcMode === 'existing' && selectedPC ? selectedPC.raw : pcRaw;
       let scenario;
+      let scenarioDirectorGuide = null;
       if (scenarioMode === 'existing' && selectedScenario) {
         scenario = selectedScenario.raw;
+        scenarioDirectorGuide = selectedScenario.directorGuide ?? null;
       } else if (scenarioMode === 'generate') {
         scenario = await generateScenario(genre, pcForGen, worldSummary);
         if (resolvedWorldId) {
           const scenarioId = makeId(scenarioTitle || genre);
-          await trySaveToLibrary(() =>
+          const savedScenario = await trySaveToLibrary(() =>
             putScenario(resolvedWorldId, scenarioId, {
               title: scenarioTitle || genre || '無題のシナリオ',
               raw: scenario,
               recommendedRuleset: null,
             })
           );
+          scenarioDirectorGuide = savedScenario?.directorGuide ?? null;
         }
       } else {
         scenario = scenarioRaw;
@@ -271,13 +275,14 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
           scenario = await generateScenario('自由なジャンルで', pcForGen, worldSummary);
         } else if (resolvedWorldId) {
           const scenarioId = makeId(scenarioTitle);
-          await trySaveToLibrary(() =>
+          const savedScenario = await trySaveToLibrary(() =>
             putScenario(resolvedWorldId, scenarioId, {
               title: scenarioTitle || '無題のシナリオ',
               raw: scenario,
               recommendedRuleset: null,
             })
           );
+          scenarioDirectorGuide = savedScenario?.directorGuide ?? null;
         }
       }
 
@@ -344,7 +349,10 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
         worldId: resolvedWorldId || undefined,
         campaignId: campaignContext?.campaignId,
         world: { raw: worldRawForSession, summary: worldSummary },
-        scenario: { raw: scenario },
+        scenario: {
+          raw: scenario,
+          ...(scenarioDirectorGuide ? { directorGuide: scenarioDirectorGuide } : {}),
+        },
         // 雰囲気タグ: World優先、無ければScenarioから継承(Play画面の配色に使う)
         moods:
           worldMode === 'existing' && selectedWorld?.moods?.length

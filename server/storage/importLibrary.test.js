@@ -263,6 +263,11 @@ describe('importCharacter', () => {
 
 describe('importScenario', () => {
   it('copies with recommendedRuleset preserved', async () => {
+    const directorGuide = {
+      schemaVersion: 1,
+      player_goal: '失踪者を見つける',
+      ending_signals: ['失踪者の結末を描写した'],
+    };
     await seedWorld('usr_a', 'w1', 'テスト世界');
     await saveScenario(dataStore, textStore, 'usr_a', {
       worldId: 'w1',
@@ -270,6 +275,7 @@ describe('importScenario', () => {
       title: '失踪事件',
       raw: '## シナリオ概要',
       recommendedRuleset: 'coc',
+      directorGuide,
     });
     const { meta: pubMeta } = await publishScenario(dataStore, textStore, 'usr_a', 'w1', 'sc1', OWNER);
 
@@ -283,10 +289,16 @@ describe('importScenario', () => {
       title: '失踪事件',
       recommendedRuleset: 'coc',
       raw: '## シナリオ概要',
+      directorGuide,
     });
 
     const imported = await getScenario(dataStore, textStore, 'usr_b', 'target', result.meta.id);
-    expect(imported).toMatchObject({ title: '失踪事件', recommendedRuleset: 'coc', raw: '## シナリオ概要' });
+    expect(imported).toMatchObject({
+      title: '失踪事件',
+      recommendedRuleset: 'coc',
+      raw: '## シナリオ概要',
+      directorGuide,
+    });
 
     // usr_a側の元データは無傷
     const source = await getScenario(dataStore, textStore, 'usr_a', 'w1', 'sc1');

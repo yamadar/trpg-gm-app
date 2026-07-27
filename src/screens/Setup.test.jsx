@@ -160,6 +160,11 @@ describe('Setup', () => {
       title: '失踪事件',
       raw: 'シナリオ本文',
       recommendedRuleset: 'coc7e',
+      directorGuide: {
+        schemaVersion: 1,
+        player_goal: '失踪者を見つける',
+        ending_signals: ['失踪事件の結果を描写した'],
+      },
     });
     const onStart = vi.fn();
 
@@ -186,6 +191,11 @@ describe('Setup', () => {
     expect(session.rulesetId).toBe('coc7e');
     expect(session.world.raw).toBe('要約本文');
     expect(session.scenario.raw).toBe('シナリオ本文');
+    expect(session.scenario.directorGuide).toEqual({
+      schemaVersion: 1,
+      player_goal: '失踪者を見つける',
+      ending_signals: ['失踪事件の結果を描写した'],
+    });
     expect(session.ruleset.id).toBe('coc7e');
     expect(session.ruleset.label).toBe('CoC7e風');
     expect(session.ruleset.growthUnit).toBe('経験値');

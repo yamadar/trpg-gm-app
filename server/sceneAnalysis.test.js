@@ -26,6 +26,20 @@ describe('analyzeScene', () => {
     expect(out.presentNames).toEqual(['カイ', 'ゴブリンの長']);
     expect(out.newAppearances).toEqual([{ name: 'ゴブリンの長', description: '緑の肌、赤い眼帯' }]);
   });
+  it('requires stable species, colors, clothing, and weapon details in new appearances', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      geminiJson({ present_names: [], new_appearances: [] })
+    );
+    await analyzeScene({ narrative: '戦い', registry: {}, pcRaw: '', apiKey: 'k', fetchImpl });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    const system = body.systemInstruction.parts[0].text;
+    expect(system).toContain('種族');
+    expect(system).toContain('肌の色');
+    expect(system).toContain('髪型と髪色');
+    expect(system).toContain('服装の種類と主要な色');
+    expect(system).toContain('武器の種類・素材・形状・色');
+    expect(system).toContain('武器なし');
+  });
   it('filters malformed entries', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       geminiJson({ present_names: ['A', 'B', 5], new_appearances: [{ name: 'A' }, { name: 'B', description: 'ok' }] })

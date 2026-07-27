@@ -8,7 +8,7 @@ import {
   getPublishedWorlds, getPublishedCharacters, getPublishedScenarios, getPublishedNovels,
 } from '../storage/shareLibrary.js';
 
-export function createPublishRouter({ dataStore, textStore }) {
+export function createPublishRouter({ dataStore, textStore, imageStore }) {
   const router = Router();
   for (const p of ['worldId', 'name', 'scenarioId', 'sessionId']) router.param(p, idParamGuard);
   router.param('kind', kindParamGuard);
@@ -40,7 +40,14 @@ export function createPublishRouter({ dataStore, textStore }) {
     send(res, await publishScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.scenarioId, await ownerOf(req)));
   }));
   router.post('/publish/sessions/:sessionId/novel', asyncHandler(async (req, res) => {
-    send(res, await publishNovel(dataStore, textStore, req.userId, req.params.sessionId, await ownerOf(req)));
+    send(res, await publishNovel(
+      dataStore,
+      textStore,
+      req.userId,
+      req.params.sessionId,
+      await ownerOf(req),
+      imageStore
+    ));
   }));
 
   router.delete('/publish/worlds/:worldId', asyncHandler(async (req, res) => {
@@ -56,7 +63,7 @@ export function createPublishRouter({ dataStore, textStore }) {
     res.status(204).end();
   }));
   router.delete('/publish/sessions/:sessionId/novel', asyncHandler(async (req, res) => {
-    await unpublishNovel(dataStore, textStore, req.userId, req.params.sessionId);
+    await unpublishNovel(dataStore, textStore, req.userId, req.params.sessionId, imageStore);
     res.status(204).end();
   }));
 

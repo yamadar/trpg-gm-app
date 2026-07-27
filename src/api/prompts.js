@@ -138,6 +138,9 @@ export function buildSystemBlocks(session) {
     session.pc.goal || session.pc.bonds
       ? `\n# PCの目標・因縁(抽出済み)\ngoal: ${session.pc.goal || '(未設定)'}\nbonds: ${session.pc.bonds || '(未設定)'}\n`
       : '';
+  const directorGuideSection = session.scenario?.directorGuide
+    ? `\n# AI進行ガイド(原文から抽出した派生データ)\n${JSON.stringify(session.scenario.directorGuide, null, 2)}\n`
+    : '';
 
   const text = `あなたはTRPGのGM。以下の設定に従い物語を進行する。プレイヤーが楽しめるよう、緊迫感や盛り上がりの演出を大事にすること。
 
@@ -147,6 +150,13 @@ ${session.world.summary}
 # シナリオ
 ${session.scenario.raw}
 上記のうち「GM専用情報」節の内容は、物語内で自然に明かされた場合を除き、narrative・choices・state_updateのいずれにも含めないこと。
+${directorGuideSection}
+# シナリオ進行の優先順位
+- シナリオ原文をsource of truthとする。AI進行ガイドは原文から作った進行用索引であり、両者が食い違う場合は必ず原文を優先する。
+- AI進行ガイドがある場合、現在の物語要約・既知フラグ・直近ログと照合し、現在フェーズと未達成の完了条件を判断する。停滞時はnext_phase_guidanceまたはfail_forwardを使い、次の重要場面へ自然に誘導する。
+- climax.triggerを満たしたらクライマックスへ進め、解決を不必要に引き延ばさない。
+- endingsのいずれかのconditionsまたはending_signalsを満たし、その結果をnarrativeで描写したターンではending_reached=trueにする。結末到達後に新しい主要事件を追加しない。
+- ending_reached=trueのターンはchoicesを空配列にし、物語を終える。クライマックス突入だけでは終了扱いにせず、対立・選択・主目的の結果が確定してから終了する。
 
 # PC設定
 ${session.pc.raw}

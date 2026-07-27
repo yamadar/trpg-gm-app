@@ -129,6 +129,7 @@ export async function importScenario(dataStore, textStore, userId, publicId, tar
     raw: pub.raw,
     recommendedRuleset: pub.recommendedRuleset ?? null,
     moods: pub.moods ?? [],
+    directorGuide: pub.directorGuide ?? null,
     sourcePublicId: publicId,
   });
   return { ok: true, reused: false, meta: scenario };

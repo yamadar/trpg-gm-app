@@ -3,13 +3,14 @@ import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { queryPublic, getPublicWorld, getPublicItem } from '../storage/shareLibrary.js';
 import { getUser } from '../auth/users.js';
-import { starterManifestKey } from '../storage/paths.js';
+import { publicMetaKey, publicNovelImagePath, starterManifestKey } from '../storage/paths.js';
 
 const TYPES = new Set(['worlds', 'characters', 'scenarios', 'novels']);
 
-export function createPublicContentRouter({ dataStore, textStore }) {
+export function createPublicContentRouter({ dataStore, textStore, imageStore }) {
   const router = Router();
   router.param('publicId', idParamGuard);
+  router.param('imageId', idParamGuard);
 
   // 未シードは正常系。404にすると「まだ無い」を UI がエラーとして扱わざるを得なくなる。
   router.get('/starters', asyncHandler(async (req, res) => {
@@ -37,6 +38,22 @@ export function createPublicContentRouter({ dataStore, textStore }) {
         textStore
       )
     );
+  }));
+
+  router.get('/public/novels/:publicId/images/:imageId', asyncHandler(async (req, res) => {
+    const meta = await dataStore.get(publicMetaKey('novels', req.params.publicId));
+    if (!meta || !Array.isArray(meta.imageIds) || !meta.imageIds.includes(req.params.imageId) || !imageStore) {
+      res.status(404).json({ error: 'image not found' });
+      return;
+    }
+    const image = await imageStore.read(publicNovelImagePath(req.params.publicId, req.params.imageId));
+    if (!image) {
+      res.status(404).json({ error: 'image not found' });
+      return;
+    }
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(image);
   }));
 
   router.get('/public/:type/:publicId', asyncHandler(async (req, res) => {

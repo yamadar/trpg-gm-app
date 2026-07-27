@@ -33,6 +33,44 @@ describe('Scenario library functions', () => {
     expect(scenario).toMatchObject({ id: 'sc1', worldId: 'w1', title: '失踪事件', raw: '## シナリオ概要' });
   });
 
+  it('keeps raw unchanged as source of truth and stores the derived director guide separately', async () => {
+    const raw = '  自由記述\n改行もそのまま\n';
+    const directorGuide = {
+      schemaVersion: 1,
+      player_goal: '事件を解決する',
+      ending_signals: ['事件の結果を描写した'],
+    };
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: 'A',
+      raw,
+      directorGuide,
+    });
+
+    const scenario = await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1');
+    expect(scenario.raw).toBe(raw);
+    expect(scenario.directorGuide).toEqual(directorGuide);
+  });
+
+  it('clears a stale director guide when raw is saved without a matching analysis', async () => {
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: 'A',
+      raw: '旧原文',
+      directorGuide: { schemaVersion: 1, player_goal: '旧目的' },
+    });
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: 'A',
+      raw: '新原文',
+    });
+
+    expect((await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1')).directorGuide).toBeNull();
+  });
+
   it('lists scenarios scoped to a world', async () => {
     await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc1', title: 'A', raw: 'a' });
     await saveScenario(dataStore, textStore, 'usr_1', { worldId: 'w1', id: 'sc2', title: 'B', raw: 'b' });

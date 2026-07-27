@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './dataStore.js';
 import { createFsTextStore } from './textStore.js';
+import { createFsImageStore } from './imageStore.js';
 import { saveWorld } from './worldLibrary.js';
 import { saveRegion, saveCategory, saveWorldSource, deleteRegion } from './worldContentLibrary.js';
 import { saveCharacter, saveCharacterParsed } from './characterLibrary.js';
@@ -17,12 +18,15 @@ import {
   publicCharacterDocPath,
   publicScenarioDocPath,
   publicNovelDocPath,
+  publicNovelImagePath,
   publishWorldMapKey,
   publishCharacterMapKey,
   publishScenarioMapKey,
   publishNovelMapKey,
   sessionKey,
   sessionNovelDocPath,
+  sessionNovelMetaKey,
+  sessionImagePath,
 } from './paths.js';
 import {
   publishWorld,
@@ -49,11 +53,13 @@ const OWNER = { id: 'usr_1', displayName: '太郎' };
 let dir;
 let dataStore;
 let textStore;
+let imageStore;
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'share-library-test-'));
   dataStore = createFsDataStore(dir);
   textStore = createFsTextStore(dir);
+  imageStore = createFsImageStore(dir);
 });
 
 afterEach(async () => {
@@ -288,13 +294,18 @@ describe('publishScenario', () => {
 });
 
 describe('publishNovel', () => {
-  it('公開小説には挿絵マーカーが含まれない', async () => {
+  it('公開小説へ挿絵マーカーと画像スナップショットを保存する', async () => {
     await dataStore.set(sessionKey('usr_1', 'sess9'), { id: 'sess9', title: '挿絵つき冒険' });
     await textStore.write(sessionNovelDocPath('usr_1', 'sess9'), '前\n〈挿絵1〉\n後');
-    const { ok, meta } = await publishNovel(dataStore, textStore, 'usr_1', 'sess9', OWNER);
+    await dataStore.set(sessionNovelMetaKey('usr_1', 'sess9'), { imageIds: ['img_scene1'] });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await imageStore.write(sessionImagePath('usr_1', 'sess9', 'img_scene1'), png);
+    const { ok, meta } = await publishNovel(dataStore, textStore, 'usr_1', 'sess9', OWNER, imageStore);
     expect(ok).toBe(true);
     const publicText = await textStore.read(publicNovelDocPath(meta.publicId));
-    expect(publicText).toBe('前\n後');
+    expect(publicText).toBe('前\n〈挿絵1〉\n後');
+    expect(meta.imageIds).toEqual(['img_scene1']);
+    expect(await imageStore.read(publicNovelImagePath(meta.publicId, 'img_scene1'))).toEqual(png);
   });
 
   it('requires the session and the novel to exist', async () => {

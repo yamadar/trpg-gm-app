@@ -81,6 +81,27 @@ describe('buildSystemBlocks', () => {
     expect(text).toContain('PC名: アリス');
   });
 
+  it('uses a saved director guide for phase guidance and explicit ending decisions', () => {
+    const text = staticText(
+      makeSession({
+        scenario: {
+          raw: '原文の結末',
+          directorGuide: {
+            schemaVersion: 1,
+            player_goal: '封印を解決する',
+            ending_signals: ['最終判断の結果を描写した'],
+          },
+        },
+      }),
+    );
+    expect(text).toContain('# AI進行ガイド');
+    expect(text).toContain('封印を解決する');
+    expect(text).toContain('ending_reached=true');
+    expect(text).toContain('choicesを空配列');
+    expect(text).toContain('原文をsource of truth');
+    expect(text).toContain('食い違う場合は必ず原文を優先');
+  });
+
   it('does not include per-turn state (scene, flags, log)', () => {
     const text = staticText(makeSession());
     expect(text).not.toContain('波止場');

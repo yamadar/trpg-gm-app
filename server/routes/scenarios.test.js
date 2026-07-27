@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +43,88 @@ describe('scenarios routes', () => {
     const res = await request(app).get('/api/worlds/w1/scenarios/sc1');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: 'sc1', worldId: 'w1', title: '失踪事件', raw: '## シナリオ概要' });
+  });
+
+  it('analyses on PUT, preserves raw byte-for-byte, and saves the director guide', async () => {
+    const directorGuide = {
+      schemaVersion: 1,
+      player_goal: '失踪者を見つける',
+      ending_signals: ['失踪者の結末を描写した'],
+    };
+    const scenarioAnalyzer = vi.fn().mockResolvedValue(directorGuide);
+    const analysedApp = express();
+    analysedApp.use(express.json());
+    analysedApp.use((req, res, next) => {
+      req.userId = 'usr_test';
+      next();
+    });
+    analysedApp.use('/api', createScenariosRouter({ dataStore, textStore, scenarioAnalyzer }));
+    const raw = '  自由記述\n末尾改行も保持\n';
+
+    const put = await request(analysedApp)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: '失踪事件', raw });
+    expect(put.status).toBe(200);
+    expect(scenarioAnalyzer).toHaveBeenCalledWith({ title: '失踪事件', raw });
+    expect(put.body.raw).toBe(raw);
+    expect(put.body.directorGuide).toEqual(directorGuide);
+
+    const get = await request(analysedApp).get('/api/worlds/w1/scenarios/sc1');
+    expect(get.body.raw).toBe(raw);
+    expect(get.body.directorGuide).toEqual(directorGuide);
+  });
+
+  it('does not replace source text when analysis fails', async () => {
+    await request(app)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: '既存', raw: '既存原文' });
+    const analysedApp = express();
+    analysedApp.use(express.json());
+    analysedApp.use((req, res, next) => {
+      req.userId = 'usr_test';
+      next();
+    });
+    analysedApp.use(
+      '/api',
+      createScenariosRouter({
+        dataStore,
+        textStore,
+        scenarioAnalyzer: vi.fn().mockRejectedValue(new Error('overloaded')),
+      }),
+    );
+
+    const put = await request(analysedApp)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: '更新', raw: '未解析の新原文' });
+    expect(put.status).toBe(502);
+
+    const get = await request(app).get('/api/worlds/w1/scenarios/sc1');
+    expect(get.body.title).toBe('既存');
+    expect(get.body.raw).toBe('既存原文');
+  });
+
+  it('charges message usage before scenario analysis', async () => {
+    const usage = { consume: vi.fn().mockResolvedValue({ ok: false, resetAt: 123 }) };
+    const scenarioAnalyzer = vi.fn();
+    const analysedApp = express();
+    analysedApp.use(express.json());
+    analysedApp.use((req, res, next) => {
+      req.userId = 'usr_test';
+      next();
+    });
+    analysedApp.use('/api', createScenariosRouter({
+      dataStore,
+      textStore,
+      scenarioAnalyzer,
+      usage,
+    }));
+
+    const put = await request(analysedApp)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({ title: '題', raw: '原文' });
+    expect(put.status).toBe(429);
+    expect(usage.consume).toHaveBeenCalledWith('usr_test', 'messages');
+    expect(scenarioAnalyzer).not.toHaveBeenCalled();
   });
 
   it('lists scenarios scoped to a world', async () => {

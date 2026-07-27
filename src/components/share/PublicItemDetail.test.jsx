@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
-import PublicItemDetail, { publicMetaLine } from './PublicItemDetail.jsx';
+import PublicItemDetail, { publicMetaLine, publicNovelBlocks } from './PublicItemDetail.jsx';
 import * as shareClient from '../../api/shareClient.js';
 import * as worldLibraryClient from '../../api/worldLibraryClient.js';
 import { renderWithAuth } from '../../test/renderWithAuth.jsx';
@@ -16,6 +16,17 @@ describe('publicMetaLine', () => {
   it('formats owner name and localized published date', () => {
     const line = publicMetaLine({ ownerName: 'Alice', publishedAt: PUBLISHED_AT });
     expect(line).toBe(`Alice ・ ${EXPECTED_DATE}`);
+  });
+});
+
+describe('publicNovelBlocks', () => {
+  it('本文マーカー位置へ画像を差し込み、未配置画像を末尾へ回す', () => {
+    expect(publicNovelBlocks('前\n〈挿絵1〉\n後', ['img_a', 'img_b'])).toEqual([
+      { type: 'text', value: '前\n' },
+      { type: 'image', n: 1, imageId: 'img_a' },
+      { type: 'text', value: '\n後' },
+      { type: 'image', n: 2, imageId: 'img_b' },
+    ]);
   });
 });
 
@@ -204,6 +215,25 @@ describe('PublicItemDetail', () => {
     expect(screen.getByText('物語本文')).toBeInTheDocument();
     expect(screen.queryByText('ライブラリに追加')).not.toBeInTheDocument();
     expect(screen.queryByText(/ログインが必要/)).not.toBeInTheDocument();
+  });
+
+  it('公開小説の挿絵を本文マーカー位置へ表示する', () => {
+    renderWithAuth(
+      <PublicItemDetail
+        type="novels"
+        item={{
+          publicId: 'n1',
+          title: 'Epic Adventure',
+          ownerName: 'Henry',
+          publishedAt: PUBLISHED_AT,
+          raw: '戦いが始まる。\n〈挿絵1〉\n剣戟が響いた。',
+          imageIds: ['img_scene1'],
+        }}
+      />
+    );
+    const image = screen.getByRole('img', { name: '場面の挿絵 1' });
+    expect(image).toHaveAttribute('src', '/api/public/novels/n1/images/img_scene1');
+    expect(screen.queryByText('〈挿絵1〉')).not.toBeInTheDocument();
   });
 
   it('renders the author name as a plain text when onAuthorClick is absent', () => {

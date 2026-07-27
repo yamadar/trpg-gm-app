@@ -25,6 +25,7 @@ import { createProviders } from './auth/providers.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createRequireAuth, createOriginCheck } from './auth/middleware.js';
 import { createUsage } from './auth/usage.js';
+import { analyzeScenarioForPlay } from './scenarioAnalysis.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -135,7 +136,7 @@ export function createApp({
 
   app.use(createOriginCheck({ baseUrl }));
   app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
-  app.use('/api', createPublicContentRouter({ dataStore, textStore })); // 公開ギャラリーは認証不要
+  app.use('/api', createPublicContentRouter({ dataStore, textStore, imageStore })); // 公開ギャラリーは認証不要
   app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiImageApiKey })); // 機能検出は認証不要
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
@@ -154,11 +155,24 @@ export function createApp({
   }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
-  app.use('/api', createScenariosRouter({ dataStore, textStore }));
+  app.use('/api', createScenariosRouter({
+    dataStore,
+    textStore,
+    usage,
+    scenarioAnalyzer: apiKey
+      ? ({ title, raw }) => analyzeScenarioForPlay({
+          title,
+          raw,
+          apiKey,
+          model: textModel,
+          fetchImpl,
+        })
+      : null,
+  }));
   app.use('/api', createCampaignsRouter({ dataStore }));
   app.use('/api', createWorldContentRouter({ dataStore, textStore }));
   app.use('/api', createRulesetsRouter({ dataStore }));
-  app.use('/api', createPublishRouter({ dataStore, textStore }));
+  app.use('/api', createPublishRouter({ dataStore, textStore, imageStore }));
   app.use('/api', createImportsRouter({ dataStore, textStore }));
 
   // 静的配信はAPIルーターより後にマウントする。先に置くと dist/ 側の

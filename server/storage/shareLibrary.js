@@ -2,10 +2,10 @@ import crypto from 'node:crypto';
 import {
   publicListPrefix, publicMetaKey, publicWorldDocsPrefix, publicWorldDocPath, publicRegionDocPath, publicCategoryDocPath,
   publicCharacterDocsPrefix, publicCharacterDocPath, publicScenarioDocsPrefix, publicScenarioDocPath,
-  publicNovelDocsPrefix, publicNovelDocPath,
+  publicNovelDocsPrefix, publicNovelDocPath, publicNovelImageDir, publicNovelImagePath,
   publishWorldMapKey, publishWorldListPrefix, publishCharacterMapKey, publishCharacterListPrefix,
   publishScenarioMapKey, publishScenarioListPrefix, publishNovelMapKey, publishNovelListPrefix,
-  sessionKey, sessionNovelDocPath, worldMetaKey,
+  sessionKey, sessionNovelDocPath, sessionNovelMetaKey, sessionImagePath, worldMetaKey,
 } from './paths.js';
 import { getWorld } from './worldLibrary.js';
 import { getCharacter } from './characterLibrary.js';
@@ -18,8 +18,9 @@ import {
   titleFromMarkdown,
 } from './worldContentLibrary.js';
 import { MOODS } from './moods.js';
-import { stripImageMarkers } from '../novelMarkers.js';
 import { characterTitle, unnamedCharacterTitle } from './characterSummary.js';
+
+const IMAGE_ID_RE = /^img_[A-Za-z0-9-]+$/;
 
 function newPublicId() {
   return `pub_${crypto.randomBytes(6).toString('hex')}`;
@@ -107,29 +108,57 @@ export async function publishScenario(dataStore, textStore, userId, worldId, sce
     title: scenario.title,
     recommendedRuleset: scenario.recommendedRuleset ?? null,
     moods: scenario.moods ?? [],
+    directorGuide: scenario.directorGuide ?? null,
     worldId,
     worldTitle: worldMeta?.title ?? null,
   });
   return finishPublish(dataStore, 'scenarios', mapKey, meta);
 }
 
-export async function publishNovel(dataStore, textStore, userId, sessionId, owner) {
+export async function publishNovel(dataStore, textStore, userId, sessionId, owner, imageStore) {
   const session = await dataStore.get(sessionKey(userId, sessionId));
   if (!session) return { ok: false, reason: 'not_found' };
   const text = await textStore.read(sessionNovelDocPath(userId, sessionId));
   if (text === null) return { ok: false, reason: 'novel_not_generated' };
   const mapKey = publishNovelMapKey(userId, sessionId);
   const publicId = await resolvePublicId(dataStore, mapKey);
-  // 挿絵マーカー(〈挿絵N〉)は公開ギャラリーへ漏らさない
-  await textStore.write(publicNovelDocPath(publicId), stripImageMarkers(text));
-  const meta = await buildMeta(dataStore, 'novels', publicId, owner, { title: session.title ?? 'セッション' });
+  const novelMeta = await dataStore.get(sessionNovelMetaKey(userId, sessionId));
+  const sourceImageIds = Array.isArray(novelMeta?.imageIds) ? novelMeta.imageIds : [];
+  const imageIds = [];
+
+  // 公開物をセッションから独立したスナップショットにする。再公開時に消えた画像も
+  // 残さない。欠損画像はnullで位置を保ち、〈挿絵N〉と別画像がずれないようにする。
+  if (imageStore) {
+    await imageStore.deleteDir(publicNovelImageDir(publicId));
+    for (const imageId of sourceImageIds) {
+      if (typeof imageId !== 'string' || !IMAGE_ID_RE.test(imageId)) {
+        imageIds.push(null);
+        continue;
+      }
+      const image = await imageStore.read(sessionImagePath(userId, sessionId, imageId));
+      if (!image) {
+        imageIds.push(null);
+        continue;
+      }
+      await imageStore.write(publicNovelImagePath(publicId, imageId), image);
+      imageIds.push(imageId);
+    }
+  }
+
+  // マーカーを保持し、公開画面が対応位置へスナップショット画像を差し込めるようにする。
+  await textStore.write(publicNovelDocPath(publicId), text);
+  const meta = await buildMeta(dataStore, 'novels', publicId, owner, {
+    title: session.title ?? 'セッション',
+    imageIds,
+  });
   return finishPublish(dataStore, 'novels', mapKey, meta);
 }
 
-async function unpublishByMap(dataStore, textStore, type, mapKey, docsPrefixFn) {
+async function unpublishByMap(dataStore, textStore, type, mapKey, docsPrefixFn, binaryStore) {
   const map = await dataStore.get(mapKey);
   if (!map) return;
   await textStore.deleteDir(docsPrefixFn(map.publicId));
+  if (binaryStore) await binaryStore.deleteDir(docsPrefixFn(map.publicId));
   await dataStore.delete(publicMetaKey(type, map.publicId));
   await dataStore.delete(mapKey);
 }
@@ -146,8 +175,15 @@ export async function unpublishScenario(dataStore, textStore, userId, worldId, s
   await unpublishByMap(dataStore, textStore, 'scenarios', publishScenarioMapKey(userId, worldId, scenarioId), publicScenarioDocsPrefix);
 }
 
-export async function unpublishNovel(dataStore, textStore, userId, sessionId) {
-  await unpublishByMap(dataStore, textStore, 'novels', publishNovelMapKey(userId, sessionId), publicNovelDocsPrefix);
+export async function unpublishNovel(dataStore, textStore, userId, sessionId, imageStore) {
+  await unpublishByMap(
+    dataStore,
+    textStore,
+    'novels',
+    publishNovelMapKey(userId, sessionId),
+    publicNovelDocsPrefix,
+    imageStore
+  );
 }
 
 // deleteWorld用: 配下の公開キャラ/シナリオ→世界本体の順に解除
@@ -210,7 +246,12 @@ export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId,
 
   const lim = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(Number(limit), 100) : 20;
   const off = Number.isFinite(Number(offset)) && Number(offset) > 0 ? Number(offset) : 0;
-  const items = filtered.slice(off, off + lim);
+  const items = filtered.slice(off, off + lim).map((meta) => {
+    if (type !== 'scenarios') return meta;
+    // 進行ガイドは公開一覧・検索には不要。詳細取得とインポート時だけ返す。
+    const { directorGuide: _directorGuide, ...listedMeta } = meta;
+    return listedMeta;
+  });
   return { items, total: filtered.length, hasMore: off + items.length < filtered.length };
 }
 

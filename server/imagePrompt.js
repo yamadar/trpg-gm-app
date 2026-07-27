@@ -24,6 +24,8 @@ export function buildImagePrompt({ narrative = '', moods = [], appearances = [],
     .join(', ');
   const lines = [`${BASE_STYLE}, ${style}.`];
   if (cast) lines.push(`登場人物: ${cast}`);
+  lines.push('人物を描く場合、各人物を場面の出来事に反応した自然な動作中の姿で描く。重心・手足・視線を状況に合わせ、互いと環境との関係が分かるポーズにする。');
+  lines.push('人物を描く場合、各人物の表情を場面の感情と緊張度に合わせる。場面が明示的に静止・無感情を求めない限り、棒立ち、正面向きの記念写真風ポーズ、無表情を避ける。風景・物だけの場面へ人物を追加しない。');
   if (scene) lines.push(`場面: ${scene}`);
   if (hasReferences) lines.push('参照画像の人物の外見(顔・髪・服装)を厳密に維持すること。');
   return lines.join('\n');

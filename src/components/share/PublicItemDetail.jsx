@@ -3,7 +3,7 @@ import { COLORS, F_DISPLAY, F_BODY, F_MONO } from '../../theme.js';
 import Card from '../ui/Card.jsx';
 import Button from '../ui/Button.jsx';
 import ConfirmModal from '../library/ConfirmModal.jsx';
-import { importWorld, importCharacter, importScenario } from '../../api/shareClient.js';
+import { importWorld, importCharacter, importScenario, publicNovelImageUrl } from '../../api/shareClient.js';
 import { listWorlds } from '../../api/worldLibraryClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { KIND_LABELS } from '../../constants/publicContent.js';
@@ -31,6 +31,60 @@ export function formatPublicDate(item) {
 
 export function publicMetaLine(item) {
   return `${item.ownerName} ・ ${formatPublicDate(item)}`;
+}
+
+const IMAGE_MARKER_RE = /〈挿絵(\d+)〉/g;
+
+// 本文マーカーと公開時に複製された画像の対応を保つ。生成AIがマーカーを
+// 本文へ置かなかった画像も末尾へ回し、公開時に挿絵が欠落しないようにする。
+export function publicNovelBlocks(raw, imageIds = []) {
+  const source = String(raw ?? '');
+  const blocks = [];
+  const used = new Set();
+  let cursor = 0;
+
+  for (const match of source.matchAll(IMAGE_MARKER_RE)) {
+    const text = source.slice(cursor, match.index);
+    if (text.trim()) blocks.push({ type: 'text', value: text });
+    const n = Number(match[1]);
+    const imageId = imageIds[n - 1];
+    if (imageId && !used.has(n)) {
+      blocks.push({ type: 'image', n, imageId });
+      used.add(n);
+    }
+    cursor = match.index + match[0].length;
+  }
+  const tail = source.slice(cursor);
+  if (tail.trim()) blocks.push({ type: 'text', value: tail });
+
+  imageIds.forEach((imageId, index) => {
+    const n = index + 1;
+    if (imageId && !used.has(n)) blocks.push({ type: 'image', n, imageId });
+  });
+  return blocks;
+}
+
+function PublicNovelBody({ item }) {
+  return publicNovelBlocks(item.raw, item.imageIds).map((block, index) =>
+    block.type === 'text' ? (
+      <MarkdownEditor
+        key={`text-${index}`}
+        value={block.value}
+        label={`${item.title}の本文 ${index + 1}`}
+        readOnly
+        minHeight={0}
+      />
+    ) : (
+      <figure key={`image-${block.n}`} style={{ margin: '24px 0', textAlign: 'center' }}>
+        <img
+          src={publicNovelImageUrl(item.publicId, block.imageId)}
+          alt={`場面の挿絵 ${block.n}`}
+          loading="lazy"
+          style={{ display: 'block', width: 'auto', maxWidth: '100%', height: 'auto', margin: '0 auto' }}
+        />
+      </figure>
+    )
+  );
 }
 
 // 戻る導線は持たない。詳細は URL(#/browse/:tab/:id・#/u/:userId/:tab/:id)で表せる
@@ -118,7 +172,11 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
         )}
 
         <div style={{ marginBottom: 16 }}>
-          <MarkdownEditor value={item.raw} label={`${item.title}の本文`} readOnly minHeight={0} />
+          {type === 'novels' ? (
+            <PublicNovelBody item={item} />
+          ) : (
+            <MarkdownEditor value={item.raw} label={`${item.title}の本文`} readOnly minHeight={0} />
+          )}
         </div>
 
         {type === 'worlds' && (
