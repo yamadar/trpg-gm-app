@@ -40,6 +40,11 @@ describe('ROLL_TOOL', () => {
     expect(ROLL_TOOL.input_schema.properties.success_percent.maximum).toBe(100);
     expect(ROLL_TOOL.description).toContain('1ターンに最大1回');
   });
+
+  it('reserves rolls for meaningful uncertainty and excludes natural conversation', () => {
+    expect(ROLL_TOOL.description).toContain('物語上意味のある展開');
+    expect(ROLL_TOOL.description).toContain('自然な会話の継続には使わず');
+  });
 });
 
 describe('TURN_OUTPUT_FORMAT', () => {
@@ -137,6 +142,14 @@ describe('buildSystemBlocks', () => {
     expect(text).toContain('PCの行動・発言・感情を勝手に決めない');
     expect(text).toContain('narrative・choices・state_updateのいずれにも含めない');
     expect(text).toContain('fumble');
+  });
+
+  it('tells the GM to auto-resolve reasonable actions and continue natural NPC conversations', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('妥当なら判定せず');
+    expect(text).toContain('迷った場合は判定しない');
+    expect(text).toContain('PCとNPCの会話が自然に続いているだけなら判定しない');
+    expect(text).toContain('利害の対立、明確な拒絶、秘密を明かさせる説得、欺瞞');
   });
 
   it('keeps narrative prose in plain form even when recent turns use polite form', () => {
