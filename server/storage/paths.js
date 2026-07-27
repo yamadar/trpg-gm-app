@@ -58,8 +58,16 @@ export function regionDocPath(userId, worldId, region) {
   return `users/${userId}/worlds/${worldId}/regions/${region}.md`;
 }
 
+export function regionMetaKey(userId, worldId, region) {
+  return `users/${userId}/worlds/${worldId}/regions/${region}`;
+}
+
 export function categoryDocPath(userId, worldId, category) {
   return `users/${userId}/worlds/${worldId}/categories/${category}.md`;
+}
+
+export function categoryMetaKey(userId, worldId, category) {
+  return `users/${userId}/worlds/${worldId}/categories/${category}`;
 }
 
 export function characterDocPath(userId, worldId, kind, name) {

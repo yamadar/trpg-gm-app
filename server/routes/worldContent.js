@@ -14,7 +14,7 @@ import {
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 
-export function createWorldContentRouter({ textStore }) {
+export function createWorldContentRouter({ dataStore, textStore }) {
   const router = Router();
   router.param('worldId', idParamGuard);
   router.param('region', idParamGuard);
@@ -39,16 +39,16 @@ export function createWorldContentRouter({ textStore }) {
   }));
 
   router.get('/worlds/:worldId/regions', asyncHandler(async (req, res) => {
-    res.json(await listRegions(textStore, req.userId, req.params.worldId));
+    res.json(await listRegions(dataStore, textStore, req.userId, req.params.worldId));
   }));
 
   router.get('/worlds/:worldId/regions/:region', asyncHandler(async (req, res) => {
-    const raw = await getRegion(textStore, req.userId, req.params.worldId, req.params.region);
-    if (raw === null) {
+    const region = await getRegion(dataStore, textStore, req.userId, req.params.worldId, req.params.region);
+    if (region === null) {
       res.status(404).json({ error: 'region not found' });
       return;
     }
-    res.json({ id: req.params.region, raw });
+    res.json(region);
   }));
 
   router.put('/worlds/:worldId/regions/:region', asyncHandler(async (req, res) => {
@@ -56,26 +56,29 @@ export function createWorldContentRouter({ textStore }) {
       res.status(400).json({ error: 'raw is required' });
       return;
     }
-    await saveRegion(textStore, req.userId, req.params.worldId, req.params.region, req.body.raw);
-    res.json({ id: req.params.region, raw: req.body.raw });
+    const region = await saveRegion(dataStore, textStore, req.userId, req.params.worldId, req.params.region, {
+      title: typeof req.body.title === 'string' ? req.body.title : '',
+      raw: req.body.raw,
+    });
+    res.json(region);
   }));
 
   router.delete('/worlds/:worldId/regions/:region', asyncHandler(async (req, res) => {
-    await deleteRegion(textStore, req.userId, req.params.worldId, req.params.region);
+    await deleteRegion(dataStore, textStore, req.userId, req.params.worldId, req.params.region);
     res.status(204).end();
   }));
 
   router.get('/worlds/:worldId/categories', asyncHandler(async (req, res) => {
-    res.json(await listCategories(textStore, req.userId, req.params.worldId));
+    res.json(await listCategories(dataStore, textStore, req.userId, req.params.worldId));
   }));
 
   router.get('/worlds/:worldId/categories/:category', asyncHandler(async (req, res) => {
-    const raw = await getCategory(textStore, req.userId, req.params.worldId, req.params.category);
-    if (raw === null) {
+    const category = await getCategory(dataStore, textStore, req.userId, req.params.worldId, req.params.category);
+    if (category === null) {
       res.status(404).json({ error: 'category not found' });
       return;
     }
-    res.json({ id: req.params.category, raw });
+    res.json(category);
   }));
 
   router.put('/worlds/:worldId/categories/:category', asyncHandler(async (req, res) => {
@@ -83,12 +86,15 @@ export function createWorldContentRouter({ textStore }) {
       res.status(400).json({ error: 'raw is required' });
       return;
     }
-    await saveCategory(textStore, req.userId, req.params.worldId, req.params.category, req.body.raw);
-    res.json({ id: req.params.category, raw: req.body.raw });
+    const category = await saveCategory(dataStore, textStore, req.userId, req.params.worldId, req.params.category, {
+      title: typeof req.body.title === 'string' ? req.body.title : '',
+      raw: req.body.raw,
+    });
+    res.json(category);
   }));
 
   router.delete('/worlds/:worldId/categories/:category', asyncHandler(async (req, res) => {
-    await deleteCategory(textStore, req.userId, req.params.worldId, req.params.category);
+    await deleteCategory(dataStore, textStore, req.userId, req.params.worldId, req.params.category);
     res.status(204).end();
   }));
 

@@ -63,20 +63,23 @@ describe('putRegion / putCategory', () => {
   it('PUTs a region', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'waterdeep' }) });
     vi.stubGlobal('fetch', fetchMock);
-    await putRegion('w1', 'waterdeep', '地域詳細');
+    await putRegion('w1', 'waterdeep', { title: 'ウォーターディープ', raw: '地域詳細' });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/worlds/w1/regions/waterdeep',
-      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ raw: '地域詳細' }) })
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ title: 'ウォーターディープ', raw: '地域詳細' }),
+      })
     );
   });
 
   it('PUTs a category', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'magic-system' }) });
     vi.stubGlobal('fetch', fetchMock);
-    await putCategory('w1', 'magic-system', 'カテゴリ詳細');
+    await putCategory('w1', 'magic-system', { title: '魔法体系', raw: 'カテゴリ詳細' });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/worlds/w1/categories/magic-system',
-      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ raw: 'カテゴリ詳細' }) })
+      expect.objectContaining({ method: 'PUT', body: JSON.stringify({ title: '魔法体系', raw: 'カテゴリ詳細' }) })
     );
   });
 });
@@ -126,25 +129,32 @@ describe('deleteWorld', () => {
 });
 
 describe('listRegions', () => {
-  it('GETs the region id list for a world', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ['waterdeep', 'sword-coast'] });
+  it('GETs the region id and title list for a world', async () => {
+    const items = [
+      { id: 'waterdeep', title: 'ウォーターディープ' },
+      { id: 'sword-coast', title: 'ソード・コースト' },
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => items });
     vi.stubGlobal('fetch', fetchMock);
     const result = await listRegions('w1');
     expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1/regions', expect.objectContaining({ method: 'GET' }));
-    expect(result).toEqual(['waterdeep', 'sword-coast']);
+    expect(result).toEqual(items);
   });
 });
 
 describe('getRegion', () => {
   it('GETs a single region', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'waterdeep', raw: '地域詳細' }) });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'waterdeep', title: 'ウォーターディープ', raw: '地域詳細' }),
+    });
     vi.stubGlobal('fetch', fetchMock);
     const result = await getRegion('w1', 'waterdeep');
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/worlds/w1/regions/waterdeep',
       expect.objectContaining({ method: 'GET' })
     );
-    expect(result).toEqual({ id: 'waterdeep', raw: '地域詳細' });
+    expect(result).toEqual({ id: 'waterdeep', title: 'ウォーターディープ', raw: '地域詳細' });
   });
 
   it('throws with status and truncated body on a non-ok response', async () => {
@@ -155,25 +165,29 @@ describe('getRegion', () => {
 });
 
 describe('listCategories', () => {
-  it('GETs the category id list for a world', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ['magic-system'] });
+  it('GETs the category id and title list for a world', async () => {
+    const items = [{ id: 'magic-system', title: '魔法体系' }];
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => items });
     vi.stubGlobal('fetch', fetchMock);
     const result = await listCategories('w1');
     expect(fetchMock).toHaveBeenCalledWith('/api/worlds/w1/categories', expect.objectContaining({ method: 'GET' }));
-    expect(result).toEqual(['magic-system']);
+    expect(result).toEqual(items);
   });
 });
 
 describe('getCategory', () => {
   it('GETs a single category', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'magic-system', raw: 'カテゴリ詳細' }) });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'magic-system', title: '魔法体系', raw: 'カテゴリ詳細' }),
+    });
     vi.stubGlobal('fetch', fetchMock);
     const result = await getCategory('w1', 'magic-system');
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/worlds/w1/categories/magic-system',
       expect.objectContaining({ method: 'GET' })
     );
-    expect(result).toEqual({ id: 'magic-system', raw: 'カテゴリ詳細' });
+    expect(result).toEqual({ id: 'magic-system', title: '魔法体系', raw: 'カテゴリ詳細' });
   });
 
   it('throws with status and truncated body on a non-ok response', async () => {

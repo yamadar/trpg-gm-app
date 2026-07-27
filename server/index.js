@@ -156,7 +156,7 @@ export function createApp({
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
   app.use('/api', createScenariosRouter({ dataStore, textStore }));
   app.use('/api', createCampaignsRouter({ dataStore }));
-  app.use('/api', createWorldContentRouter({ textStore }));
+  app.use('/api', createWorldContentRouter({ dataStore, textStore }));
   app.use('/api', createRulesetsRouter({ dataStore }));
   app.use('/api', createPublishRouter({ dataStore, textStore }));
   app.use('/api', createImportsRouter({ dataStore, textStore }));

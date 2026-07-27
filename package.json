@@ -11,6 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tiptap/markdown": "^3.29.0",
+    "@tiptap/pm": "^3.29.0",
+    "@tiptap/react": "^3.29.0",
+    "@tiptap/starter-kit": "^3.29.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "idb": "^8.0.0",
@@ -21,6 +25,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.0",
+    "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
     "fake-indexeddb": "^6.0.0",

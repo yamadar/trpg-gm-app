@@ -1,5 +1,6 @@
 import { callTextModel, extractText, parseJsonLoose } from './client.js';
 import { slugify } from '../utils/slugify.js';
+import { normalizeMarkdown } from '../utils/markdown.js';
 
 const SPLIT_OUTPUT_FORMAT = {
   type: 'json_schema',
@@ -20,8 +21,8 @@ const SPLIT_OUTPUT_FORMAT = {
           required: ['id', 'title', 'content'],
           properties: {
             id: { type: 'string', description: '英数字とハイフンのみのスラグ' },
-            title: { type: 'string', description: '地域名' },
-            content: { type: 'string', description: 'その地域の詳細本文' },
+            title: { type: 'string', description: 'UI表示用の具体的で読みやすい地域名(ファイル名ではない)' },
+            content: { type: 'string', description: 'その地域のMarkdown詳細本文' },
           },
         },
       },
@@ -33,7 +34,10 @@ const SPLIT_OUTPUT_FORMAT = {
           required: ['id', 'title', 'content'],
           properties: {
             id: { type: 'string', description: '英数字とハイフンのみのスラグ' },
-            title: { type: 'string', description: 'カテゴリ名' },
+            title: {
+              type: 'string',
+              description: 'UI表示用の具体的で読みやすいカテゴリ名(ファイル名ではない)',
+            },
             content: {
               type: 'string',
               description: 'そのカテゴリの詳細本文(魔法体系・宗教・歴史・種族・組織など)',
@@ -59,13 +63,29 @@ function dedupeIds(items) {
   });
 }
 
+function normalizeItems(items) {
+  return dedupeIds(
+    items.map((item) => {
+      const id = slugify(item.id);
+      return {
+        ...item,
+        id,
+        title: String(item.title || id).trim(),
+        content: normalizeMarkdown(item.content),
+      };
+    })
+  );
+}
+
 export async function splitWorld(rawText, adjustmentRequest) {
   const data = await callTextModel({
     max_tokens: 16000,
     output_config: { format: SPLIT_OUTPUT_FORMAT },
     system: `以下の世界観資料を、TRPGのGMが必要な範囲だけ参照できるよう地域(region)・カテゴリ(category)に分割せよ。
 
-世界観の規模に応じて、region・categoryの数は自由に決めてよい(小規模な世界観なら1〜2個程度でもよい)。`,
+世界観の規模に応じて、region・categoryの数は自由に決めてよい(小規模な世界観なら1〜2個程度でもよい)。
+world・各contentは正しいMarkdownで記述し、改行には実際の改行文字を使うこと。
+各titleにはIDや英数字スラグではなく、内容を端的に表す自然な表示名を付けること。`,
     messages: [
       {
         role: 'user',
@@ -76,8 +96,8 @@ export async function splitWorld(rawText, adjustmentRequest) {
   const text = extractText(data.content);
   const parsed = parseJsonLoose(text);
   return {
-    world: parsed.world,
-    regions: dedupeIds((parsed.regions || []).map((r) => ({ ...r, id: slugify(r.id) }))),
-    categories: dedupeIds((parsed.categories || []).map((c) => ({ ...c, id: slugify(c.id) }))),
+    world: normalizeMarkdown(parsed.world),
+    regions: normalizeItems(parsed.regions || []),
+    categories: normalizeItems(parsed.categories || []),
   };
 }

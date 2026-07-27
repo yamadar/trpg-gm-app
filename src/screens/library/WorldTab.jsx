@@ -19,6 +19,8 @@ import { importWorld, reimportWorld } from '../../api/worldImport.js';
 import { publishWorld, unpublishWorld, publishedWorlds as fetchPublishedWorlds } from '../../api/shareClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import MoodChips from '../../components/ui/MoodChips.jsx';
+import MarkdownEditor from '../../components/ui/MarkdownEditor.jsx';
+import { normalizeMarkdown } from '../../utils/markdown.js';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
   const { user } = useAuth();
@@ -36,8 +38,10 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
   const [regions, setRegions] = useState([]); // [{id, title, content}] content may be null until fetched
   const [categories, setCategories] = useState([]);
   const [editingRegionId, setEditingRegionId] = useState(null);
+  const [regionTitleDraft, setRegionTitleDraft] = useState('');
   const [regionDraft, setRegionDraft] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [categoryTitleDraft, setCategoryTitleDraft] = useState('');
   const [categoryDraft, setCategoryDraft] = useState('');
 
   const [busy, setBusy] = useState(false);
@@ -53,8 +57,10 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     }
     worldEpochRef.current += 1;
     setEditingRegionId(null);
+    setRegionTitleDraft('');
     setRegionDraft('');
     setEditingCategoryId(null);
+    setCategoryTitleDraft('');
     setCategoryDraft('');
     setRegions([]);
     setCategories([]);
@@ -66,15 +72,27 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         if (cancelled) return;
         setDetail(world);
         setEditTitle(world.title);
-        setEditRaw(world.raw);
+        setEditRaw(normalizeMarkdown(world.raw));
         setEditMoods(world.moods ?? []);
         const [regionIds, categoryIds] = await Promise.all([
           listRegions(selectedWorldId),
           listCategories(selectedWorldId),
         ]);
         if (cancelled) return;
-        setRegions(regionIds.map((id) => ({ id, title: id, content: null })));
-        setCategories(categoryIds.map((id) => ({ id, title: id, content: null })));
+        setRegions(
+          regionIds.map((region) =>
+            typeof region === 'string'
+              ? { id: region, title: region, content: null }
+              : { ...region, content: null }
+          )
+        );
+        setCategories(
+          categoryIds.map((category) =>
+            typeof category === 'string'
+              ? { id: category, title: category, content: null }
+              : { ...category, content: null }
+          )
+        );
       } catch (e) {
         if (!cancelled) setError('World取得に失敗した: ' + e.message);
       }
@@ -169,7 +187,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
       const world = await getWorld(selectedWorldId);
       setDetail(world);
       setEditTitle(world.title);
-      setEditRaw(world.raw);
+      setEditRaw(normalizeMarkdown(world.raw));
       setEditMoods(world.moods ?? []);
     } catch (e) {
       setError('World更新に失敗した: ' + e.message);
@@ -184,15 +202,17 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
 
   async function startEditingRegion(region) {
     setEditingRegionId(region.id);
+    setRegionTitleDraft(region.title);
     if (region.content !== null) {
-      setRegionDraft(region.content);
+      setRegionDraft(normalizeMarkdown(region.content));
       return;
     }
     const epoch = worldEpochRef.current;
     try {
       const full = await getRegion(selectedWorldId, region.id);
       if (worldEpochRef.current !== epoch) return;
-      setRegionDraft(full.raw);
+      setRegionTitleDraft(full.title || region.title);
+      setRegionDraft(normalizeMarkdown(full.raw));
     } catch (e) {
       if (worldEpochRef.current === epoch) setError('地域の取得に失敗した: ' + e.message);
     }
@@ -200,15 +220,17 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
 
   async function startEditingCategory(category) {
     setEditingCategoryId(category.id);
+    setCategoryTitleDraft(category.title);
     if (category.content !== null) {
-      setCategoryDraft(category.content);
+      setCategoryDraft(normalizeMarkdown(category.content));
       return;
     }
     const epoch = worldEpochRef.current;
     try {
       const full = await getCategory(selectedWorldId, category.id);
       if (worldEpochRef.current !== epoch) return;
-      setCategoryDraft(full.raw);
+      setCategoryTitleDraft(full.title || category.title);
+      setCategoryDraft(normalizeMarkdown(full.raw));
     } catch (e) {
       if (worldEpochRef.current === epoch) setError('カテゴリの取得に失敗した: ' + e.message);
     }
@@ -218,8 +240,12 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     setBusy(true);
     setError('');
     try {
-      await putRegion(selectedWorldId, regionId, regionDraft);
-      setRegions((prev) => prev.map((r) => (r.id === regionId ? { ...r, content: regionDraft } : r)));
+      await putRegion(selectedWorldId, regionId, { title: regionTitleDraft, raw: regionDraft });
+      setRegions((prev) =>
+        prev.map((r) =>
+          r.id === regionId ? { ...r, title: regionTitleDraft.trim() || r.title, content: regionDraft } : r
+        )
+      );
       setEditingRegionId(null);
     } catch (e) {
       setError('地域の保存に失敗した: ' + e.message);
@@ -232,8 +258,12 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     setBusy(true);
     setError('');
     try {
-      await putCategory(selectedWorldId, categoryId, categoryDraft);
-      setCategories((prev) => prev.map((c) => (c.id === categoryId ? { ...c, content: categoryDraft } : c)));
+      await putCategory(selectedWorldId, categoryId, { title: categoryTitleDraft, raw: categoryDraft });
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.id === categoryId ? { ...c, title: categoryTitleDraft.trim() || c.title, content: categoryDraft } : c
+        )
+      );
       setEditingCategoryId(null);
     } catch (e) {
       setError('カテゴリの保存に失敗した: ' + e.message);
@@ -375,11 +405,11 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
             <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} style={inputStyle} />
           </Field>
           <Field label="本文">
-            <textarea
+            <MarkdownEditor
               value={editRaw}
-              onChange={(e) => setEditRaw(e.target.value)}
-              rows={10}
-              style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+              onChange={setEditRaw}
+              label="World本文"
+              minHeight={240}
             />
           </Field>
           <Field label="雰囲気" hint="複数選択可。">
@@ -410,15 +440,28 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
                 </div>
                 {editingRegionId === r.id ? (
                   <>
-                    <textarea
-                      value={regionDraft}
-                      onChange={(e) => setRegionDraft(e.target.value)}
-                      rows={6}
-                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY, marginBottom: 8 }}
+                    <input
+                      value={regionTitleDraft}
+                      onChange={(e) => setRegionTitleDraft(e.target.value)}
+                      aria-label="地域タイトル"
+                      placeholder="地域タイトル"
+                      style={{ ...inputStyle, marginBottom: 8 }}
                     />
-                    <Button variant="brass" onClick={() => handleSaveRegion(r.id)} disabled={busy}>
-                      保存
-                    </Button>
+                    <MarkdownEditor
+                      value={regionDraft}
+                      onChange={setRegionDraft}
+                      label={`${r.title}の本文`}
+                      minHeight={160}
+                    />
+                    <div style={{ marginTop: 8 }}>
+                      <Button
+                        variant="brass"
+                        onClick={() => handleSaveRegion(r.id)}
+                        disabled={busy || !regionTitleDraft.trim()}
+                      >
+                        保存
+                      </Button>
+                    </div>
                   </>
                 ) : (
                   <Button variant="ghost" onClick={() => startEditingRegion(r)}>
@@ -451,15 +494,28 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
                 </div>
                 {editingCategoryId === c.id ? (
                   <>
-                    <textarea
-                      value={categoryDraft}
-                      onChange={(e) => setCategoryDraft(e.target.value)}
-                      rows={6}
-                      style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY, marginBottom: 8 }}
+                    <input
+                      value={categoryTitleDraft}
+                      onChange={(e) => setCategoryTitleDraft(e.target.value)}
+                      aria-label="カテゴリタイトル"
+                      placeholder="カテゴリタイトル"
+                      style={{ ...inputStyle, marginBottom: 8 }}
                     />
-                    <Button variant="brass" onClick={() => handleSaveCategory(c.id)} disabled={busy}>
-                      保存
-                    </Button>
+                    <MarkdownEditor
+                      value={categoryDraft}
+                      onChange={setCategoryDraft}
+                      label={`${c.title}の本文`}
+                      minHeight={160}
+                    />
+                    <div style={{ marginTop: 8 }}>
+                      <Button
+                        variant="brass"
+                        onClick={() => handleSaveCategory(c.id)}
+                        disabled={busy || !categoryTitleDraft.trim()}
+                      >
+                        保存
+                      </Button>
+                    </div>
                   </>
                 ) : (
                   <Button variant="ghost" onClick={() => startEditingCategory(c)}>

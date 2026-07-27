@@ -65,8 +65,18 @@ export async function importWorld(dataStore, textStore, userId, publicId, { pref
     moods: pub.moods ?? [],
     sourcePublicId: publicId,
   });
-  for (const region of pub.regions) await saveRegion(textStore, userId, id, region.name, region.raw);
-  for (const category of pub.categories) await saveCategory(textStore, userId, id, category.name, category.raw);
+  for (const region of pub.regions) {
+    await saveRegion(dataStore, textStore, userId, id, region.name, {
+      title: region.title,
+      raw: region.raw,
+    });
+  }
+  for (const category of pub.categories) {
+    await saveCategory(dataStore, textStore, userId, id, category.name, {
+      title: category.title,
+      raw: category.raw,
+    });
+  }
   return { ok: true, reused: false, meta: world };
 }
 

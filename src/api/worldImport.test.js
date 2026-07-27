@@ -23,8 +23,8 @@ describe('importWorld', () => {
 
     expect(putSourceSpy).toHaveBeenCalledWith('w1', '長い原文');
     expect(putWorldSpy).toHaveBeenCalledWith('w1', { title: 'Waterdeep World', raw: '目次' });
-    expect(putRegionSpy).toHaveBeenCalledWith('w1', 'waterdeep', '地域詳細');
-    expect(putCategorySpy).toHaveBeenCalledWith('w1', 'magic-system', 'カテゴリ詳細');
+    expect(putRegionSpy).toHaveBeenCalledWith('w1', 'waterdeep', { title: 'A', raw: '地域詳細' });
+    expect(putCategorySpy).toHaveBeenCalledWith('w1', 'magic-system', { title: 'B', raw: 'カテゴリ詳細' });
     expect(result.world).toBe('目次');
   });
 });
@@ -75,8 +75,11 @@ describe('reimportWorld', () => {
       regions: [{ id: 'harbor', title: '港', content: 'x' }],
       categories: [],
     });
-    vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue(['harbor', 'old-region']);
-    vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue(['old-cat']);
+    vi.spyOn(worldLibraryClient, 'listRegions').mockResolvedValue([
+      { id: 'harbor', title: '港' },
+      { id: 'old-region', title: '旧地域' },
+    ]);
+    vi.spyOn(worldLibraryClient, 'listCategories').mockResolvedValue([{ id: 'old-cat', title: '旧カテゴリ' }]);
     vi.spyOn(worldLibraryClient, 'putWorld').mockResolvedValue({});
     vi.spyOn(worldLibraryClient, 'putRegion').mockResolvedValue({});
     vi.spyOn(worldLibraryClient, 'putCategory').mockResolvedValue({});

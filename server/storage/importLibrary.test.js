@@ -32,8 +32,8 @@ afterEach(async () => {
 
 async function seedWorld(userId, worldId = 'w1', title = 'テスト世界') {
   await saveWorld(dataStore, textStore, userId, { id: worldId, title, raw: '# 本文' });
-  await saveRegion(textStore, userId, worldId, 'north', '北の地方');
-  await saveCategory(textStore, userId, worldId, 'magic', '魔法体系');
+  await saveRegion(dataStore, textStore, userId, worldId, 'north', { title: '北方地方', raw: '北の地方' });
+  await saveCategory(dataStore, textStore, userId, worldId, 'magic', { title: '魔法体系', raw: '魔法体系' });
   return worldId;
 }
 

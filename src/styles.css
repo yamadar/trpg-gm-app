@@ -86,3 +86,125 @@ button[data-variant='brass']:focus-visible {
     outline-offset: 2px;
   }
 }
+
+.markdown-editor {
+  overflow: hidden;
+  color: #3b372e;
+  background: #ede6d6;
+  border: 1px solid #89826f;
+  border-radius: 4px;
+}
+
+.markdown-editor__toolbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 6px;
+  background: #e2d9c3;
+  border-bottom: 1px solid #c9bfa3;
+}
+
+.markdown-editor__toolbar-button {
+  min-width: 30px;
+  padding: 5px 7px;
+  font: 500 11px 'IBM Plex Mono', monospace;
+  color: #3b372e;
+  cursor: pointer;
+  background: #f6f1e6;
+  border: 1px solid #89826f;
+  border-radius: 3px;
+}
+
+.markdown-editor__toolbar-button[aria-pressed='true'] {
+  color: #f6f1e6;
+  background: #7c6136;
+}
+
+.markdown-editor__toolbar-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.markdown-editor__toolbar-spacer {
+  flex: 1;
+}
+
+.markdown-editor__content {
+  box-sizing: border-box;
+  padding: 12px 14px;
+  font: 14px/1.7 'Source Serif 4', Georgia, serif;
+  outline: none;
+}
+
+.markdown-editor__content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-editor__content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-editor__content h1,
+.markdown-editor__content h2,
+.markdown-editor__content h3 {
+  color: #1f2a38;
+  line-height: 1.35;
+}
+
+.markdown-editor__content h1 {
+  font-size: 1.55em;
+}
+
+.markdown-editor__content h2 {
+  padding-bottom: 4px;
+  font-size: 1.3em;
+  border-bottom: 1px solid #c9bfa3;
+}
+
+.markdown-editor__content h3 {
+  font-size: 1.12em;
+}
+
+.markdown-editor__content blockquote {
+  margin-left: 0;
+  padding-left: 12px;
+  color: #635e4f;
+  border-left: 3px solid #9c7a45;
+}
+
+.markdown-editor__content code {
+  padding: 1px 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  background: #e2d9c3;
+  border-radius: 3px;
+}
+
+.markdown-editor__content pre {
+  overflow-x: auto;
+  padding: 10px;
+  background: #e2d9c3;
+  border-radius: 4px;
+}
+
+.markdown-editor__content pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-editor__content p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: #635e4f;
+  pointer-events: none;
+  content: attr(data-placeholder);
+}
+
+.markdown-editor--readonly {
+  background: transparent;
+  border: 0;
+}
+
+.markdown-editor--readonly .markdown-editor__content {
+  min-height: 0 !important;
+  padding: 0;
+}

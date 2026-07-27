@@ -7,6 +7,7 @@ import { importWorld, importCharacter, importScenario } from '../../api/shareCli
 import { listWorlds } from '../../api/worldLibraryClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { KIND_LABELS } from '../../constants/publicContent.js';
+import MarkdownEditor from '../ui/MarkdownEditor.jsx';
 
 // 「もう一度別の◯◯として取り込むか」の確認文で使う。UIの他の場所(既存Worldを選ぶ・
 // 追加先のWorldを選択)と同じ呼び方に揃える。
@@ -116,16 +117,8 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
           </div>
         )}
 
-        <div
-          style={{
-            fontFamily: F_BODY,
-            fontSize: 14,
-            color: COLORS.inkSoft,
-            whiteSpace: 'pre-wrap',
-            marginBottom: 16,
-          }}
-        >
-          {item.raw}
+        <div style={{ marginBottom: 16 }}>
+          <MarkdownEditor value={item.raw} label={`${item.title}の本文`} readOnly minHeight={0} />
         </div>
 
         {type === 'worlds' && (
@@ -136,11 +129,9 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             {(item.regions || []).map((r) => (
               <div key={r.name} style={{ marginBottom: 12 }}>
                 <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 4 }}>
-                  {r.name}
+                  {r.title || r.name}
                 </div>
-                <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, whiteSpace: 'pre-wrap' }}>
-                  {r.raw}
-                </div>
+                <MarkdownEditor value={r.raw} label={`${r.title || r.name}の本文`} readOnly minHeight={0} />
               </div>
             ))}
             {(item.regions || []).length === 0 && (
@@ -163,11 +154,9 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             {(item.categories || []).map((c) => (
               <div key={c.name} style={{ marginBottom: 12 }}>
                 <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 4 }}>
-                  {c.name}
+                  {c.title || c.name}
                 </div>
-                <div style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, whiteSpace: 'pre-wrap' }}>
-                  {c.raw}
-                </div>
+                <MarkdownEditor value={c.raw} label={`${c.title || c.name}の本文`} readOnly minHeight={0} />
               </div>
             ))}
             {(item.categories || []).length === 0 && (

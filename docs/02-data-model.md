@@ -113,7 +113,9 @@ worlds/{world_id}.json               Worldメタ(id/title/updatedAt)
 worlds/{world_id}/
   world.md                          世界観の要約(GMプロンプトに注入される本体。3.2.1節参照)
   source.md                         Worldインポート時の原文をそのまま保持(要約前の元資料)
+  regions/{region}.json             地域メタ(id/title)
   regions/{region}.md               地域詳細(大規模世界観の場合)
+  categories/{topic}.json           カテゴリメタ(id/title)
   categories/{topic}.md             カテゴリ詳細(大規模世界観の場合)
   npc/{name}.md                     NPC原本
   npc/{name}.parsed.json            NPCメタレコード(revealed管理含む。parsed抽出は未実装)

@@ -62,8 +62,8 @@ afterEach(async () => {
 
 async function seedWorld(userId, worldId = 'w1') {
   await saveWorld(dataStore, textStore, userId, { id: worldId, title: 'テスト世界', raw: '# 本文' });
-  await saveRegion(textStore, userId, worldId, 'north', '北の地方');
-  await saveCategory(textStore, userId, worldId, 'magic', '魔法体系');
+  await saveRegion(dataStore, textStore, userId, worldId, 'north', { title: '北方地方', raw: '北の地方' });
+  await saveCategory(dataStore, textStore, userId, worldId, 'magic', { title: '魔法体系', raw: '魔法体系' });
   await saveWorldSource(textStore, userId, worldId, '長大な原文(非公開)');
   return worldId;
 }
@@ -78,8 +78,8 @@ describe('publishWorld', () => {
       title: 'テスト世界',
       ownerId: 'usr_1',
       ownerName: '太郎',
-      regions: ['north'],
-      categories: ['magic'],
+      regions: [{ id: 'north', title: '北方地方' }],
+      categories: [{ id: 'magic', title: '魔法体系' }],
     });
     expect(typeof meta.publishedAt).toBe('number');
     expect(typeof meta.updatedAt).toBe('number');
@@ -120,7 +120,7 @@ describe('publishWorld', () => {
     expect(first.meta.publishedAt).toBe(1000);
     expect(first.meta.updatedAt).toBe(1000);
 
-    await deleteRegion(textStore, 'usr_1', 'w1', 'north');
+    await deleteRegion(dataStore, textStore, 'usr_1', 'w1', 'north');
     await saveWorld(dataStore, textStore, 'usr_1', { id: 'w1', title: 'テスト世界2', raw: '# 新本文' });
 
     nowSpy.mockReturnValueOnce(2000);
@@ -569,8 +569,8 @@ describe('getPublicWorld', () => {
       publicId: meta.publicId,
       title: 'テスト世界',
       raw: '# 本文',
-      regions: [{ name: 'north', raw: '北の地方' }],
-      categories: [{ name: 'magic', raw: '魔法体系' }],
+      regions: [{ name: 'north', title: '北方地方', raw: '北の地方' }],
+      categories: [{ name: 'magic', title: '魔法体系', raw: '魔法体系' }],
     });
   });
 

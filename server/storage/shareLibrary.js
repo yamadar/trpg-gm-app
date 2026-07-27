@@ -50,16 +50,18 @@ export async function publishWorld(dataStore, textStore, userId, worldId, owner)
   if (!world) return { ok: false, reason: 'not_found' };
   const mapKey = publishWorldMapKey(userId, worldId);
   const publicId = await resolvePublicId(dataStore, mapKey);
-  const regions = await listRegions(textStore, userId, worldId);
-  const categories = await listCategories(textStore, userId, worldId);
+  const regions = await listRegions(dataStore, textStore, userId, worldId);
+  const categories = await listCategories(dataStore, textStore, userId, worldId);
   // 再公開で消えたregion/categoryの残骸を残さないため、ドキュメント一式を作り直す
   await textStore.deleteDir(publicWorldDocsPrefix(publicId));
   await textStore.write(publicWorldDocPath(publicId), world.raw);
   for (const region of regions) {
-    await textStore.write(publicRegionDocPath(publicId, region), (await getRegion(textStore, userId, worldId, region)) ?? '');
+    const content = await getRegion(dataStore, textStore, userId, worldId, region.id);
+    await textStore.write(publicRegionDocPath(publicId, region.id), content?.raw ?? '');
   }
   for (const category of categories) {
-    await textStore.write(publicCategoryDocPath(publicId, category), (await getCategory(textStore, userId, worldId, category)) ?? '');
+    const content = await getCategory(dataStore, textStore, userId, worldId, category.id);
+    await textStore.write(publicCategoryDocPath(publicId, category.id), content?.raw ?? '');
   }
   const meta = await buildMeta(dataStore, 'worlds', publicId, owner, {
     title: world.title,
@@ -202,10 +204,24 @@ export async function getPublicWorld(dataStore, textStore, publicId) {
   if (!meta) return null;
   const raw = (await textStore.read(publicWorldDocPath(publicId))) ?? '';
   const regions = await Promise.all(
-    (meta.regions ?? []).map(async (name) => ({ name, raw: (await textStore.read(publicRegionDocPath(publicId, name))) ?? '' }))
+    (meta.regions ?? []).map(async (entry) => {
+      const id = typeof entry === 'string' ? entry : entry.id;
+      return {
+        name: id,
+        title: typeof entry === 'string' ? entry : entry.title,
+        raw: (await textStore.read(publicRegionDocPath(publicId, id))) ?? '',
+      };
+    })
   );
   const categories = await Promise.all(
-    (meta.categories ?? []).map(async (name) => ({ name, raw: (await textStore.read(publicCategoryDocPath(publicId, name))) ?? '' }))
+    (meta.categories ?? []).map(async (entry) => {
+      const id = typeof entry === 'string' ? entry : entry.id;
+      return {
+        name: id,
+        title: typeof entry === 'string' ? entry : entry.title,
+        raw: (await textStore.read(publicCategoryDocPath(publicId, id))) ?? '',
+      };
+    })
   );
   return { ...meta, raw, regions, categories };
 }

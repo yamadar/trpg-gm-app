@@ -27,19 +27,19 @@ export async function getWorldSource(id) {
   return apiFetch(`/api/worlds/${encodeURIComponent(id)}/source`, { method: 'GET' });
 }
 
-export async function putRegion(worldId, region, raw) {
+export async function putRegion(worldId, region, { title, raw }) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/regions/${encodeURIComponent(region)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw }),
+    body: JSON.stringify({ title, raw }),
   });
 }
 
-export async function putCategory(worldId, category, raw) {
+export async function putCategory(worldId, category, { title, raw }) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/categories/${encodeURIComponent(category)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw }),
+    body: JSON.stringify({ title, raw }),
   });
 }
 

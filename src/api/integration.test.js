@@ -53,8 +53,8 @@ describe('client ↔ server integration', () => {
 
   it('deletes region content on the server when a world is deleted (FX3 cascade)', async () => {
     await putWorld('w1', { title: 'W', raw: '世界本文' });
-    await putRegion('w1', 'north', '北の本文');
-    expect(await listRegions('w1')).toContain('north');
+    await putRegion('w1', 'north', { title: '北方地方', raw: '北の本文' });
+    expect(await listRegions('w1')).toContainEqual({ id: 'north', title: '北方地方' });
     await deleteWorld('w1'); // 204。ボディをparseしないこともここで暗黙に検証
     expect(await listRegions('w1')).toEqual([]);
   });

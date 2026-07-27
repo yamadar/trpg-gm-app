@@ -26,6 +26,26 @@ describe('splitWorld', () => {
     expect(result.categories).toEqual([{ id: 'magic-system', title: '魔法体系', content: '詳細' }]);
   });
 
+  it('normalizes double-escaped line breaks in every Markdown field', async () => {
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            world: '# 世界\\n\\n概要',
+            regions: [{ id: 'north', title: '北方', content: '## 北方\\n\\n雪原' }],
+            categories: [{ id: 'history', title: '歴史', content: '## 歴史\\n\\n建国' }],
+          }),
+        },
+      ],
+    });
+
+    const result = await splitWorld('世界観');
+    expect(result.world).toBe('# 世界\n\n概要');
+    expect(result.regions[0].content).toBe('## 北方\n\n雪原');
+    expect(result.categories[0].content).toBe('## 歴史\n\n建国');
+  });
+
   it('slugifies a region id containing spaces and punctuation', async () => {
     vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [

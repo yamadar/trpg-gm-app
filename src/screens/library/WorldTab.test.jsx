@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import WorldTab from './WorldTab.jsx';
 import * as worldLibraryClient from '../../api/worldLibraryClient.js';
 import * as worldImport from '../../api/worldImport.js';
@@ -76,6 +77,7 @@ describe('WorldTab', () => {
   });
 
   it('persists edited raw text via putWorldSource before reimporting when editRaw was changed', async () => {
+    const user = userEvent.setup();
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
     const putWorldSourceSpy = vi.spyOn(worldLibraryClient, 'putWorldSource').mockResolvedValue({});
     const reimportSpy = vi.spyOn(worldImport, 'reimportWorld').mockResolvedValue({
@@ -94,8 +96,10 @@ describe('WorldTab', () => {
     );
 
     await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
-    fireEvent.change(screen.getByDisplayValue('原文'), { target: { value: '編集後の本文' } });
-    fireEvent.click(screen.getByText('保存して再分割'));
+    const markdownEditor = screen.getByLabelText('World本文');
+    await user.clear(markdownEditor);
+    await user.type(markdownEditor, '編集後の本文');
+    await user.click(screen.getByText('保存して再分割'));
 
     await waitFor(() => expect(putWorldSourceSpy).toHaveBeenCalledWith('w1', '編集後の本文'));
     await waitFor(() => expect(reimportSpy).toHaveBeenCalledWith('w1', 'Waterdeep', undefined, []));
@@ -103,6 +107,28 @@ describe('WorldTab', () => {
     const putOrder = putWorldSourceSpy.mock.invocationCallOrder[0];
     const reimportOrder = reimportSpy.mock.invocationCallOrder[0];
     expect(putOrder).toBeLessThan(reimportOrder);
+  });
+
+  it('renders escaped Markdown line breaks and headings as structured editable content', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+      id: 'w1',
+      title: 'Waterdeep',
+      raw: '# 世界概要\\n\\n## 地域\\n港町の説明',
+    });
+
+    render(
+      <WorldTab
+        worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+        selectedWorldId="w1"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    const editor = await screen.findByLabelText('World本文');
+    expect(editor.querySelector('h1')).toHaveTextContent('世界概要');
+    expect(editor.querySelector('h2')).toHaveTextContent('地域');
+    expect(editor.querySelector('p')).toHaveTextContent('港町の説明');
   });
 
   describe('雰囲気(moods)', () => {
@@ -298,10 +324,10 @@ describe('WorldTab', () => {
     expect(screen.queryByDisplayValue('Waterdeep')).not.toBeInTheDocument();
   });
 
-  it('shows the region/category id list for a pre-existing world without a fresh split', async () => {
+  it('shows region/category display titles instead of filename ids for a pre-existing world', async () => {
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
-    worldLibraryClient.listRegions.mockResolvedValue(['harbor']);
-    worldLibraryClient.listCategories.mockResolvedValue(['magic-system']);
+    worldLibraryClient.listRegions.mockResolvedValue([{ id: 'harbor', title: '港湾地区' }]);
+    worldLibraryClient.listCategories.mockResolvedValue([{ id: 'magic-system', title: '魔法体系' }]);
 
     render(
       <WorldTab
@@ -313,8 +339,10 @@ describe('WorldTab', () => {
     );
 
     await waitFor(() => expect(screen.getByDisplayValue('Waterdeep')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText('harbor')).toBeInTheDocument());
-    expect(screen.getByText('magic-system')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('港湾地区')).toBeInTheDocument());
+    expect(screen.getByText('魔法体系')).toBeInTheDocument();
+    expect(screen.queryByText('harbor')).not.toBeInTheDocument();
+    expect(screen.queryByText('magic-system')).not.toBeInTheDocument();
   });
 
   it("lazily fetches a region's content via getRegion when editing one sourced from the id-only list", async () => {
@@ -335,7 +363,41 @@ describe('WorldTab', () => {
     fireEvent.click(screen.getByText('編集'));
 
     await waitFor(() => expect(getRegionSpy).toHaveBeenCalledWith('w1', 'harbor'));
-    await waitFor(() => expect(screen.getByDisplayValue('港の詳細本文')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('harborの本文')).toHaveTextContent('港の詳細本文'));
+  });
+
+  it('saves an edited region title with its Markdown body and updates the list label', async () => {
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '原文' });
+    worldLibraryClient.listRegions.mockResolvedValue([{ id: 'harbor', title: '港' }]);
+    vi.spyOn(worldLibraryClient, 'getRegion').mockResolvedValue({
+      id: 'harbor',
+      title: '港',
+      raw: '港の詳細本文',
+    });
+    const putRegionSpy = vi.spyOn(worldLibraryClient, 'putRegion').mockResolvedValue({});
+
+    render(
+      <WorldTab
+        worlds={[{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]}
+        selectedWorldId="w1"
+        onSelectWorld={vi.fn()}
+        onWorldsChanged={vi.fn().mockResolvedValue()}
+      />
+    );
+
+    await screen.findByText('港');
+    fireEvent.click(screen.getByText('編集'));
+    const titleInput = await screen.findByLabelText('地域タイトル');
+    fireEvent.change(titleInput, { target: { value: 'ウォーターディープ港' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() =>
+      expect(putRegionSpy).toHaveBeenCalledWith('w1', 'harbor', {
+        title: 'ウォーターディープ港',
+        raw: '港の詳細本文',
+      })
+    );
+    expect(screen.getByText('ウォーターディープ港')).toBeInTheDocument();
   });
 
   it('does not apply a late getRegion result after the world was switched', async () => {
@@ -372,7 +434,7 @@ describe('WorldTab', () => {
     await act(async () => {
       resolveRegion({ id: 'harbor', raw: 'w1の港の本文(stale)' });
     });
-    expect(screen.queryByDisplayValue('w1の港の本文(stale)')).not.toBeInTheDocument();
+    expect(screen.queryByText('w1の港の本文(stale)')).not.toBeInTheDocument();
   });
 
   it('discards a stale getRegion resolution after re-editing the same region id in a different world (epoch guard)', async () => {
@@ -420,9 +482,9 @@ describe('WorldTab', () => {
     await waitFor(() => expect(screen.getByText('shared')).toBeInTheDocument());
 
     // Re-enter edit mode on w2's "shared" region (same id). getRegion('w2', 'shared')
-    // resolves immediately, so the textarea shows w2's content again.
+    // resolves immediately, so the Markdown editor shows w2's content again.
     fireEvent.click(screen.getByText('編集'));
-    await waitFor(() => expect(screen.getByDisplayValue('w2の共有本文')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('sharedの本文')).toHaveTextContent('w2の共有本文'));
 
     // Now let w1's stale fetch resolve late.
     await act(async () => {
@@ -431,8 +493,8 @@ describe('WorldTab', () => {
     });
 
     // The epoch guard must discard w1's stale resolution; w2's visible edit stays intact.
-    expect(screen.getByDisplayValue('w2の共有本文')).toBeInTheDocument();
-    expect(screen.queryByDisplayValue('w1の共有本文(stale)')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('sharedの本文')).toHaveTextContent('w2の共有本文');
+    expect(screen.queryByText('w1の共有本文(stale)')).not.toBeInTheDocument();
   });
 
   describe('publish controls', () => {

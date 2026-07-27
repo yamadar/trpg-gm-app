@@ -307,7 +307,7 @@ describe('Gallery', () => {
     const importCharacterSpy = vi.spyOn(shareClient, 'importCharacter').mockResolvedValue({ name: 'Dragon Lord' });
 
     renderWithAuth(<Gallery route={parseRoute('#/browse/characters/c1')} onStartStarter={vi.fn()} />);
-    await screen.findByText('## Dragon');
+    await screen.findByRole('heading', { name: 'Dragon' });
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
     await waitFor(() => expect(listWorldsSpy).toHaveBeenCalled());
@@ -333,7 +333,7 @@ describe('Gallery', () => {
     const importScenarioSpy = vi.spyOn(shareClient, 'importScenario').mockResolvedValue({ id: 's-new' });
 
     renderWithAuth(<Gallery route={parseRoute('#/browse/scenarios/s1')} onStartStarter={vi.fn()} />);
-    await screen.findByText('## Quest');
+    await screen.findByRole('heading', { name: 'Quest' });
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
     expect(await screen.findByText('World One')).toBeInTheDocument();
@@ -354,7 +354,7 @@ describe('Gallery', () => {
     vi.spyOn(worldLibraryClient, 'listWorlds').mockResolvedValue([]);
 
     renderWithAuth(<Gallery route={parseRoute('#/browse/characters/c1')} onStartStarter={vi.fn()} />);
-    await screen.findByText('## Dragon');
+    await screen.findByRole('heading', { name: 'Dragon' });
 
     fireEvent.click(screen.getByText('ライブラリに追加'));
     await waitFor(() => expect(screen.getByText('先に世界観を作成してください')).toBeInTheDocument());
