@@ -170,6 +170,24 @@ describe('buildSystemBlocks', () => {
     expect(description).toContain('常体');
     expect(description).toContain('です・ます調は使わない');
   });
+
+  it('confines character-specific speech patterns to direct dialogue', () => {
+    const text = staticText(
+      makeSession({
+        pc: { raw: 'PC名: ジャッカル\n口調: 文末に「ガル」を付ける' },
+      })
+    );
+    const schema = TURN_OUTPUT_FORMAT.schema.properties;
+
+    expect(text).toContain('そのキャラクター自身の台詞にだけ適用');
+    expect(text).toContain('地の文、情景・結果の説明、choices、state_updateには一切混ぜない');
+    expect(text).toContain('鉤括弧内の直接話法だけ');
+    expect(schema.narrative.description).toContain('PC・NPC固有の語尾・口癖・方言を地の文へ混ぜない');
+    expect(schema.state_update.properties.history_summary.description).toContain(
+      'キャラクター固有の口調を使わない'
+    );
+    expect(schema.choices.description).toContain('PC・NPC固有の語尾・口癖・方言を使わない');
+  });
 });
 
 describe('ending_reached', () => {
@@ -311,5 +329,16 @@ describe('buildTurnUserContent', () => {
     expect(content).toContain('既知フラグ: (なし)');
     expect(content).toContain('物語要約: (まだなし)');
     expect(content).toContain('# 直近のログ\n(まだなし)');
+  });
+
+  it('marks the player speech pattern as character-only after the player action', () => {
+    const content = buildTurnUserContent(makeSession(), '装置を起動するガル');
+
+    expect(content).toContain('# プレイヤーの行動\n装置を起動するガル');
+    expect(content).toContain('GMの文体指定ではない');
+    expect(content).toContain('narrativeの地の文、choices、state_updateへ転用しない');
+    expect(content.indexOf('# このターンの出力注意')).toBeGreaterThan(
+      content.indexOf('装置を起動するガル')
+    );
   });
 });

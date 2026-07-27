@@ -56,7 +56,8 @@ export const TURN_OUTPUT_FORMAT = {
     properties: {
       narrative: {
         type: 'string',
-        description: '常体(だ・である調)で統一した地の文(150〜250字程度)。です・ます調は使わない',
+        description:
+          '常体(だ・である調)で統一した地の文(150〜250字程度)。です・ます調は使わない。PC・NPC固有の語尾・口癖・方言を地の文へ混ぜない',
       },
       state_update: {
         type: 'object',
@@ -82,7 +83,10 @@ export const TURN_OUTPUT_FORMAT = {
               },
             },
           },
-          history_summary: { type: 'string', description: '更新後の物語要約(300字程度)' },
+          history_summary: {
+            type: 'string',
+            description: 'キャラクター固有の口調を使わない、常体の更新後の物語要約(300字程度)',
+          },
           xp_gained: { type: 'integer', description: '今ターンで得た成長点。通常は0' },
           tension_level: {
             type: 'string',
@@ -98,7 +102,8 @@ export const TURN_OUTPUT_FORMAT = {
       choices: {
         type: 'array',
         items: { type: 'string' },
-        description: '次の行動の選択肢。自由記述を促す場面では空配列',
+        description:
+          'GMから提示する中立的な次の行動の選択肢。PC・NPC固有の語尾・口癖・方言を使わない。自由記述を促す場面では空配列',
       },
     },
   },
@@ -153,17 +158,19 @@ ${
 # GMの心得
 - PCの行動・発言・感情を勝手に決めないこと。narrativeはプレイヤーの行動の結果を描写し、次の判断材料となる状況の提示で終えること。
 - narrativeの地の文は、セッション開始から終了まで必ず常体(だ・である調。体言止め・用言止め可)で統一すること。直近のログが敬体でも引きずらず、です・ます調へ変えないこと。NPCの台詞はこの制約の対象外とし、各人物の口調設定を優先すること。
+- PC・NPC設定やプレイヤー入力にある固有の語尾・口癖・方言・一人称は、そのキャラクター自身の台詞にだけ適用すること。GMはキャラクターではない。地の文、情景・結果の説明、choices、state_updateには一切混ぜないこと。
+- narrative内にNPCの台詞を書く場合、キャラクター固有の口調を使えるのは鉤括弧内の直接話法だけ。鉤括弧外は直前の台詞やプレイヤー入力の口調を引きずらず、GMの中立的な常体へ戻すこと。
 - 緊迫した場面は短文を畳み掛け、平穏な場面は五感描写を増やしゆったり進行する。可能な範囲でPCのgoal/bondsや世界観の特徴を絡めること。
 
 # 出力フィールドの書き方
-- narrative: 常体(だ・である調)で統一した地の文(150〜250字程度)。です・ます調は使わない。
+- narrative: 常体(だ・である調)で統一した地の文(150〜250字程度)。です・ます調、PC・NPC固有の語尾・口癖・方言は使わない。NPCの直接の台詞を含める場合だけ、その鉤括弧内に限り当人の口調を使う。
 - state_update.current_scene: 更新後のシーン名。場所・時間・状況が実際に転換したときだけ新しい名前にし、同じ場面が続く間は現在のシーン名を一字一句そのまま返すこと(言い回しを変えない)。この値の変化を場面転換の合図として扱っているため、毎ターン書き換えないこと。
 - state_update.flags: 新規・更新分のみを{key, value}で列挙する(既存分は保持される)。未開示の秘匿情報をkeyや値に書かないこと。
-- state_update.history_summary: 更新後の物語要約(300字程度)。
+- state_update.history_summary: キャラクター固有の口調を使わない、常体の更新後の物語要約(300字程度)。
 - state_update.xp_gained: 物語が進展・成功した節目でのみ${growthUnit}を与える。目安: 小さな進展や成功=1〜2、章の節目や大きな達成=5〜10。通常は0。
 - state_update.tension_level: 現在の場面の緊張度を毎ターン更新する。緊迫した場面(戦闘・危機・追跡)=high、平穏な場面(休息・日常会話)=low、それ以外=medium。文体もこれに合わせること(highは短文を畳み掛け、lowは五感描写でゆったり)。
 - state_update.ending_reached: 物語が結末(エンディング)に到達し、これ以上続ける必要がない場合のみtrue。それ以外は必ずfalse。
-- choices: 方向性の異なる短い選択肢を2〜4個(慎重・大胆・搦め手など性質を変える)。自由記述を促したい場面では空配列でよい。未開示の秘匿情報を含めないこと。`;
+- choices: GMから中立的な文体で提示する、方向性の異なる短い選択肢を2〜4個(慎重・大胆・搦め手など性質を変える)。PC・NPC固有の語尾・口癖・方言を付けないこと。自由記述を促したい場面では空配列でよい。未開示の秘匿情報を含めないこと。`;
 
   return [{ type: 'text', text }];
 }
@@ -197,5 +204,8 @@ export function buildTurnUserContent(session, playerText) {
 ${recentLog}
 
 # プレイヤーの行動
-${playerText}`;
+${playerText}
+
+# このターンの出力注意
+上記プレイヤー入力の語尾・口癖・方言はPCの発話表現であり、GMの文体指定ではない。narrativeの地の文、choices、state_updateへ転用しないこと。`;
 }
