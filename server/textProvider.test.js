@@ -52,6 +52,17 @@ describe('buildGeminiTextRequest', () => {
     expect(body.systemInstruction.parts[0].text).toBe('system');
   });
 
+  it('maps a thinking level into Gemini generation config', () => {
+    const body = buildGeminiTextRequest({
+      messages: [{ role: 'user', content: 'name this ending' }],
+      thinking_level: 'minimal',
+    });
+
+    expect(body.generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: 'MINIMAL',
+    });
+  });
+
   it('restores function call ids and thought signatures for a tool result turn', () => {
     const body = buildGeminiTextRequest({
       messages: [

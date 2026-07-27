@@ -73,6 +73,10 @@ export function buildGeminiTextRequest(request) {
   const toolChoiceNone = request.tool_choice?.type === 'none';
   const tools = toolChoiceNone ? [] : Array.isArray(request.tools) ? request.tools : [];
   const responseSchema = request.output_config?.format?.schema;
+  const thinkingLevel =
+    typeof request.thinking_level === 'string'
+      ? request.thinking_level.trim().toUpperCase()
+      : '';
   const system = textFromContent(request.system);
 
   const body = {
@@ -83,6 +87,9 @@ export function buildGeminiTextRequest(request) {
         : {}),
       ...(responseSchema
         ? { responseMimeType: 'application/json', responseJsonSchema: responseSchema }
+        : {}),
+      ...(thinkingLevel
+        ? { thinkingConfig: { thinkingLevel } }
         : {}),
     },
   };

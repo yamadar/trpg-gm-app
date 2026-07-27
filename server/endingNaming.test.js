@@ -41,9 +41,18 @@ describe('nameEnding', () => {
 
   it('asks for structured output with both fields required', async () => {
     const fetchImpl = okFetch({ ending_title: 'a', summary: 'b' });
-    await nameEnding({ session: SESSION, apiKey: 'k', fetchImpl });
+    await nameEnding({ session: SESSION, apiKey: 'k', model: 'gemini-3.5-flash', fetchImpl });
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
     expect(body.generationConfig.responseJsonSchema.required).toEqual(['ending_title', 'summary']);
+    expect(body.generationConfig.maxOutputTokens).toBe(4096);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
+  });
+
+  it('does not send Gemini 3 thinking levels to older models', async () => {
+    const fetchImpl = okFetch({ ending_title: 'a', summary: 'b' });
+    await nameEnding({ session: SESSION, apiKey: 'k', model: 'gemini-2.5-flash', fetchImpl });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.generationConfig.thinkingConfig).toBeUndefined();
   });
 
   it('trims whitespace around the model output', async () => {

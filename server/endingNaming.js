@@ -1,6 +1,7 @@
 import { generateText } from './textProvider.js';
 
 const NAMING_TIMEOUT_MS = 60000;
+const NAMING_MAX_TOKENS = 4096;
 
 // 結末付近の地の文を何件渡すか。全文を渡すと長大なセッションで無駄が大きく、
 // 物語全体は history_summary が担うため、締めくくりの雰囲気を拾える程度に絞る。
@@ -41,6 +42,10 @@ function buildUserContent(session) {
   return `# PC\n${pc || '(未設定)'}\n\n# 物語要約\n${session.state?.history_summary || '(なし)'}\n\n# 結末付近の地の文\n${closing || '(なし)'}`;
 }
 
+function supportsThinkingLevel(model) {
+  return /^gemini-3(?:[.-]|$)/i.test(String(model || ''));
+}
+
 export async function nameEnding({ session, apiKey, model, fetchImpl = fetch }) {
   const data = await generateText({
     apiKey,
@@ -48,14 +53,17 @@ export async function nameEnding({ session, apiKey, model, fetchImpl = fetch }) 
     fetchImpl,
     timeoutMs: NAMING_TIMEOUT_MS,
     request: {
-      max_tokens: 500,
+      // Gemini 3.xでは思考トークンも出力上限を消費する。短いJSON生成に十分な
+      // 余裕を持たせ、対応モデルでは思考を最小化して本文前の打ち切りを防ぐ。
+      max_tokens: NAMING_MAX_TOKENS,
+      ...(supportsThinkingLevel(model) ? { thinking_level: 'minimal' } : {}),
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildUserContent(session) }],
       output_config: { format: ENDING_OUTPUT_FORMAT },
     },
   });
   if (data.stop_reason === 'max_tokens') {
-    // max_tokens: 500で長い総括が途中で切れるとJSONとして壊れる。そのままだと
+    // 長い総括が途中で切れるとJSONとして壊れる。そのままだと
     // 下のJSON.parse失敗経路に落ちて「invalid JSON」としか出ず、原因が truncation
     // だと分からない(server/novelJobs.jsのrun()と同じ判定を踏襲する)。
     throw new Error('ending naming was truncated (max_tokens)');

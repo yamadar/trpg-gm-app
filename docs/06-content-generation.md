@@ -85,6 +85,8 @@ Play画面で「この物語を終える」を確定すると(05-ui-ux.md 7章)�
 
 **出力**: structured outputsで`{ ending_title, summary }`を得る。クライアント互換形式の`output_config.format.schema`は`server/textProvider.js`がGeminiの`generationConfig.responseJsonSchema`へ変換する。`ending_title`は20字程度の日本語タイトル、`summary`は2〜3文の総括。system promptはゲーム的表現(フラグのキー名・数値・選択肢)や物語内で明かされなかった秘密を書かないよう指示する。
 
+命名は短い構造化出力だが、Gemini 3.xの思考トークンも出力上限を消費する。`max_tokens`を4096とし、Gemini 3.xでは`thinking_level: minimal`を指定して、JSON本文生成前の`max_tokens`打ち切りを防ぐ。旧モデルには未対応パラメータを送らない。
+
 AI呼び出しは既存の`messages`日次利用枠に相乗りする(専用の新種別は作らない)。失敗時(上流エラー・不正なJSON・空タイトル)はエンディングの記録自体を作らず`502`を返し、Play画面・Home画面は再試行ボタンを出す(04-persistence.md・05-ui-ux.md参照)。ダイス統計(`stats`)自体はここでは生成せず、クライアントが`summarizeRolls`(`src/engine/rollStats.js`)で計算しリクエストボディに含めて送る(02-data-model.md 3.6節参照)。
 
 ## 11. シナリオ自動生成モード
