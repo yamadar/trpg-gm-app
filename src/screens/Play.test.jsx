@@ -591,14 +591,10 @@ describe('Play', () => {
     expect(screen.queryByText('PC名: テスト猟師')).not.toBeInTheDocument();
   });
 
-  // 未ログインで開いた新規セッションは、初回自動ターンが「ログインが必要」で即座に
-  // 失敗する。それでも開始済みの印を付けてしまうと、以後ログインしても導入シーンは
-  // 二度と生成されず、場面もエンディングも選択肢も無い空のプレイ画面が残る。
+  // 未ログインで開いた新規セッションは導入生成を待機し、ログイン後に開始する。
   it('requests the opening scene once the player logs in after opening a session logged out', async () => {
     const { rerender } = render(<AuthHarness user={null} initialSession={makeSession()} />);
-    await waitFor(() =>
-      expect(screen.getByText('プレイの進行にはログインが必要です。右上からログインしてください。')).toBeInTheDocument()
-    );
+    expect(screen.getByText('プレイを進めるにはログインが必要です。')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
 
     rerender(<AuthHarness user={{ id: 'usr_test', displayName: 'テスト', avatarUrl: null }} initialSession={makeSession()} />);
@@ -607,17 +603,20 @@ describe('Play', () => {
     expect(screen.getByText('進む')).toBeInTheDocument();
   });
 
-  it('refuses to run a turn when logged out', async () => {
-    // logが空だと初回自動ターンが走ってしまうため、既存ログを持つセッションを使う
-    const session = makeSession({ log: [{ role: 'gm', text: '既存のログ' }] });
+  it('disables choices and free-text controls and offers login when logged out', async () => {
+    const session = makeSession({
+      log: [{ role: 'gm', text: '既存のログ', choices: ['森へ進む'] }],
+    });
     renderWithAuth(<Harness initialSession={session} />, { user: null });
     const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
-    fireEvent.change(box, { target: { value: '森へ進む' } });
-    fireEvent.click(screen.getByText('送る'));
-    await waitFor(() =>
-      expect(screen.getByText('プレイの進行にはログインが必要です。右上からログインしてください。')).toBeInTheDocument()
-    );
+    expect(box).toBeDisabled();
+    expect(screen.getByRole('button', { name: '送る' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '森へ進む' })).toBeDisabled();
+    expect(screen.getByText('プレイを進めるにはログインが必要です。')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン' }));
+    expect(screen.getByRole('dialog', { name: 'ログイン' })).toBeInTheDocument();
   });
 });
 

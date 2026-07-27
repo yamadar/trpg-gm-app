@@ -10,6 +10,7 @@ import { normalizeTurnResult } from '../api/turnResult.js';
 import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import FocusHeader, { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
+import LoginModal from '../components/auth/LoginModal.jsx';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Stamp from '../components/ui/Stamp.jsx';
@@ -23,6 +24,9 @@ import { summarizeRolls } from '../engine/rollStats.js';
 // スクロールの停止位置(scroll-margin-bottom)の双方に同じ値を使い、
 // 「入力欄の下に末尾が潜り込む」ことが起きないようにする。
 const COMPOSER_RESERVE = 140;
+// 未ログイン時は入力欄の上にログイン案内も積む。狭い画面で案内文が2行になっても
+// ログ末尾が固定エリアの裏へ隠れない高さを確保する。
+const LOGGED_OUT_COMPOSER_RESERVE = 190;
 
 // 自動挿絵を再び発火させるまでに空けるターン数。current_scene はGMが毎ターン自由記述する
 // 文字列なので、同じ場面が続いていても言い回しが揺れて「シーン変化」と判定されうる。
@@ -33,6 +37,7 @@ export const SLOW_RESPONSE_NOTICE_MS = 12000;
 export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState('');
+  const [loginOpen, setLoginOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [slowResponse, setSlowResponse] = useState(false);
   const [error, setError] = useState('');
@@ -57,6 +62,7 @@ export default function Play({ session, setSession }) {
   const docked = useMediaQuery('(min-width: 1024px)');
   const [panelOpen, setPanelOpen] = useState(false);
   const PANEL_W = 320;
+  const composerReserve = !authLoading && !user ? LOGGED_OUT_COMPOSER_RESERVE : COMPOSER_RESERVE;
   // マウント時点のログ長。これ以降に追加されたエントリだけを演出対象にする
   // (セッション再開時に履歴全体が演出され直すのを防ぐ)。
   const initialLogLenRef = useRef(session.log.length);
@@ -122,7 +128,7 @@ export default function Play({ session, setSession }) {
   const runTurn = useCallback(
     async (playerText, displayText, { allowRoll = true } = {}) => {
       if (!user) {
-        setError('プレイの進行にはログインが必要です。右上からログインしてください。');
+        setError('プレイの進行にはログインが必要です。');
         return false;
       }
       setBusy(true);
@@ -217,10 +223,9 @@ export default function Play({ session, setSession }) {
     [session, setSession, user, imageGen, illustrate]
   );
 
-  // 導入シーンの取得。未ログインで開いた場合 runTurn は即座に失敗するので、
-  // user も依存に含めてログイン後にもう一度ここへ来られるようにする。
+  // 導入シーンの取得。未ログイン中は待機し、ログイン後に開始する。
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || !user) return;
     if (session.log.length === 0 && !hasStartedRef.current) {
       // 印は await の前に付ける(StrictModeの二重呼び出しで導入が2回走らないように)。
       hasStartedRef.current = true;
@@ -236,7 +241,7 @@ export default function Play({ session, setSession }) {
   }, [authLoading, user]);
 
   async function submitFree() {
-    if (!input.trim() || busy || narrating) return;
+    if (!user || authLoading || !input.trim() || busy || narrating) return;
     const text = input.trim();
     setInput('');
     const ok = await runTurn(text, text);
@@ -244,7 +249,7 @@ export default function Play({ session, setSession }) {
   }
 
   function submitChoice(choice) {
-    if (busy || narrating) return;
+    if (!user || authLoading || busy || narrating) return;
     runTurn(choice, choice);
   }
 
@@ -323,7 +328,7 @@ export default function Play({ session, setSession }) {
         style={{
           maxWidth: 720,
           margin: '0 auto',
-          padding: `24px 20px ${COMPOSER_RESERVE}px`,
+          padding: `24px 20px ${composerReserve}px`,
           // ヘッダーが外に出た分、100vhのままだと本文が短くても縦スクロールが出る。
           minHeight: `calc(100vh - ${FOCUS_HEADER_HEIGHT}px)`,
           background: mood.paper,
@@ -460,7 +465,12 @@ export default function Play({ session, setSession }) {
                 {i === session.log.length - 1 && !narrating && entry.choices?.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
                     {entry.choices.map((c, ci) => (
-                      <Button key={ci} variant="ghost" onClick={() => submitChoice(c)} disabled={busy}>
+                      <Button
+                        key={ci}
+                        variant="ghost"
+                        onClick={() => submitChoice(c)}
+                        disabled={authLoading || !user || busy}
+                      >
                         {c}
                       </Button>
                     ))}
@@ -529,7 +539,7 @@ export default function Play({ session, setSession }) {
               block:'nearest' の対象から外し、末尾が画面外にあってもスクロールを
               一切行わないため(追従が丸ごと効かなくなる)。1pxあれば通常の
               nearest の判定に乗る。 */}
-          <div ref={logEndRef} style={{ height: 1, scrollMarginBottom: COMPOSER_RESERVE }} />
+          <div ref={logEndRef} style={{ height: 1, scrollMarginBottom: composerReserve }} />
         </div>
 
         <div
@@ -543,6 +553,37 @@ export default function Play({ session, setSession }) {
             padding: 16,
           }}
         >
+          {!authLoading && !user && (
+            <div
+              id="play-login-prompt"
+              role="status"
+              style={{
+                maxWidth: 720,
+                margin: '0 auto 10px',
+                padding: '8px 10px',
+                boxSizing: 'border-box',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                background: COLORS.card,
+                border: `1px solid ${COLORS.line}`,
+                borderRadius: 4,
+                fontFamily: F_BODY,
+                fontSize: 13,
+                color: COLORS.inkSoft,
+              }}
+            >
+              <span>プレイを進めるにはログインが必要です。</span>
+              <Button
+                variant="brass"
+                onClick={() => setLoginOpen(true)}
+                style={{ flexShrink: 0, padding: '8px 12px' }}
+              >
+                ログイン
+              </Button>
+            </div>
+          )}
           <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8 }}>
             <input
               value={input}
@@ -551,14 +592,21 @@ export default function Play({ session, setSession }) {
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitFree();
               }}
               placeholder="PCの行動を自由に書く…"
+              aria-describedby={!authLoading && !user ? 'play-login-prompt' : undefined}
               style={{ ...inputStyle, flex: 1 }}
-              disabled={busy || narrating}
+              disabled={authLoading || !user || busy || narrating}
             />
-            <Button variant="brass" onClick={submitFree} disabled={busy || narrating || !input.trim()}>
+            <Button
+              variant="brass"
+              onClick={submitFree}
+              disabled={authLoading || !user || busy || narrating || !input.trim()}
+            >
               送る
             </Button>
           </div>
         </div>
+
+        {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
 
         {docked ? (
           <CharacterPanel session={session} docked onRecall={() => recallMemory(session)} />
