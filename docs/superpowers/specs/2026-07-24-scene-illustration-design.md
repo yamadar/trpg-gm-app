@@ -8,7 +8,7 @@
 
 - 生成タイミング: **既定は手動ボタン**。加えて `session.autoIllustrate` トグルで「シーン変化時に自動生成」をON可能。
 - 挿絵の紐付け: **GMログエントリ毎**。地の文の上に表示し、スクロールしても各場面に残る。
-- 画像プロバイダ: **Google Gemini**。ネイティブAPI `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`、`responseModalities: ["TEXT","IMAGE"]` 指定、レスポンスの `inlineData`(base64 PNG)を受領。既定モデル `gemini-2.5-flash-image`(env で差し替え可)。
+- 画像プロバイダ: **Google Gemini**。ネイティブAPI `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`、`responseModalities: ["TEXT","IMAGE"]` 指定、レスポンスの `inlineData`(base64 PNG)を受領。モデルはenv `GEMINI_IMAGE_MODEL`で指定。
 - 画像バイト列はサーバーのファイルに保存し、セッションJSONには参照(`imageId`)のみ持たせる。
 - **キャラの見た目の一貫性**: セッション専用の**見た目レジストリ** `session.appearances`(名前→見た目文)を持ち、登場キャラの見た目を画像プロンプトに毎回差し込むテキスト方式。PCはシート記載を優先、NPC等の未記載キャラは初登場時に生成して固定。**シナリオ本文は書き換えない**(公開・インポートされる共有素材のため)。
 
@@ -106,11 +106,11 @@ createFsImageStore(rootDir) -> {
 
 ### 7. サーバー結線(`server/index.js`)
 
-- env: `geminiApiKey = env.GEMINI_API_KEY`、`geminiModel = env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image'`。
+- env: `geminiApiKey = env.GEMINI_API_KEY`、`geminiModel = env.GEMINI_IMAGE_MODEL`。
 - `createUsage` の `limits` に `images: parseLimit(env.LIMIT_IMAGES_PER_DAY, 30)` を追加。
 - `app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiApiKey }))` を requireAuth の**前**。
 - `app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey: apiKey, geminiApiKey, geminiModel, fetchImpl, usage }))` を requireAuth の**後**。
-- `.env.example` に `GEMINI_API_KEY=`、`GEMINI_IMAGE_MODEL=gemini-2.5-flash-image`、`LIMIT_IMAGES_PER_DAY=30` を追記。
+- `.env.example` に `GEMINI_API_KEY=`、`GEMINI_IMAGE_MODEL=`、`LIMIT_IMAGES_PER_DAY=30` を追記。
 
 ### 8. クライアント
 

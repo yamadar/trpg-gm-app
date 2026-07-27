@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Geminiエンドポイント: `POST https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`、ヘッダ `x-goog-api-key`、ボディに `generationConfig: { responseModalities: ['TEXT','IMAGE'] }`。
-- 既定モデル: `gemini-2.5-flash-image`(env `GEMINI_IMAGE_MODEL` で差し替え)。Geminiキーは env `GEMINI_API_KEY`(Anthropicキーとは別)。
+- モデル: env `GEMINI_IMAGE_MODEL`で指定。Geminiキーは env `GEMINI_API_KEY`(Anthropicキーとは別)。
 - 日次上限: env `LIMIT_IMAGES_PER_DAY`(既定30)、`usage` 機構の `images` 種別。
 - imageId形式: `img_<Date.now()>-<rand4>`、検証正規表現 `/^img_[A-Za-z0-9-]+$/`。
 - プロンプトのトリム: narrative 先頭400字、pcRaw 先頭600字。
@@ -199,10 +199,10 @@ describe('generateImage', () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       ok({ candidates: [{ content: { parts: [{ inlineData: { data: 'BASE64', mimeType: 'image/png' } }] } }] })
     );
-    const out = await generateImage({ prompt: 'a castle', apiKey: 'k', model: 'gemini-2.5-flash-image', fetchImpl });
+    const out = await generateImage({ prompt: 'a castle', apiKey: 'k', model: 'image-model-test', fetchImpl });
     expect(out).toEqual({ base64: 'BASE64', mimeType: 'image/png' });
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/image-model-test:generateContent',
       expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'x-goog-api-key': 'k' }) })
     );
   });
@@ -634,7 +634,7 @@ function routedFetch() {
 
 function buildApp(opts = {}) {
   const {
-    geminiApiKey = 'gem', anthropicApiKey = 'anth', geminiModel = 'gemini-2.5-flash-image',
+    geminiApiKey = 'gem', anthropicApiKey = 'anth', geminiModel = 'image-model-test',
     fetchImpl = routedFetch(), usage,
   } = opts;
   app = express();
@@ -829,7 +829,7 @@ import { createSceneImagesRouter } from './routes/sceneImages.js';
 ```js
   const imageStore = createFsImageStore(dataDir);
   const geminiApiKey = env.GEMINI_API_KEY;
-  const geminiModel = env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
+  const geminiModel = env.GEMINI_IMAGE_MODEL;
 ```
 
 3. `createUsage` の `limits` に1行追加:
@@ -855,7 +855,7 @@ import { createSceneImagesRouter } from './routes/sceneImages.js';
 ```
 # 場面挿絵生成(Google Gemini)。未設定なら挿絵機能はUIごと無効化される。
 GEMINI_API_KEY=
-GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
+GEMINI_IMAGE_MODEL=
 LIMIT_IMAGES_PER_DAY=30
 ```
 
@@ -1274,7 +1274,7 @@ git commit -m "feat(ui): シーン変化での挿絵自動生成トグルを追�
 - `docs/05-ui-ux.md` 7章に追記(実装済み 2026-07-24):
   「シーン挿絵: GMログエントリ毎に、地の文の上に生成挿絵を表示(`src/screens/Play.jsx` + `src/api/sceneImageClient.js`)。未生成エントリの『この場面を描く』ボタンで手動生成、ヘッダの『挿絵を自動生成』トグルでシーン変化時に自動生成。Geminiキー未設定(`GET /api/config` の `imageGen:false`)時は挿絵UIを一切出さない。生成失敗・上限はインラインエラー表示。」
 - `docs/06-content-generation.md` に節を追加(場面挿絵生成):
-  「Gemini(`gemini-2.5-flash-image`、`server/imageProvider.js`)で挿絵を生成する。プロンプトは `server/imagePrompt.js` が地の文+`session.moods`の画風+登場人物の見た目から構築。登場人物の見た目は `server/sceneAnalysis.js`(Anthropicで地の文から登場人物を特定し未登録者の見た目を生成)がセッション専用レジストリ `session.appearances`(名前→見た目)に蓄積し、以降の挿絵で再利用してキャラの一貫性を保つ。シナリオ本文は書き換えない。画像バイトは `server/storage/imageStore.js` がファイル保存し、`GET /api/sessions/:id/images/:imageId` で配信。セッションJSONには `imageId` 参照のみ。日次上限は `LIMIT_IMAGES_PER_DAY`。**未実装(後続)**: 挿絵付き小説化、キャラポートレート+参照画像による強い一貫性。」
+  「Gemini(env `GEMINI_IMAGE_MODEL`、`server/imageProvider.js`)で挿絵を生成する。プロンプトは `server/imagePrompt.js` が地の文+`session.moods`の画風+登場人物の見た目から構築。登場人物の見た目は `server/sceneAnalysis.js`(Anthropicで地の文から登場人物を特定し未登録者の見た目を生成)がセッション専用レジストリ `session.appearances`(名前→見た目)に蓄積し、以降の挿絵で再利用してキャラの一貫性を保つ。シナリオ本文は書き換えない。画像バイトは `server/storage/imageStore.js` がファイル保存し、`GET /api/sessions/:id/images/:imageId` で配信。セッションJSONには `imageId` 参照のみ。日次上限は `LIMIT_IMAGES_PER_DAY`。**未実装(後続)**: 挿絵付き小説化、キャラポートレート+参照画像による強い一貫性。」
 - `docs/07-risks-and-roadmap.md` Phase 3 の「画像生成連携(シーン挿絵)」を「サブプロジェクト1(基盤+Playシーン挿絵+テキスト方式の見た目一貫性)実装済み(2026-07-24)。挿絵付き小説化・キャラポートレートは後続」に更新。
 - `docs/08-feature-ideas.md` 1.1 の冒頭に「**サブプロジェクト1 実装済み(2026-07-24)**: 基盤+Playシーン挿絵+見た目レジストリ。挿絵付き小説化(3)・ポートレート(4)は後続」を追記。
 

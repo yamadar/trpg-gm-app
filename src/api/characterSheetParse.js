@@ -1,4 +1,4 @@
-import { callClaude, extractText, parseJsonLoose } from './client.js';
+import { callTextModel, extractText, parseJsonLoose } from './client.js';
 
 // 抽出スキーマを変えたらこの値を上げる。characterSheetCache がハッシュに混ぜており、
 // 既存の parsed キャッシュが無効化されて次回使用時に一度だけ解析し直される。
@@ -29,10 +29,8 @@ const SHEET_OUTPUT_FORMAT = {
 };
 
 export async function parseCharacterSheet(raw) {
-  const data = await callClaude({
-    model: 'claude-sonnet-5',
+  const data = await callTextModel({
     max_tokens: 1000,
-    thinking: { type: 'disabled' },
     output_config: { format: SHEET_OUTPUT_FORMAT },
     system: '以下のキャラクターシートから name(名前)・goal(目標)・bonds(因縁・関係)を抽出せよ。',
     messages: [{ role: 'user', content: raw }],

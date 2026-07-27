@@ -5,7 +5,7 @@ import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { nameEnding } from '../endingNaming.js';
 
-export function createEndingsRouter({ dataStore, apiKey, fetchImpl = fetch, usage }) {
+export function createEndingsRouter({ dataStore, apiKey, model, fetchImpl = fetch, usage }) {
   const router = Router();
   router.param('id', idParamGuard);
 
@@ -15,7 +15,7 @@ export function createEndingsRouter({ dataStore, apiKey, fetchImpl = fetch, usag
 
   router.post('/sessions/:id/ending', asyncHandler(async (req, res) => {
     if (!apiKey) {
-      res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
+      res.status(500).json({ error: 'GEMINI_TEXT_API_KEY is not configured on the server' });
       return;
     }
     const session = await dataStore.get(sessionKey(req.userId, req.params.id));
@@ -49,7 +49,7 @@ export function createEndingsRouter({ dataStore, apiKey, fetchImpl = fetch, usag
     }
     let named;
     try {
-      named = await nameEnding({ session, apiKey, fetchImpl });
+      named = await nameEnding({ session, apiKey, model, fetchImpl });
     } catch (e) {
       res.status(502).json({ error: e.message });
       return;

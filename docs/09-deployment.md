@@ -8,15 +8,15 @@ Renderの **Web Service + Persistent Disk** で公開する手順。所要時間
 
 - サーバー側の永続化(`server/storage/dataStore.js` / `textStore.js` / `imageStore.js`)は**ローカルファイルシステム実装**で、`rename`によるアトミック書き込みと`readdir`による一覧に依存している。オブジェクトストレージへ直接置き換えることはできない。
 - ディスクを共有する複数インスタンス構成は想定していない(ロック機構なし)。**必ず1インスタンスで運用する**。
-- `POST /api/messages`はAnthropic APIの応答を非ストリーミングで待って中継する(`server/routes/messages.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
+- `POST /api/messages`はGemini APIの応答を非ストリーミングで待つ(`server/routes/messages.js`・`server/textProvider.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
 - OAuthのredirect_uri(`${BASE_URL}/auth/{provider}/callback`)とCSRF目的のOrigin検証が`BASE_URL`基準のため、**固定ドメイン**が必要。
 
 ## 前提
 
 - GitHubリポジトリにpush済みであること
 - Renderアカウント(支払い方法の登録が必要。永続ディスクはFreeプランでは使えない)
-- Anthropic APIキー
-- 任意: Gemini APIキー(場面挿絵用。未設定なら挿絵機能はUIごと無効になる)
+- Geminiテキスト生成APIキー
+- 任意: Gemini画像生成APIキー(場面挿絵用。未設定なら挿絵機能はUIごと無効になる)
 - 任意: Google / Discord / X のOAuthアプリ(**最低1つは必須**。ログインしないと`/api/*`の大半が401になる)
 
 ## 1. サービスを作成する
@@ -61,9 +61,10 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | `SECURE_COOKIES` | `true` | ✅ セッションクッキーのSecure属性。未設定でも`BASE_URL`がhttpsなら有効になるが、本番では明示する |
 | `DATA_DIR` | `/data` | ✅ ディスクのマウントパスと一致させる |
 | `BASE_URL` | `https://<サービス名>.onrender.com`(末尾スラッシュなし) | ✅ |
-| `ANTHROPIC_API_KEY` | Anthropicのキー | ✅ |
-| `GEMINI_API_KEY` | Google AI Studioのキー | 任意(挿絵機能) |
-| `GEMINI_IMAGE_MODEL` | 既定`gemini-2.5-flash-image` | 任意 |
+| `GEMINI_TEXT_API_KEY` | Google AI Studioのテキスト生成用キー | ✅ |
+| `GEMINI_TEXT_MODEL` | 使用するテキスト生成モデルID | ✅ |
+| `GEMINI_IMAGE_API_KEY` | Google AI Studioの画像生成用キー | 任意(挿絵機能) |
+| `GEMINI_IMAGE_MODEL` | 使用する画像生成モデルID | `GEMINI_IMAGE_API_KEY`設定時に必須 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuthアプリの資格情報 | プロバイダごとに任意(合計1つ以上必須) |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | 同上 | 同上 |
 | `X_CLIENT_ID` / `X_CLIENT_SECRET` | 同上 | 同上 |
@@ -161,7 +162,10 @@ tar czf /tmp/gmdesk-$(date +%Y%m%d).tar.gz -C /data .
 | 画面が真っ白 / APIのJSONが直接見える | `STATIC_DIR`が未設定。`dist`を設定して再デプロイする |
 | サーバーが起動せず`SECURE_COOKIES must be one of ...` | `SECURE_COOKIES`の値がタイプミス。受け付けるのは`true`/`false`・`1`/`0`・`yes`/`no`・`on`/`off`(大文字小文字は不問)。Secureが黙って無効化されるのを防ぐため起動時に停止する仕様 |
 | APIのURLでHTMLが返る | SPAフォールバックの除外条件から外れている。`/api/`・`/auth/`配下は除外される(`server/index.js`) |
-| 画像生成のUIが出ない | `GEMINI_API_KEY`が未設定(`GET /api/config`が`imageGen:false`を返す) |
+| テキスト生成が`GEMINI_TEXT_API_KEY is not configured`で失敗 | `GEMINI_TEXT_API_KEY`が未設定。画像用キーとは別に設定する |
+| サーバーが起動せず`GEMINI_TEXT_MODEL must be configured`で失敗 | `GEMINI_TEXT_API_KEY`に対応する`GEMINI_TEXT_MODEL`が未設定 |
+| サーバーが起動せず`GEMINI_IMAGE_MODEL must be configured`で失敗 | `GEMINI_IMAGE_API_KEY`に対応する`GEMINI_IMAGE_MODEL`が未設定 |
+| 画像生成のUIが出ない | `GEMINI_IMAGE_API_KEY`が未設定(`GET /api/config`が`imageGen:false`を返す) |
 
 ## 関連
 

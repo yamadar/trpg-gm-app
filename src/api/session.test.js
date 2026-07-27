@@ -19,30 +19,30 @@ beforeEach(() => {
 
 describe('summarizeWorld', () => {
   it('returns the trimmed text of the response', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '  要約結果  ' }] });
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '  要約結果  ' }] });
     expect(await summarizeWorld('生の世界観テキスト')).toBe('要約結果');
   });
 });
 
 describe('generateScenario', () => {
   it('returns the trimmed text of the response', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '## シナリオ概要\n本文' }] });
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '## シナリオ概要\n本文' }] });
     const scenario = await generateScenario('推理物', 'PC設定', '世界観要約');
     expect(scenario).toBe('## シナリオ概要\n本文');
   });
 
   it('includes the goal/bonds hook instruction only when a PC sheet is provided', async () => {
-    const callClaudeMock = vi
-      .spyOn(client, 'callClaude')
+    const callTextModelMock = vi
+      .spyOn(client, 'callTextModel')
       .mockResolvedValue({ content: [{ type: 'text', text: 'x' }] });
     await generateScenario('推理物', 'PC設定', '世界観要約');
-    expect(callClaudeMock.mock.calls[0][0].system).toContain('hook');
+    expect(callTextModelMock.mock.calls[0][0].system).toContain('hook');
     await generateScenario('推理物', '', '世界観要約');
-    expect(callClaudeMock.mock.calls[1][0].system).not.toContain('hook');
+    expect(callTextModelMock.mock.calls[1][0].system).not.toContain('hook');
   });
 
   it('throws when the response was truncated by max_tokens', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: '途中まで' }],
       stop_reason: 'max_tokens',
     });
@@ -55,23 +55,23 @@ describe('takeTurn', () => {
   // 「ダミー」等の空の見出しで判定を1回消費する。その見出しは判定スタンプとして
   // 場面の先頭に描かれるため、プレイヤーには意味不明な文字列として見える。
   it('does not offer the roll tool when the caller disallows a roll', async () => {
-    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: '{"narrative": "村の広場。", "state_update": {}, "choices": ["進む"]}' }],
     });
 
     await takeTurn(makeSession(), '(セッション開始。導入シーンを描写せよ)', { allowRoll: false });
 
-    expect(callClaudeMock.mock.calls[0][0].tools).toBeUndefined();
+    expect(callTextModelMock.mock.calls[0][0].tools).toBeUndefined();
   });
 
   it('offers the roll tool by default', async () => {
-    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: '{"narrative": "静かな朝。", "state_update": {}, "choices": []}' }],
     });
 
     await takeTurn(makeSession(), '周りを見渡す');
 
-    expect(callClaudeMock.mock.calls[0][0].tools.map((t) => t.name)).toEqual(['roll_check']);
+    expect(callTextModelMock.mock.calls[0][0].tools.map((t) => t.name)).toEqual(['roll_check']);
   });
 
   // 判定は1ターンに最大1回。ツールを開けたまま追撃すると、モデルが再度roll_checkを
@@ -87,18 +87,18 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "登り切った。", "state_update": {}, "choices": ["進む"]}' }],
     };
-    const callClaudeMock = vi
-      .spyOn(client, 'callClaude')
+    const callTextModelMock = vi
+      .spyOn(client, 'callTextModel')
       .mockResolvedValueOnce(toolUseResponse)
       .mockResolvedValueOnce(finalResponse);
 
     await takeTurn(makeSession(), '崖を登る');
 
-    expect(callClaudeMock.mock.calls[1][0].tool_choice).toEqual({ type: 'none' });
+    expect(callTextModelMock.mock.calls[1][0].tool_choice).toEqual({ type: 'none' });
   });
 
   it('returns the parsed result without a roll when no tool_use happens', async () => {
-    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: '{"narrative": "静かな朝。", "state_update": {}, "choices": []}' }],
     });
 
@@ -106,16 +106,16 @@ describe('takeTurn', () => {
 
     expect(result.narrative).toBe('静かな朝。');
     expect(roll).toBeNull();
-    const request = callClaudeMock.mock.calls[0][0];
+    const request = callTextModelMock.mock.calls[0][0];
     // 動的状態はsystemではなくuserメッセージ側に入る
     expect(request.messages[0].content).toContain('# プレイヤーの行動\n周りを見渡す');
     expect(request.messages[0].content).toContain('シーン: 冒頭');
-    expect(request.system[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(request.system[0]).toEqual(expect.objectContaining({ type: 'text' }));
     expect(request.output_config.format.type).toBe('json_schema');
   });
 
   it('converts structured-output flags array into a plain object', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',
@@ -155,8 +155,8 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "登り切った。", "state_update": {}, "choices": []}' }],
     };
-    const callClaudeMock = vi
-      .spyOn(client, 'callClaude')
+    const callTextModelMock = vi
+      .spyOn(client, 'callTextModel')
       .mockResolvedValueOnce(toolUseResponse)
       .mockResolvedValueOnce(finalResponse);
     vi.spyOn(Math, 'random').mockReturnValue(0); // roll = 1 -> success
@@ -166,8 +166,8 @@ describe('takeTurn', () => {
     expect(result.narrative).toBe('登り切った。');
     expect(roll.check_label).toBe('崖を登る');
     expect(roll.success).toBe(true);
-    expect(callClaudeMock).toHaveBeenCalledTimes(2);
-    const secondCallMessages = callClaudeMock.mock.calls[1][0].messages;
+    expect(callTextModelMock).toHaveBeenCalledTimes(2);
+    const secondCallMessages = callTextModelMock.mock.calls[1][0].messages;
     expect(secondCallMessages.at(-1).content[0].type).toBe('tool_result');
   });
 
@@ -180,7 +180,7 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "見つけた。", "state_update": {}, "choices": []}' }],
     };
-    vi.spyOn(client, 'callClaude').mockResolvedValueOnce(toolUseResponse).mockResolvedValueOnce(finalResponse);
+    vi.spyOn(client, 'callTextModel').mockResolvedValueOnce(toolUseResponse).mockResolvedValueOnce(finalResponse);
     vi.spyOn(Math, 'random').mockReturnValue(0.11); // roll = 12 -> coc7eではextreme(<=ceil(60/5))
 
     const session = makeSession({ ruleset: { id: 'coc7e', formula: 'coc7e' } });
@@ -202,8 +202,8 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "膝が笑う。", "state_update": {}, "choices": []}' }],
     };
-    const callClaudeMock = vi
-      .spyOn(client, 'callClaude')
+    const callTextModelMock = vi
+      .spyOn(client, 'callTextModel')
       .mockResolvedValueOnce(toolUseResponse)
       .mockResolvedValueOnce(finalResponse);
     // roll = 80 -> fail(p=50)。副作用の1d6は rng()=80 -> 1+((80-1)%6)=1+1=2 -> delta -2
@@ -219,7 +219,7 @@ describe('takeTurn', () => {
     expect(roll.resourceChange).toEqual(resourceChange);
     expect(session.state.resources.san.value).toBe(60); // 非破壊
 
-    const toolResult = callClaudeMock.mock.calls[1][0].messages.at(-1).content[0];
+    const toolResult = callTextModelMock.mock.calls[1][0].messages.at(-1).content[0];
     const payload = JSON.parse(toolResult.content);
     expect(payload.san_loss).toBe(2);
     expect(payload.san_now).toBe(58);
@@ -239,8 +239,8 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "闇。", "state_update": {}, "choices": []}' }],
     };
-    const callClaudeMock = vi
-      .spyOn(client, 'callClaude')
+    const callTextModelMock = vi
+      .spyOn(client, 'callTextModel')
       .mockResolvedValueOnce(toolUseResponse)
       .mockResolvedValueOnce(finalResponse);
     vi.spyOn(Math, 'random').mockReturnValue(0.79); // fail -> -2
@@ -253,7 +253,7 @@ describe('takeTurn', () => {
 
     expect(resourceChange.after).toBe(0);
     expect(resourceChange.delta).toBe(-1); // clamp後の実効値
-    const payload = JSON.parse(callClaudeMock.mock.calls[1][0].messages.at(-1).content[0].content);
+    const payload = JSON.parse(callTextModelMock.mock.calls[1][0].messages.at(-1).content[0].content);
     expect(payload.note).toContain('正気');
   });
 
@@ -271,7 +271,7 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "何ともない。", "state_update": {}, "choices": []}' }],
     };
-    vi.spyOn(client, 'callClaude').mockResolvedValueOnce(toolUseResponse).mockResolvedValueOnce(finalResponse);
+    vi.spyOn(client, 'callTextModel').mockResolvedValueOnce(toolUseResponse).mockResolvedValueOnce(finalResponse);
     vi.spyOn(Math, 'random').mockReturnValue(0.79);
 
     const { resourceChange } = await takeTurn(makeSession(), '見る');
@@ -287,14 +287,14 @@ describe('takeTurn', () => {
     const finalResponse = {
       content: [{ type: 'text', text: '{"narrative": "命中。", "state_update": {}, "choices": []}' }],
     };
-    const callClaudeMock = vi
-      .spyOn(client, 'callClaude')
+    const callTextModelMock = vi
+      .spyOn(client, 'callTextModel')
       .mockResolvedValueOnce(toolUseResponse)
       .mockResolvedValueOnce(finalResponse);
     vi.spyOn(Math, 'random').mockReturnValue(0.39); // roll = 40 -> margin 20
 
     await takeTurn(makeSession({ ruleset: { id: 'gurps', formula: 'gurps' } }), '撃つ');
-    const payload = JSON.parse(callClaudeMock.mock.calls[1][0].messages.at(-1).content[0].content);
+    const payload = JSON.parse(callTextModelMock.mock.calls[1][0].messages.at(-1).content[0].content);
     expect(payload.margin).toBe(20);
   });
 });
@@ -302,7 +302,7 @@ describe('takeTurn', () => {
 describe('recallMemory', () => {
   it('/api/messages経由で回想を生成し、systemに翻訳指示・userにhistory/flagsを含める', async () => {
     const spy = vi
-      .spyOn(client, 'callClaude')
+      .spyOn(client, 'callTextModel')
       .mockResolvedValue({ content: [{ type: 'text', text: '  カイは村長の依頼を思い返した。  ' }] });
     const session = makeSession({
       pc: { raw: 'PC名: カイ', goal: '村を守る', bonds: '村長は恩人' },
@@ -316,7 +316,7 @@ describe('recallMemory', () => {
     expect(body.messages[0].content).toContain('goblins_present');
   });
   it('空レスポンスはフォールバック文言を返す', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
     expect(await recallMemory(makeSession())).toBe('(まだ特に思い出すことはない)');
   });
 });
@@ -324,7 +324,7 @@ describe('recallMemory', () => {
 describe('advanceCampaignPc', () => {
   it('更新版PCシートとxpを返し、systemに持ち越し指示・userに元シート/履歴/フラグを含める', async () => {
     const spy = vi
-      .spyOn(client, 'callClaude')
+      .spyOn(client, 'callTextModel')
       .mockResolvedValue({ content: [{ type: 'text', text: '  PC名: カイ(熟練の猟師)\n持ち物: 銀の矢  ' }] });
     const session = makeSession({
       pc: { raw: 'PC名: カイ', goal: '村を守る', bonds: '村長は恩人' },
@@ -339,7 +339,7 @@ describe('advanceCampaignPc', () => {
     expect(body.messages[0].content).toContain('silver_arrow_found');
   });
   it('空レスポンスは元のpc.rawへフォールバックする', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
     const out = await advanceCampaignPc(makeSession({ pc: { raw: '元シート' }, state: { xp: 5, flags: {}, recent_log: [] } }));
     expect(out).toEqual({ pcRaw: '元シート', xp: 5 });
   });

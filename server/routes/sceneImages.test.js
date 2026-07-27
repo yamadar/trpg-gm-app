@@ -13,38 +13,57 @@ import { sessionKey, sessionImagePath } from '../storage/paths.js';
 let dir, dataStore, imageStore, app;
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
 
-function analysisResponse() {
-  return { ok: true, json: async () => ({ content: [{ type: 'text', text: JSON.stringify({ present_names: [], new_appearances: [] }) }] }) };
+function analysisResponse(payload = { present_names: [], new_appearances: [] }) {
+  return {
+    ok: true,
+    json: async () => ({
+      candidates: [{
+        content: { parts: [{ text: JSON.stringify(payload) }] },
+        finishReason: 'STOP',
+      }],
+    }),
+  };
 }
 function geminiResponse() {
   return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ inlineData: { data: PNG_B64, mimeType: 'image/png' } }] } }] }) };
 }
 function routedFetch() {
-  return vi.fn(async (url) => (String(url).includes('anthropic') ? analysisResponse() : geminiResponse()));
+  return vi.fn(async (url) => (String(url).includes('gemini-text') ? analysisResponse() : geminiResponse()));
 }
 function analysisWithNew(name, description) {
-  return {
-    ok: true,
-    json: async () => ({
-      content: [
-        { type: 'text', text: JSON.stringify({ present_names: [name], new_appearances: [{ name, description }] }) },
-      ],
-    }),
-  };
+  return analysisResponse({
+    present_names: [name],
+    new_appearances: [{ name, description }],
+  });
 }
 
 function buildApp(opts = {}) {
-  // 明示的な `{ geminiApiKey: undefined }`(キー未設定の再現)が分割代入デフォルトで
+  // 明示的な `{ geminiImageApiKey: undefined }`(キー未設定の再現)が分割代入デフォルトで
   // 上書きされないよう `in` 判定で拾う(sessions.test.js の apiKey と同じ理由)。
-  const geminiApiKey = 'geminiApiKey' in opts ? opts.geminiApiKey : 'gem';
-  const { anthropicApiKey = 'anth', geminiModel = 'gemini-2.5-flash-image', fetchImpl = routedFetch(), usage } = opts;
+  const geminiImageApiKey = 'geminiImageApiKey' in opts ? opts.geminiImageApiKey : 'gem';
+  const {
+    geminiTextApiKey = 'text-key',
+    geminiTextModel = 'gemini-text',
+    geminiImageModel = 'gemini-image',
+    fetchImpl = routedFetch(),
+    usage,
+  } = opts;
   app = express();
   app.use(express.json());
   app.use((req, res, next) => {
     req.userId = 'usr_test';
     next();
   });
-  app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey, geminiApiKey, geminiModel, fetchImpl, usage }));
+  app.use('/api', createSceneImagesRouter({
+    dataStore,
+    imageStore,
+    geminiTextApiKey,
+    geminiTextModel,
+    geminiImageApiKey,
+    geminiImageModel,
+    fetchImpl,
+    usage,
+  }));
 }
 
 async function seedSession() {
@@ -74,7 +93,7 @@ describe('POST /sessions/:id/images', () => {
     expect(res.body.imageId).toMatch(/^img_/);
   });
   it('returns 501 when the gemini key is not configured', async () => {
-    buildApp({ geminiApiKey: undefined });
+    buildApp({ geminiImageApiKey: undefined });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(501);
   });
@@ -92,14 +111,14 @@ describe('POST /sessions/:id/images', () => {
     expect(res.status).toBe(429);
   });
   it('still returns an image when scene analysis fails', async () => {
-    const fetchImpl = vi.fn(async (url) => (String(url).includes('anthropic') ? { ok: false, json: async () => ({}) } : geminiResponse()));
+    const fetchImpl = vi.fn(async (url) => (String(url).includes('gemini-text') ? { ok: false, json: async () => ({}) } : geminiResponse()));
     buildApp({ fetchImpl });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(200);
     expect(res.body.imageId).toMatch(/^img_/);
   });
   it('returns 502 when image generation fails', async () => {
-    const fetchImpl = vi.fn(async (url) => (String(url).includes('anthropic') ? analysisResponse() : { ok: false, status: 500, text: async () => 'err' }));
+    const fetchImpl = vi.fn(async (url) => (String(url).includes('gemini-text') ? analysisResponse() : { ok: false, status: 500, text: async () => 'err' }));
     buildApp({ fetchImpl });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(502);
@@ -126,13 +145,13 @@ describe('GET /sessions/:id/images/:imageId', () => {
 describe('portrait generation and reference images', () => {
   it('新キャラがいるとポートレート+シーンの2回Geminiを呼び、newAppearancesにimageIdが付く', async () => {
     const fetchImpl = vi.fn(async (url) =>
-      String(url).includes('anthropic') ? analysisWithNew('村長', '白髪の老人') : geminiResponse()
+      String(url).includes('gemini-text') ? analysisWithNew('村長', '白髪の老人') : geminiResponse()
     );
     const consume = vi.fn().mockResolvedValue({ ok: true });
     buildApp({ fetchImpl, usage: { consume } });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(200);
-    const geminiCalls = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('anthropic'));
+    const geminiCalls = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('gemini-text'));
     expect(geminiCalls).toHaveLength(2); // ポートレート + シーン
     expect(res.body.newAppearances[0].imageId).toMatch(/^img_/);
     // ポートレートのプロンプトはbust shot
@@ -144,31 +163,21 @@ describe('portrait generation and reference images', () => {
 
   it('その場にいない(言及だけの)人物はポートレートもシーンプロンプトにも含めない', async () => {
     const fetchImpl = vi.fn(async (url) =>
-      String(url).includes('anthropic')
-        ? {
-            ok: true,
-            json: async () => ({
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    present_names: ['ゲオルク'],
-                    new_appearances: [
-                      { name: 'ゲオルク', description: '白髪の老人、厚手の外套' },
-                      { name: 'ハンス', description: 'ゲオルクの息子。言及されるのみ' },
-                    ],
-                  }),
-                },
-              ],
-            }),
-          }
+      String(url).includes('gemini-text')
+        ? analysisResponse({
+            present_names: ['ゲオルク'],
+            new_appearances: [
+              { name: 'ゲオルク', description: '白髪の老人、厚手の外套' },
+              { name: 'ハンス', description: 'ゲオルクの息子。言及されるのみ' },
+            ],
+          })
         : geminiResponse()
     );
     buildApp({ fetchImpl });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(200);
     expect(res.body.newAppearances.map((a) => a.name)).toEqual(['ゲオルク']);
-    const geminiCalls = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('anthropic'));
+    const geminiCalls = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('gemini-text'));
     expect(geminiCalls).toHaveLength(2); // ゲオルクのポートレート + シーン(ハンスの分は生成しない)
     const scenePrompt = JSON.parse(geminiCalls.at(-1)[1].body).contents[0].parts.at(-1).text;
     expect(scenePrompt).toContain('ゲオルク');
@@ -185,14 +194,14 @@ describe('portrait generation and reference images', () => {
     });
     await imageStore.write(sessionImagePath('usr_test', 's1', 'img_port1'), Buffer.from([9, 9]));
     const fetchImpl = vi.fn(async (url) =>
-      String(url).includes('anthropic')
-        ? { ok: true, json: async () => ({ content: [{ type: 'text', text: JSON.stringify({ present_names: ['カイ'], new_appearances: [] }) }] }) }
+      String(url).includes('gemini-text')
+        ? analysisResponse({ present_names: ['カイ'], new_appearances: [] })
         : geminiResponse()
     );
     buildApp({ fetchImpl });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(200);
-    const sceneCall = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('anthropic')).at(-1);
+    const sceneCall = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('gemini-text')).at(-1);
     const body = JSON.parse(sceneCall[1].body);
     expect(body.contents[0].parts[0].inlineData.data).toBe(Buffer.from([9, 9]).toString('base64'));
     expect(body.contents[0].parts.at(-1).text).toContain('厳密に維持');
@@ -201,7 +210,7 @@ describe('portrait generation and reference images', () => {
   it('ポートレート生成が失敗してもシーンは200で、imageIdなしのnewAppearancesを返す', async () => {
     let geminiCount = 0;
     const fetchImpl = vi.fn(async (url) => {
-      if (String(url).includes('anthropic')) return analysisWithNew('村長', '白髪の老人');
+      if (String(url).includes('gemini-text')) return analysisWithNew('村長', '白髪の老人');
       geminiCount += 1;
       if (geminiCount === 1) return { ok: false, status: 500, text: async () => 'err' };
       return geminiResponse();
@@ -218,12 +227,12 @@ describe('portrait generation and reference images', () => {
       .mockResolvedValueOnce({ ok: true }) // シーン分
       .mockResolvedValue({ ok: false, resetAt: 1 }); // ポートレート分
     const fetchImpl = vi.fn(async (url) =>
-      String(url).includes('anthropic') ? analysisWithNew('村長', '白髪の老人') : geminiResponse()
+      String(url).includes('gemini-text') ? analysisWithNew('村長', '白髪の老人') : geminiResponse()
     );
     buildApp({ fetchImpl, usage: { consume } });
     const res = await request(app).post('/api/sessions/s1/images').send({ logIndex: 0 });
     expect(res.status).toBe(200);
     expect(res.body.newAppearances[0].imageId).toBeUndefined();
-    expect(fetchImpl.mock.calls.filter(([u]) => !String(u).includes('anthropic'))).toHaveLength(1);
+    expect(fetchImpl.mock.calls.filter(([u]) => !String(u).includes('gemini-text'))).toHaveLength(1);
   });
 });

@@ -86,8 +86,8 @@ export function resolveStaticDir(value) {
 }
 
 export function createApp({
-  apiKey = process.env.ANTHROPIC_API_KEY,
   env = process.env,
+  apiKey = env.GEMINI_TEXT_API_KEY,
   dataDir = env.DATA_DIR || path.join(__dirname, 'data'),
   fetchImpl = fetch,
   baseUrl = resolveBaseUrl(env.BASE_URL),
@@ -101,8 +101,15 @@ export function createApp({
   const dataStore = createFsDataStore(dataDir);
   const textStore = createFsTextStore(dataDir);
   const imageStore = createFsImageStore(dataDir);
-  const geminiApiKey = env.GEMINI_API_KEY;
-  const geminiModel = env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
+  const textModel = String(env.GEMINI_TEXT_MODEL || '').trim();
+  const geminiImageApiKey = env.GEMINI_IMAGE_API_KEY;
+  const geminiImageModel = String(env.GEMINI_IMAGE_MODEL || '').trim();
+  if (apiKey && !textModel) {
+    throw new Error('GEMINI_TEXT_MODEL must be configured when GEMINI_TEXT_API_KEY is set');
+  }
+  if (geminiImageApiKey && !geminiImageModel) {
+    throw new Error('GEMINI_IMAGE_MODEL must be configured when GEMINI_IMAGE_API_KEY is set');
+  }
   app.locals.dataStore = dataStore;
   app.locals.textStore = textStore;
 
@@ -115,7 +122,7 @@ export function createApp({
       images: parseLimit(env.LIMIT_IMAGES_PER_DAY, 30),
     },
   });
-  const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, fetchImpl });
+  const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, model: textModel, fetchImpl });
 
   // ミドルウェア順序が重要:
   // 1) originCheck はセッション有無に関わらず全ミューテーションを守る
@@ -129,13 +136,22 @@ export function createApp({
   app.use(createOriginCheck({ baseUrl }));
   app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
   app.use('/api', createPublicContentRouter({ dataStore, textStore })); // 公開ギャラリーは認証不要
-  app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiApiKey })); // 機能検出は認証不要
+  app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiImageApiKey })); // 機能検出は認証不要
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
 
-  app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
+  app.use('/api', createMessagesRouter({ apiKey, model: textModel, fetchImpl, usage }));
   app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
-  app.use('/api', createEndingsRouter({ dataStore, apiKey, fetchImpl, usage }));
-  app.use('/api', createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey: apiKey, geminiApiKey, geminiModel, fetchImpl, usage }));
+  app.use('/api', createEndingsRouter({ dataStore, apiKey, model: textModel, fetchImpl, usage }));
+  app.use('/api', createSceneImagesRouter({
+    dataStore,
+    imageStore,
+    geminiTextApiKey: apiKey,
+    geminiTextModel: textModel,
+    geminiImageApiKey,
+    geminiImageModel,
+    fetchImpl,
+    usage,
+  }));
   app.use('/api', createWorldsRouter({ dataStore, textStore }));
   app.use('/api', createCharactersRouter({ dataStore, textStore }));
   app.use('/api', createScenariosRouter({ dataStore, textStore }));

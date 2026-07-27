@@ -27,11 +27,24 @@ const SESSION = {
   ],
 };
 
-function okFetch(text = '小説本文') {
-  return vi.fn().mockResolvedValue({
+function geminiResponse(text, stopReason = 'end_turn') {
+  return {
     ok: true,
-    json: async () => ({ content: [{ type: 'text', text }], stop_reason: 'end_turn' }),
-  });
+    json: async () => ({
+      candidates: [{
+        content: { parts: [{ text }] },
+        finishReason: stopReason === 'max_tokens' ? 'MAX_TOKENS' : 'STOP',
+      }],
+    }),
+  };
+}
+
+function okFetch(text = '小説本文') {
+  return vi.fn().mockResolvedValue(geminiResponse(text));
+}
+
+function systemOf(fetchImpl) {
+  return JSON.parse(fetchImpl.mock.calls[0][1].body).systemInstruction.parts[0].text;
 }
 
 beforeEach(async () => {
@@ -100,7 +113,7 @@ describe('createNovelJobRunner', () => {
     });
     const fetchImpl = vi.fn().mockImplementation(async () => {
       await gate;
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+      return geminiResponse('本文');
     });
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
 
@@ -136,7 +149,7 @@ describe('createNovelJobRunner', () => {
     await runner.pending.get('u1/s1');
 
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.system).toContain('主人公の名前は「カイ」である');
+    expect(body.systemInstruction.parts[0].text).toContain('主人公の名前は「カイ」である');
   });
 
   // pc.name を持たない既存セッションでも落ちず、呼称をモデルに決めさせる側へ倒れる。
@@ -147,7 +160,7 @@ describe('createNovelJobRunner', () => {
     await runner.pending.get('u1/s1');
 
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.system).toContain('一つだけ定め');
+    expect(body.systemInstruction.parts[0].text).toContain('一つだけ定め');
     expect(await runner.read('u1', 's1')).toMatchObject({ status: 'done' });
   });
 
@@ -178,13 +191,7 @@ describe('createNovelJobRunner', () => {
     let call = 0;
     const fetchImpl = vi.fn().mockImplementation(async () => {
       call += 1;
-      return {
-        ok: true,
-        json: async () => ({
-          content: [{ type: 'text', text: call === 1 ? '前半' : '後半' }],
-          stop_reason: call === 1 ? 'max_tokens' : 'end_turn',
-        }),
-      };
+      return geminiResponse(call === 1 ? '前半' : '後半', call === 1 ? 'max_tokens' : 'end_turn');
     });
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
     await runner.start('u1', 's1', SESSION, 'third');
@@ -196,10 +203,7 @@ describe('createNovelJobRunner', () => {
   });
 
   it('saves what it has and marks it truncated when the continuation limit is reached', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('途中', 'max_tokens'));
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
     await runner.start('u1', 's1', SESSION, 'third');
     await runner.pending.get('u1/s1');
@@ -211,10 +215,7 @@ describe('createNovelJobRunner', () => {
   });
 
   it('records an error for an empty response without saving', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [], stop_reason: 'end_turn' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse(''));
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
     await runner.start('u1', 's1', SESSION, 'third');
     await runner.pending.get('u1/s1');
@@ -230,8 +231,8 @@ describe('createNovelJobRunner', () => {
     await runner.pending.get('u1/s1');
 
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.messages[0].content[0].text).toContain('〈挿絵1〉');
-    expect(body.system).toContain('挿絵挿入位置');
+    expect(body.contents[0].parts[0].text).toContain('〈挿絵1〉');
+    expect(body.systemInstruction.parts[0].text).toContain('挿絵挿入位置');
     const meta = await dataStore.get('users/u1/sessions/s1/novel');
     expect(meta.imageIds).toEqual(['img_a']);
   });
@@ -242,7 +243,7 @@ describe('createNovelJobRunner', () => {
     await runner.start('u1', 's1', SESSION, 'third');
     await runner.pending.get('u1/s1');
 
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).system).not.toContain('挿絵挿入位置');
+    expect(systemOf(fetchImpl)).not.toContain('挿絵挿入位置');
   });
 
   it('uses a first person prompt when pov is first', async () => {
@@ -251,7 +252,7 @@ describe('createNovelJobRunner', () => {
     await runner.start('u1', 's1', SESSION, 'first');
     await runner.pending.get('u1/s1');
 
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).system).toContain('一人称');
+    expect(systemOf(fetchImpl)).toContain('一人称');
   });
 
   it('reports a running job left behind by a previous process as an error', async () => {
@@ -273,7 +274,7 @@ describe('createNovelJobRunner', () => {
     });
     const fetchImpl = vi.fn().mockImplementation(async () => {
       await gate;
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+      return geminiResponse('本文');
     });
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
 
@@ -349,7 +350,7 @@ describe('createNovelJobRunner', () => {
     });
     const fetchImpl = vi.fn().mockImplementation(async () => {
       await gate;
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+      return geminiResponse('本文');
     });
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
 
@@ -362,10 +363,7 @@ describe('createNovelJobRunner', () => {
 
   it('marks the novel as unread even when it was truncated', async () => {
     // 末尾が欠けていても「小説ができた」ことに変わりはない。欠落は別途警告される。
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('途中', 'max_tokens'));
     const runner = createNovelJobRunner({
       dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1',
     });

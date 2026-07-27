@@ -1,6 +1,6 @@
 import { apiFetch } from './apiFetch.js';
 
-export async function callClaude(body) {
+export async function callTextModel(body) {
   return apiFetch('/api/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

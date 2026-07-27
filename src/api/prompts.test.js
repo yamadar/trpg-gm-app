@@ -66,7 +66,7 @@ describe('buildSystemBlocks', () => {
     const blocks = buildSystemBlocks(makeSession());
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe('text');
-    expect(blocks[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(blocks[0]).toEqual(expect.objectContaining({ type: 'text' }));
   });
 
   it('includes the world summary, scenario, and pc sheet', () => {

@@ -8,29 +8,32 @@ let app;
 
 function buildApp(opts = {}) {
   const apiKey = 'apiKey' in opts ? opts.apiKey : 'test-key';
-  const { fetchImpl = vi.fn(), usage } = opts;
+  const { fetchImpl = vi.fn(), usage, model = 'gemini-text' } = opts;
   app = express();
   app.use(express.json());
-  app.use('/api', createMessagesRouter({ apiKey, fetchImpl, usage }));
+  app.use('/api', createMessagesRouter({ apiKey, model, fetchImpl, usage }));
 }
 
 describe('POST /messages', () => {
-  it('proxies to Anthropic with the api key header and returns the upstream body', async () => {
+  it('calls Gemini with the text api key and returns a compatible response', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
       status: 200,
-      text: async () => JSON.stringify({ content: [{ type: 'text', text: 'hi' }] }),
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+      }),
     });
     buildApp({ apiKey: 'test-key', fetchImpl });
 
     const res = await request(app).post('/api/messages').send({ model: 'x', messages: [] });
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ content: [{ type: 'text', text: 'hi' }] });
+    expect(res.body).toEqual({ content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn' });
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.anthropic.com/v1/messages',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-text:generateContent',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'x-api-key': 'test-key' }),
+        headers: expect.objectContaining({ 'x-goog-api-key': 'test-key' }),
       })
     );
   });
@@ -50,6 +53,19 @@ describe('POST /messages', () => {
     const res = await request(app).post('/api/messages').send({ model: 'x', messages: [] });
 
     expect(res.status).toBe(502);
+  });
+
+  it('returns 502 with the block reason when Gemini rejects the prompt', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ promptFeedback: { blockReason: 'SAFETY' } }),
+    });
+    buildApp({ apiKey: 'test-key', fetchImpl });
+
+    const res = await request(app).post('/api/messages').send({ messages: [] });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain('SAFETY');
   });
 
   it('returns 400 when messages is not an array', async () => {
@@ -77,7 +93,10 @@ describe('POST /messages', () => {
 
   it('consumes usage with the messages kind and proceeds when allowed', async () => {
     const consume = vi.fn().mockResolvedValue({ ok: true });
-    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, text: async () => '{}' });
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ candidates: [{ content: { parts: [] }, finishReason: 'STOP' }] }),
+    });
     buildApp({ usage: { consume }, fetchImpl });
     await request(app).post('/api/messages').send({ messages: [] });
     expect(consume).toHaveBeenCalledWith(undefined, 'messages'); // req.userIdはスタブなしなのでundefined

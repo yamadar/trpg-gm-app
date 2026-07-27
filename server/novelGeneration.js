@@ -1,5 +1,6 @@
 // セッションログから小説本文を生成する。出力上限で切れた場合は継続リクエストで
 // 書き足させ、完結した本文を返す。ジョブの状態管理は novelJobs.js の責務。
+import { generateText } from './textProvider.js';
 
 // HTTPリクエストが応答を待たなくなったので、上流の打ち切りは同期時代の120秒から延ばす。
 export const NOVELIZE_UPSTREAM_TIMEOUT_MS = 300000;
@@ -57,17 +58,17 @@ function buildNovelizeSystemPrompt(pov, pcName) {
   );
 }
 
-// トランスクリプトは継続のたびに再送されるため、キャッシュ対象として印を付ける。
-// 継続が起きるのは長いログのときであり、キャッシュが最も効く場面と一致する。
+// トランスクリプトを常に先頭へ置き、Geminiのimplicit cachingが共通prefixを
+// 認識しやすくする。
 function transcriptMessage(transcript) {
   return {
     role: 'user',
-    content: [{ type: 'text', text: transcript, cache_control: { type: 'ephemeral' } }],
+    content: [{ type: 'text', text: transcript }],
   };
 }
 
-// これまでの出力は「末尾の」assistantターンには置けない(Sonnet 5はprefillを400で拒否する)。
-// 中間のassistantターンとして置き、末尾をuserターンの継続指示にする。
+// これまでの出力は完了済みmodelターンとして置き、末尾をuserターンの
+// 継続指示にする。最終modelターンのprefillに依存しない会話履歴になる。
 function buildMessages(transcript, soFar) {
   const head = transcriptMessage(transcript);
   if (!soFar) return [head];
@@ -80,6 +81,7 @@ export async function generateNovel({
   pcName = '',
   pov,
   apiKey,
+  model,
   fetchImpl = fetch,
   maxContinuations = NOVELIZE_MAX_CONTINUATIONS,
   timeoutMs = NOVELIZE_UPSTREAM_TIMEOUT_MS,
@@ -88,27 +90,17 @@ export async function generateNovel({
   const parts = [];
 
   for (let attempt = 0; attempt <= maxContinuations; attempt += 1) {
-    const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-5',
+    const data = await generateText({
+      apiKey,
+      model,
+      fetchImpl,
+      timeoutMs,
+      request: {
         max_tokens: NOVELIZE_MAX_TOKENS,
-        thinking: { type: 'disabled' },
         system,
         messages: buildMessages(transcript, parts.join('')),
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
+      },
     });
-    if (!upstream.ok) {
-      const t = await upstream.text().catch(() => '');
-      throw new Error(`upstream request failed: ${t.slice(0, 200)}`);
-    }
-    const data = await upstream.json();
     const text = extractText(data.content);
     // 継続の途中であっても、本文が空なら書き足すべき材料がない。部分的な結果を
     // 返さず失敗させ、再実行に委ねる。

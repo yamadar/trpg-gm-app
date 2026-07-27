@@ -17,7 +17,9 @@ const SESSION = {
 function okFetch(payload) {
   return vi.fn().mockResolvedValue({
     ok: true,
-    json: async () => ({ content: [{ type: 'text', text: JSON.stringify(payload) }], stop_reason: 'end_turn' }),
+    json: async () => ({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] }, finishReason: 'STOP' }],
+    }),
   });
 }
 
@@ -32,16 +34,16 @@ describe('nameEnding', () => {
     const fetchImpl = okFetch({ ending_title: 'a', summary: 'b' });
     await nameEnding({ session: SESSION, apiKey: 'k', fetchImpl });
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.messages[0].content).toContain('廃坑の奥で灯りが消えた。');
-    expect(body.messages[0].content).toContain('探索者アリス');
-    expect(body.messages[0].content).toContain('最後の場面');
+    expect(body.contents[0].parts[0].text).toContain('廃坑の奥で灯りが消えた。');
+    expect(body.contents[0].parts[0].text).toContain('探索者アリス');
+    expect(body.contents[0].parts[0].text).toContain('最後の場面');
   });
 
   it('asks for structured output with both fields required', async () => {
     const fetchImpl = okFetch({ ending_title: 'a', summary: 'b' });
     await nameEnding({ session: SESSION, apiKey: 'k', fetchImpl });
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body.output_config.format.schema.required).toEqual(['ending_title', 'summary']);
+    expect(body.generationConfig.responseJsonSchema.required).toEqual(['ending_title', 'summary']);
   });
 
   it('trims whitespace around the model output', async () => {
@@ -63,7 +65,12 @@ describe('nameEnding', () => {
   it('throws a distinct truncation error when the model stops on max_tokens (not "invalid JSON")', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '{"ending_title": "途中で切れ' }], stop_reason: 'max_tokens' }),
+      json: async () => ({
+        candidates: [{
+          content: { parts: [{ text: '{"ending_title": "途中で切れ' }] },
+          finishReason: 'MAX_TOKENS',
+        }],
+      }),
     });
     await expect(nameEnding({ session: SESSION, apiKey: 'k', fetchImpl })).rejects.toThrow(/max_tokens|truncat/);
   });
@@ -71,7 +78,9 @@ describe('nameEnding', () => {
   it('throws when the model returns unparseable output', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ content: [{ type: 'text', text: 'not json' }], stop_reason: 'end_turn' }),
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: 'not json' }] }, finishReason: 'STOP' }],
+      }),
     });
     await expect(nameEnding({ session: SESSION, apiKey: 'k', fetchImpl })).rejects.toThrow(/invalid/);
   });

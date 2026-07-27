@@ -19,6 +19,18 @@ let imageStore;
 let app;
 let runner;
 
+function geminiResponse(text, stopReason = 'end_turn') {
+  return {
+    ok: true,
+    json: async () => ({
+      candidates: [{
+        content: { parts: text ? [{ text }] : [] },
+        finishReason: stopReason === 'max_tokens' ? 'MAX_TOKENS' : 'STOP',
+      }],
+    }),
+  };
+}
+
 function buildApp(opts = {}) {
   // Use `'apiKey' in opts` rather than a destructured default so that an
   // explicit `{ apiKey: undefined }` (used to simulate "no API key
@@ -27,7 +39,15 @@ function buildApp(opts = {}) {
   // `undefined` value, explicit or not.
   const apiKey = 'apiKey' in opts ? opts.apiKey : 'test-key';
   const { fetchImpl, usage, bootId = 'boot-test', now } = opts;
-  runner = createNovelJobRunner({ dataStore, textStore, apiKey, fetchImpl, bootId, now });
+  runner = createNovelJobRunner({
+    dataStore,
+    textStore,
+    apiKey,
+    model: 'gemini-text',
+    fetchImpl,
+    bootId,
+    now,
+  });
   app = express();
   app.use(express.json());
   app.use((req, res, next) => {
@@ -90,12 +110,9 @@ describe('sessions routes', () => {
   it('generates and stores a novelization from the session log, retrievable via GET', async () => {
     const fetchImpl = async (url, options) => {
       const body = JSON.parse(options.body);
-      expect(url).toBe('https://api.anthropic.com/v1/messages');
-      expect(body.messages[0].content[0].text).toContain('波止場を調べる');
-      return {
-        ok: true,
-        json: async () => ({ content: [{ type: 'text', text: '小説化された本文。' }], stop_reason: 'end_turn' }),
-      };
+      expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-text:generateContent');
+      expect(body.contents[0].parts[0].text).toContain('波止場を調べる');
+      return geminiResponse('小説化された本文。');
     };
     buildApp({ fetchImpl });
 
@@ -120,10 +137,7 @@ describe('sessions routes', () => {
   });
 
   it('挿絵付きセッションのnovelizeはマーカー入りnovel.mdとメタimageIdsを保存する', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '小説本文\n〈挿絵1〉\n続き' }], stop_reason: 'end_turn' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('小説本文\n〈挿絵1〉\n続き'));
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({
       title: 'T',
@@ -135,8 +149,8 @@ describe('sessions routes', () => {
     await waitForJob('s1');
     // upstreamへ渡したトランスクリプトにマーカーが含まれ、systemに保持指示がある
     const sentBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(sentBody.messages[0].content[0].text).toContain('〈挿絵1〉');
-    expect(sentBody.system).toContain('挿絵挿入位置');
+    expect(sentBody.contents[0].parts[0].text).toContain('〈挿絵1〉');
+    expect(sentBody.systemInstruction.parts[0].text).toContain('挿絵挿入位置');
     // novel.mdはマーカー入り、メタにimageIds
     const saved = await textStore.read('users/usr_test/sessions/s1/novel.md');
     expect(saved).toContain('〈挿絵1〉');
@@ -145,16 +159,13 @@ describe('sessions routes', () => {
   });
 
   it('挿絵なしセッションのnovelizeはシステムプロンプトにマーカー指示を含めない', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('本文'));
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s2').send({ title: 'T', state: {}, log: [{ role: 'gm', text: 'x' }] });
     await request(app).post('/api/sessions/s2/novelize').send({});
     await waitForJob('s2');
     const sentBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(sentBody.system).not.toContain('挿絵挿入位置');
+    expect(sentBody.systemInstruction.parts[0].text).not.toContain('挿絵挿入位置');
   });
 
   it('GET /novel はマーカーを除去したプレーン本文を返す', async () => {
@@ -183,7 +194,7 @@ describe('sessions routes', () => {
   });
 
   it('marks the novel stale after the session advances past the novelized turn', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: { turn_count: 3 } });
     await request(app).post('/api/sessions/s1/novelize');
@@ -198,13 +209,7 @@ describe('sessions routes', () => {
     let call = 0;
     const fetchImpl = async () => {
       call += 1;
-      return {
-        ok: true,
-        json: async () => ({
-          content: [{ type: 'text', text: call === 1 ? '前半' : '後半' }],
-          stop_reason: call === 1 ? 'max_tokens' : 'end_turn',
-        }),
-      };
+      return geminiResponse(call === 1 ? '前半' : '後半', call === 1 ? 'max_tokens' : 'end_turn');
     };
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
@@ -219,7 +224,7 @@ describe('sessions routes', () => {
   });
 
   it('reports truncated in /novel-jobs when the novelization hit the continuation limit', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }) });
+    const fetchImpl = async () => geminiResponse('途中', 'max_tokens');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     await request(app).post('/api/sessions/s1/novelize');
@@ -249,7 +254,7 @@ describe('sessions routes', () => {
   });
 
   it('reports a null elapsedMs for a finished job in /novel-jobs', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     await request(app).post('/api/sessions/s1/novelize');
@@ -261,7 +266,7 @@ describe('sessions routes', () => {
   });
 
   it('records an error for an empty novelization without saving', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     const res = await request(app).post('/api/sessions/s1/novelize');
@@ -299,10 +304,7 @@ describe('sessions routes', () => {
 
   it('consumes usage with the novelize kind and proceeds when allowed', async () => {
     const consume = vi.fn().mockResolvedValue({ ok: true });
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('小説'));
     buildApp({ usage: { consume }, fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
     const res = await request(app).post('/api/sessions/s1/novelize');
@@ -318,10 +320,7 @@ describe('sessions routes', () => {
   });
 
   it('does not see sessions or novel-jobs of another user', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('本文'));
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: {} }); // usr_test として保存
     await request(app).post('/api/sessions/s1/novelize');
@@ -329,7 +328,12 @@ describe('sessions routes', () => {
     expect((await request(app).get('/api/novel-jobs')).body.s1.status).toBe('done'); // usr_test自身には見える
 
     // 別ユーザーでappを作り直す(/novel-jobsも叩けるようnovelJobsも渡す)
-    const otherRunner = createNovelJobRunner({ dataStore, textStore, apiKey: 'test-key' });
+    const otherRunner = createNovelJobRunner({
+      dataStore,
+      textStore,
+      apiKey: 'test-key',
+      model: 'gemini-text',
+    });
     app = express();
     app.use(express.json());
     app.use((req, res, next) => { req.userId = 'usr_other'; next(); });
@@ -366,7 +370,7 @@ describe('sessions routes', () => {
     });
     const fetchImpl = vi.fn().mockImplementation(async () => {
       await gate;
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+      return geminiResponse('本文');
     });
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: { turn_count: 1 } });
@@ -382,7 +386,7 @@ describe('sessions routes', () => {
   });
 
   it('reports stale in /novel-jobs after the session advances', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: { turn_count: 3 } });
     await request(app).post('/api/sessions/s1/novelize');
@@ -414,7 +418,7 @@ describe('sessions routes', () => {
     });
     const fetchImpl = vi.fn().mockImplementation(async () => {
       await gate;
-      return { ok: true, json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }) };
+      return geminiResponse('本文');
     });
     const consume = vi.fn().mockResolvedValue({ ok: true });
     buildApp({ fetchImpl, usage: { consume } });
@@ -431,10 +435,7 @@ describe('sessions routes', () => {
   });
 
   it('starts a new run after a previous job finished', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ type: 'text', text: '本文' }], stop_reason: 'end_turn' }),
-    });
+    const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('本文'));
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }], state: {} });
 
@@ -447,7 +448,7 @@ describe('sessions routes', () => {
   });
 
   it('reports unread in /novel-jobs right after a novel is generated', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     await request(app).post('/api/sessions/s1/novelize');
@@ -460,7 +461,7 @@ describe('sessions routes', () => {
   it('reports unread false for a novel that has no notice record', async () => {
     // 回帰防止: この機能の投入以前に生成された小説(noticeレコードが無い)は
     // 既読扱いにする。ここを落とすと既存ユーザーの全小説が一斉に通知される。
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     await request(app).post('/api/sessions/s1/novelize');
@@ -473,7 +474,7 @@ describe('sessions routes', () => {
   });
 
   it('clears unread via POST novel/seen', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     await request(app).post('/api/sessions/s1/novelize');
@@ -488,7 +489,7 @@ describe('sessions routes', () => {
   });
 
   it('accepts POST novel/seen twice (idempotent)', async () => {
-    const fetchImpl = async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: '小説' }], stop_reason: 'end_turn' }) });
+    const fetchImpl = async () => geminiResponse('小説');
     buildApp({ fetchImpl });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [{ role: 'gm', text: 'g' }] });
     await request(app).post('/api/sessions/s1/novelize');

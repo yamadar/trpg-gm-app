@@ -11,10 +11,10 @@ describe('generateImage', () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       ok({ candidates: [{ content: { parts: [{ inlineData: { data: 'BASE64', mimeType: 'image/png' } }] } }] })
     );
-    const out = await generateImage({ prompt: 'a castle', apiKey: 'k', model: 'gemini-2.5-flash-image', fetchImpl });
+    const out = await generateImage({ prompt: 'a castle', apiKey: 'k', model: 'image-model-test', fetchImpl });
     expect(out).toEqual({ base64: 'BASE64', mimeType: 'image/png' });
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/image-model-test:generateContent',
       expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'x-goog-api-key': 'k' }) })
     );
   });

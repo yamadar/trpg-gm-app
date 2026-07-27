@@ -2,8 +2,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyzeScene } from './sceneAnalysis.js';
 
-function anthropicJson(obj) {
-  return { ok: true, json: async () => ({ content: [{ type: 'text', text: JSON.stringify(obj) }] }) };
+function geminiJson(obj) {
+  return {
+    ok: true,
+    json: async () => ({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] }, finishReason: 'STOP' }],
+    }),
+  };
 }
 
 describe('analyzeScene', () => {
@@ -15,7 +20,7 @@ describe('analyzeScene', () => {
   });
   it('parses present names and newly generated appearances', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      anthropicJson({ present_names: ['カイ', 'ゴブリンの長'], new_appearances: [{ name: 'ゴブリンの長', description: '緑の肌、赤い眼帯' }] })
+      geminiJson({ present_names: ['カイ', 'ゴブリンの長'], new_appearances: [{ name: 'ゴブリンの長', description: '緑の肌、赤い眼帯' }] })
     );
     const out = await analyzeScene({ narrative: '戦い', registry: {}, pcRaw: '', apiKey: 'k', fetchImpl });
     expect(out.presentNames).toEqual(['カイ', 'ゴブリンの長']);
@@ -23,7 +28,7 @@ describe('analyzeScene', () => {
   });
   it('filters malformed entries', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      anthropicJson({ present_names: ['A', 'B', 5], new_appearances: [{ name: 'A' }, { name: 'B', description: 'ok' }] })
+      geminiJson({ present_names: ['A', 'B', 5], new_appearances: [{ name: 'A' }, { name: 'B', description: 'ok' }] })
     );
     const out = await analyzeScene({ narrative: 'x', apiKey: 'k', fetchImpl });
     expect(out.presentNames).toEqual(['A', 'B']);
@@ -31,7 +36,7 @@ describe('analyzeScene', () => {
   });
   it('drops appearances for characters who are only mentioned, not present', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      anthropicJson({
+      geminiJson({
         present_names: ['ゲオルク'],
         new_appearances: [
           { name: 'ゲオルク', description: '白髪の老人、厚手の外套' },

@@ -12,10 +12,16 @@ let dir;
 let app;
 let fetchImpl;
 
+const TEST_ENV = { GEMINI_TEXT_MODEL: 'text-model-test' };
+const testEnv = (overrides = {}) => ({ ...TEST_ENV, ...overrides });
+
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-test-'));
-  fetchImpl = vi.fn().mockResolvedValue({ status: 200, text: async () => '{}' });
-  app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl });
+  fetchImpl = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ candidates: [{ content: { parts: [] }, finishReason: 'STOP' }] }),
+  });
+  app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv() });
 });
 
 afterEach(async () => {
@@ -27,7 +33,46 @@ describe('createApp', () => {
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     const res = await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] });
     expect(res.status).toBe(200);
-    expect(fetchImpl).toHaveBeenCalledWith('https://api.anthropic.com/v1/messages', expect.anything());
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/models/text-model-test:generateContent',
+      expect.anything(),
+    );
+  });
+
+  it('uses separate text model and image key settings', async () => {
+    app = createApp({
+      apiKey: 'text-key',
+      dataDir: dir,
+      fetchImpl,
+      env: {
+        GEMINI_TEXT_MODEL: 'gemini-custom-text',
+        GEMINI_IMAGE_API_KEY: 'image-key',
+        GEMINI_IMAGE_MODEL: 'image-model-test',
+      },
+    });
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+
+    expect((await request(app).get('/api/config')).body).toEqual({ imageGen: true });
+    await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-custom-text:generateContent',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'x-goog-api-key': 'text-key' }),
+      }),
+    );
+  });
+
+  it('requires a text model when the text API key is configured', () => {
+    expect(() => createApp({ apiKey: 'text-key', dataDir: dir, env: {} }))
+      .toThrow(/GEMINI_TEXT_MODEL/);
+  });
+
+  it('requires an image model when the image API key is configured', () => {
+    expect(() => createApp({
+      apiKey: undefined,
+      dataDir: dir,
+      env: { GEMINI_IMAGE_API_KEY: 'image-key' },
+    })).toThrow(/GEMINI_IMAGE_MODEL/);
   });
 
   it('mounts the sessions route', async () => {
@@ -88,20 +133,20 @@ describe('createApp', () => {
   });
 
   it('enforces the daily message limit via env', async () => {
-    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: { LIMIT_MESSAGES_PER_DAY: '1' } });
+    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_MESSAGES_PER_DAY: '1' }) });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(200);
     expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(429);
   });
 
   it('LIMIT_MESSAGES_PER_DAY=0 denies all messages', async () => {
-    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: { LIMIT_MESSAGES_PER_DAY: '0' } });
+    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_MESSAGES_PER_DAY: '0' }) });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(429);
   });
 
   it('LIMIT_MESSAGES_PER_DAY="" (blank) falls back to the default limit instead of denying all', async () => {
-    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: { LIMIT_MESSAGES_PER_DAY: '' } });
+    app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_MESSAGES_PER_DAY: '' }) });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(200);
   });
@@ -232,7 +277,7 @@ describe('static serving', () => {
   function buildApp({ withStatic = true } = {}) {
     return createApp({
       apiKey: 'test-key',
-      env: { BASE_URL: 'http://localhost:5173' },
+      env: testEnv({ BASE_URL: 'http://localhost:5173' }),
       dataDir: path.join(dir, 'data'),
       staticDir: withStatic ? staticDir : null,
     });

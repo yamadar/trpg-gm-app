@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { callClaude, extractText, extractToolUse, parseJsonLoose } from './client.js';
+import { callTextModel, extractText, extractToolUse, parseJsonLoose } from './client.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('callClaude', () => {
+describe('callTextModel', () => {
   it('posts to /api/messages and returns the parsed json body', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -13,7 +13,7 @@ describe('callClaude', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await callClaude({ model: 'x' });
+    const result = await callTextModel({ model: 'x' });
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/messages',
@@ -30,7 +30,7 @@ describe('callClaude', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(callClaude({})).rejects.toThrow('API error 500: server exploded');
+    await expect(callTextModel({})).rejects.toThrow('API error 500: server exploded');
   });
 });
 

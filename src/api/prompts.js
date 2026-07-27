@@ -104,8 +104,8 @@ export const TURN_OUTPUT_FORMAT = {
   },
 };
 
-// セッション中は変わらない静的な指示。cache_controlを付けてプロンプトキャッシュを効かせる。
-// 毎ターン変わる状態(シーン・フラグ・要約・ログ)はbuildTurnUserContent側に置く。
+// セッション中は変わらない静的な指示。Geminiのimplicit cachingが共通prefixを
+// 認識しやすいよう、毎ターン変わる状態はbuildTurnUserContent側に分離する。
 export function buildSystemBlocks(session) {
   const rs = resolveRuleset(session);
   const adapter = resolveAdapter(session);
@@ -161,7 +161,7 @@ ${
 - state_update.ending_reached: 物語が結末(エンディング)に到達し、これ以上続ける必要がない場合のみtrue。それ以外は必ずfalse。
 - choices: 方向性の異なる短い選択肢を2〜4個(慎重・大胆・搦め手など性質を変える)。自由記述を促したい場面では空配列でよい。未開示の秘匿情報を含めないこと。`;
 
-  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
+  return [{ type: 'text', text }];
 }
 
 // 毎ターン変わる状態+プレイヤー入力。userメッセージとして送る。

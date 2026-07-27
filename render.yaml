@@ -37,9 +37,13 @@ services:
       # 以下は sync: false。ダッシュボードで手動設定する(リポジトリに値を置かない)
       - key: BASE_URL # 例: https://trpg-gm-app.onrender.com(末尾スラッシュなし)
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_TEXT_API_KEY
         sync: false
-      - key: GEMINI_API_KEY # 未設定なら挿絵機能はUIごと無効になる(任意)
+      - key: GEMINI_TEXT_MODEL
+        sync: false
+      - key: GEMINI_IMAGE_API_KEY # 未設定なら挿絵機能はUIごと無効になる(任意)
+        sync: false
+      - key: GEMINI_IMAGE_MODEL
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false

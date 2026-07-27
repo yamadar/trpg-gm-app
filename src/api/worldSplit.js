@@ -1,4 +1,4 @@
-import { callClaude, extractText, parseJsonLoose } from './client.js';
+import { callTextModel, extractText, parseJsonLoose } from './client.js';
 import { slugify } from '../utils/slugify.js';
 
 const SPLIT_OUTPUT_FORMAT = {
@@ -60,10 +60,8 @@ function dedupeIds(items) {
 }
 
 export async function splitWorld(rawText, adjustmentRequest) {
-  const data = await callClaude({
-    model: 'claude-sonnet-5',
+  const data = await callTextModel({
     max_tokens: 16000,
-    thinking: { type: 'disabled' },
     output_config: { format: SPLIT_OUTPUT_FORMAT },
     system: `以下の世界観資料を、TRPGのGMが必要な範囲だけ参照できるよう地域(region)・カテゴリ(category)に分割せよ。
 

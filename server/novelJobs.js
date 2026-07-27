@@ -44,6 +44,7 @@ export function createNovelJobRunner({
   dataStore,
   textStore,
   apiKey,
+  model,
   fetchImpl = fetch,
   bootId = makeBootId(),
   now = Date.now,
@@ -73,6 +74,7 @@ export function createNovelJobRunner({
         pcName: session.pc?.name || '',
         pov,
         apiKey,
+        model,
         fetchImpl,
       });
 

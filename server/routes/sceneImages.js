@@ -12,12 +12,21 @@ function newImageId() {
   return 'img_' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 }
 
-export function createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey, geminiApiKey, geminiModel, fetchImpl = fetch, usage }) {
+export function createSceneImagesRouter({
+  dataStore,
+  imageStore,
+  geminiTextApiKey,
+  geminiTextModel,
+  geminiImageApiKey,
+  geminiImageModel,
+  fetchImpl = fetch,
+  usage,
+}) {
   const router = Router();
   router.param('id', idParamGuard);
 
   router.post('/sessions/:id/images', asyncHandler(async (req, res) => {
-    if (!geminiApiKey) {
+    if (!geminiImageApiKey) {
       res.status(501).json({ error: 'image generation is not configured' });
       return;
     }
@@ -44,7 +53,8 @@ export function createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey
       narrative: entry.text,
       registry,
       pcRaw: session.pc?.raw || '',
-      apiKey: anthropicApiKey,
+      apiKey: geminiTextApiKey,
+      model: geminiTextModel,
       fetchImpl,
     });
     // 新キャラのポートレートを自動生成(非致命)。1枚=1ユニット消費、上限到達・失敗はスキップ。
@@ -64,8 +74,8 @@ export function createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey
         try {
           const img = await generateImage({
             prompt: buildPortraitPrompt({ name: a.name, description: a.description, moods: session.moods }),
-            apiKey: geminiApiKey,
-            model: geminiModel,
+            apiKey: geminiImageApiKey,
+            model: geminiImageModel,
             fetchImpl,
           });
           portraitId = newImageId();
@@ -100,7 +110,13 @@ export function createSceneImagesRouter({ dataStore, imageStore, anthropicApiKey
     });
     let image;
     try {
-      image = await generateImage({ prompt, apiKey: geminiApiKey, model: geminiModel, fetchImpl, referenceImages });
+      image = await generateImage({
+        prompt,
+        apiKey: geminiImageApiKey,
+        model: geminiImageModel,
+        fetchImpl,
+        referenceImages,
+      });
     } catch (e) {
       res.status(502).json({ error: `image generation failed: ${e.message}` });
       return;

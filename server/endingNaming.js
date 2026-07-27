@@ -1,3 +1,5 @@
+import { generateText } from './textProvider.js';
+
 const NAMING_TIMEOUT_MS = 60000;
 
 // 結末付近の地の文を何件渡すか。全文を渡すと長大なセッションで無駄が大きく、
@@ -39,31 +41,19 @@ function buildUserContent(session) {
   return `# PC\n${pc || '(未設定)'}\n\n# 物語要約\n${session.state?.history_summary || '(なし)'}\n\n# 結末付近の地の文\n${closing || '(なし)'}`;
 }
 
-export async function nameEnding({ session, apiKey, fetchImpl = fetch }) {
-  const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-5',
+export async function nameEnding({ session, apiKey, model, fetchImpl = fetch }) {
+  const data = await generateText({
+    apiKey,
+    model,
+    fetchImpl,
+    timeoutMs: NAMING_TIMEOUT_MS,
+    request: {
       max_tokens: 500,
-      thinking: { type: 'disabled' },
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildUserContent(session) }],
       output_config: { format: ENDING_OUTPUT_FORMAT },
-    }),
-    signal: AbortSignal.timeout(NAMING_TIMEOUT_MS),
+    },
   });
-  if (!upstream.ok) {
-    const t = await upstream.text().catch(() => '');
-    // ステータスを含めないと、本文が空のエラー応答(よくある)が
-    // "upstream request failed: " という空っぽで役に立たないメッセージになる。
-    throw new Error(`upstream request failed: ${upstream.status} ${t.slice(0, 200)}`);
-  }
-  const data = await upstream.json();
   if (data.stop_reason === 'max_tokens') {
     // max_tokens: 500で長い総括が途中で切れるとJSONとして壊れる。そのままだと
     // 下のJSON.parse失敗経路に落ちて「invalid JSON」としか出ず、原因が truncation

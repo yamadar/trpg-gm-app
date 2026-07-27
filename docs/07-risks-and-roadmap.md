@@ -71,10 +71,10 @@
 - **UIの状態リーク/並行実行/エンコード修正**: Home画面での小説化の同時クリック・二重ダウンロード防止、ライブラリ画面でのWorld切り替え時のリクエスト競合(古いレスポンスでの上書き)防止、APIクライアントでの`encodeURIComponent`によるパスパラメータエンコード漏れ修正など。
 - **パストラバーサル対策**: サーバー側の全パスパラメータを`idParamGuard`/`kindParamGuard`(`server/routes/validateId.js`)で検証し、`..`や不正文字を含むIDを`400`で拒否(04-persistence.md参照)。
 - **deleteWorldカスケード**: World削除時に配下のCharacter/Scenario/region/categoryもまとめて削除するようにし、孤立データが残らないようにした。
-- **上流タイムアウト**: `/api/messages`・`/api/sessions/:id/novelize`のAnthropic呼び出しに`AbortSignal.timeout`を設定し、ハングを防止。
+- **上流タイムアウト**: `/api/messages`・`/api/sessions/:id/novelize`のGemini呼び出しに`AbortSignal.timeout`を設定し、ハングを防止。
 - **novel鮮度管理**: 小説化後にセッションが進行した場合、`GET /api/sessions/:id/novel`が`stale`フラグを返し、Home画面が古い小説であることを警告する。また小説化が`max_tokens`で打ち切られた場合は継続リクエストで書き足させ、継続上限に達してもなお終わらなければ`truncated`フラグ付きで保存してHome画面が末尾欠落の可能性を警告する(06-content-generation.md 10.6.1節)。
 - **入力検証・アトミック書き込み**: PUT系エンドポイントの必須フィールド型チェック、`dataStore.set`のtmpファイル+rename方式によるアトミック書き込み(書き込み中のクラッシュでファイルが壊れないようにする)。
 
-## 12. 未対応のリスク: プロキシ認証
+## 12. 運用リスク: API利用コスト
 
-`POST /api/messages`は現状、ローカル単一ユーザー利用を前提にした**無認証の中継エンドポイント**である。呼び出し元を検証する仕組みが無いため、このサーバーをそのままネットワークに公開したり複数ユーザーで共有したりすると、Anthropic APIキーを誰でも使い放題にできてしまう。FX3では`max_tokens`の上限チェック(`max_tokens too large`で拒否)等、比例的な緩和策のみ実施した。ネットワーク公開や多ユーザー化を行う前には、認証(APIキー・セッショントークン等)の追加が必須。
+`POST /api/messages`は`createRequireAuth`配下にあり、有効なログインセッションを必須とする。サーバー側のGemini APIキーをブラウザへ公開せず、ユーザー単位の日次利用制限と`max_tokens`上限を適用する。残るリスクは、登録ユーザー全体の利用料をサービス運営者のAPIキーへ集約する点。公開運用時は`LIMIT_MESSAGES_PER_DAY`を利用者数・予算に合わせて設定する。

@@ -8,7 +8,7 @@ beforeEach(() => {
 
 describe('splitWorld', () => {
   it('parses the split result from the model response', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',
@@ -27,7 +27,7 @@ describe('splitWorld', () => {
   });
 
   it('slugifies a region id containing spaces and punctuation', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',
@@ -44,7 +44,7 @@ describe('splitWorld', () => {
   });
 
   it('falls back to "untitled" when a category id has no ascii characters after slugifying', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',
@@ -61,17 +61,17 @@ describe('splitWorld', () => {
   });
 
   it('includes the adjustment request in the prompt when provided', async () => {
-    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({ world: 'x', regions: [], categories: [] }) }],
     });
     await splitWorld('原文', '海沿いの街を追加してほしい');
-    const sentMessage = callClaudeMock.mock.calls[0][0].messages[0].content;
+    const sentMessage = callTextModelMock.mock.calls[0][0].messages[0].content;
     expect(sentMessage).toContain('原文');
     expect(sentMessage).toContain('海沿いの街を追加してほしい');
   });
 
   it('defaults regions and categories to empty arrays when missing from the response', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({ world: 'x' }) }],
     });
     const result = await splitWorld('テキスト');
@@ -80,7 +80,7 @@ describe('splitWorld', () => {
   });
 
   it('dedupes two region ids that both slugify to "untitled" instead of dropping one', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',
@@ -103,7 +103,7 @@ describe('splitWorld', () => {
   });
 
   it('re-dedupes against emitted ids when a collision id already matches an original id', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',
@@ -133,7 +133,7 @@ describe('splitWorld', () => {
   });
 
   it('allows a region and a category to share the same slugified id without renaming either', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         {
           type: 'text',

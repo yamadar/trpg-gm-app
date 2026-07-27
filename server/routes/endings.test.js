@@ -18,20 +18,25 @@ const STATS = { total: 3, successes: 2, successRate: 2 / 3, byDegree: { fumble: 
 function okFetch(payload = { ending_title: '灰は星を数えない', summary: '総括の文。' }) {
   return vi.fn().mockResolvedValue({
     ok: true,
-    json: async () => ({ content: [{ type: 'text', text: JSON.stringify(payload) }], stop_reason: 'end_turn' }),
+    json: async () => ({
+      candidates: [{
+        content: { parts: [{ text: JSON.stringify(payload) }] },
+        finishReason: 'STOP',
+      }],
+    }),
   });
 }
 
 function buildApp(opts = {}) {
   const apiKey = 'apiKey' in opts ? opts.apiKey : 'test-key';
-  const { fetchImpl = okFetch(), usage, userId = 'usr_test' } = opts;
+  const { fetchImpl = okFetch(), usage, userId = 'usr_test', model = 'gemini-text' } = opts;
   app = express();
   app.use(express.json());
   app.use((req, res, next) => {
     req.userId = userId;
     next();
   });
-  app.use('/api', createEndingsRouter({ dataStore, apiKey, fetchImpl, usage }));
+  app.use('/api', createEndingsRouter({ dataStore, apiKey, model, fetchImpl, usage }));
 }
 
 async function putSession(id, overrides = {}) {

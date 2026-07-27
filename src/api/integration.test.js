@@ -14,7 +14,11 @@ let app;
 
 beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fx5-integration-'));
-  app = createApp({ apiKey: 'test-key', dataDir });
+  app = createApp({
+    apiKey: 'test-key',
+    dataDir,
+    env: { GEMINI_TEXT_MODEL: 'text-model-test' },
+  });
   // ルーター配線に認証(requireAuth)が挟まったため、シムからの全リクエストに
   // ログイン済みセッションのCookieを付与する(実クライアントはブラウザが
   // 自動的にCookieを送るが、このシムは手動でヘッダーを組み立てているため)。

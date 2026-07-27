@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
+import { generateText, GeminiTextApiError } from '../textProvider.js';
 
 const MESSAGES_TIMEOUT_MS = 120000;
 
-export function createMessagesRouter({ apiKey, fetchImpl = fetch, usage }) {
+export function createMessagesRouter({ apiKey, model, fetchImpl = fetch, usage }) {
   const router = Router();
 
   router.post('/messages', asyncHandler(async (req, res) => {
     if (!apiKey) {
-      res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
+      res.status(500).json({ error: 'GEMINI_TEXT_API_KEY is not configured on the server' });
       return;
     }
     if (!Array.isArray(req.body?.messages)) {
@@ -33,22 +34,17 @@ export function createMessagesRouter({ apiKey, fetchImpl = fetch, usage }) {
       }
     }
     try {
-      const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify(req.body),
-        signal: AbortSignal.timeout(MESSAGES_TIMEOUT_MS),
+      const data = await generateText({
+        apiKey,
+        model,
+        request: req.body,
+        fetchImpl,
+        timeoutMs: MESSAGES_TIMEOUT_MS,
       });
-      const text = await upstream.text();
-      res.status(upstream.status);
-      res.setHeader('Content-Type', 'application/json');
-      res.send(text);
+      res.json(data);
     } catch (e) {
-      res.status(502).json({ error: `upstream request failed: ${e.message}` });
+      const status = e instanceof GeminiTextApiError && e.status >= 400 && e.status < 500 ? e.status : 502;
+      res.status(status).json({ error: e.message });
     }
   }));
 

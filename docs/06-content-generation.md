@@ -36,14 +36,14 @@ PCが想定外の地域へ移動した場合、`world.md`目次に対するキ�
 
 ## 10.5 場面挿絵の生成(実装済み 2026-07-24、サブプロジェクト1)
 
-Google Gemini(既定 `gemini-2.5-flash-image`、`server/imageProvider.js`)でPlay画面のGMログエントリ毎に挿絵を生成する。
+環境変数`GEMINI_IMAGE_MODEL`で指定したGoogle Geminiモデル(`server/imageProvider.js`)でPlay画面のGMログエントリ毎に挿絵を生成する。
 
 - **プロンプト構築**(`server/imagePrompt.js`): 地の文(先頭400字)+ `session.moods` の画風キーワード(8種)+ 登場人物の見た目から組み立てる。
-- **登場人物の一貫性**: `server/sceneAnalysis.js` がAnthropic(構造化出力)で地の文から登場人物を特定し、未登録者の見た目を生成する。結果はセッション専用の**見た目レジストリ** `session.appearances`(名前→見た目)に蓄積され、以降の挿絵プロンプトに差し込まれてキャラの見た目が一貫する。PCシートに見た目の記述があればそれを優先。
+- **登場人物の一貫性**: `server/sceneAnalysis.js` がGeminiテキストモデル(構造化出力)で地の文から登場人物を特定し、未登録者の見た目を生成する。結果はセッション専用の**見た目レジストリ** `session.appearances`(名前→見た目)に蓄積され、以降の挿絵プロンプトに差し込まれてキャラの見た目が一貫する。PCシートに見た目の記述があればそれを優先。
   - `present_names` は**その場に実際に居合わせ挿絵に描かれる人物のみ**。話題に上るだけ・伝聞・回想など不在の人物は含めず、挿絵プロンプトの「登場人物」にも載らない。`present_names` に無い名前の `new_appearances` はサーバ側でも捨てる(ポートレート生成の無駄消費を防ぐ)。
   - `description` は**見た目だけ**(年齢層・髪・目・肌・服装・体格・持ち物・特徴)。性格・役割・関係・登場有無などの物語情報は書かせない(画像生成プロンプトが汚れるため)。**シナリオ本文は書き換えない**(公開・インポートされる共有素材のため)。解析はプレイヤー可視の地の文のみを入力とし、失敗しても挿絵生成は止めない(見た目条件なしで続行)。
 - **保存・配信**: 画像バイトは `server/storage/imageStore.js`(バイナリストア)がファイル保存し、`GET /api/sessions/:id/images/:imageId` で `image/png` 配信。セッションJSONには `log[i].image.imageId` 参照のみを持たせ、クライアントが永続化する(セッションはクライアントが真実源)。
-- **設定・制限**: env `GEMINI_API_KEY`(未設定なら `GET /api/config` が `imageGen:false` を返しUIごと無効化)、`GEMINI_IMAGE_MODEL`、日次上限 `LIMIT_IMAGES_PER_DAY`(既定30、`usage` 機構の `images` 種別。挿絵1回=解析1+画像1の計2 upstream呼び出しを1ユニットとして計上)。
+- **設定・制限**: 画像生成はenv `GEMINI_IMAGE_API_KEY`(未設定なら `GET /api/config` が `imageGen:false` を返しUIごと無効化)と`GEMINI_IMAGE_MODEL`を使う。登場人物解析は別系統の`GEMINI_TEXT_API_KEY`/`GEMINI_TEXT_MODEL`を使う。日次上限は`LIMIT_IMAGES_PER_DAY`(既定30、`usage` 機構の `images` 種別。挿絵1回=解析1+画像1の計2 upstream呼び出しを1ユニットとして計上)。
 - **挿絵付き小説化(サブプロジェクト2、実装済み 2026-07-24)**: novelize時に挿絵を持つGMエントリの位置へ `〈挿絵N〉` マーカーを埋め込み(`server/novelMarkers.js`)、モデルに「対応場面の切れ目に行独立で残せ」と指示。`GET /api/sessions/:id/novel/illustrated` がマーカーをbase64 data URIの画像に置換した自己完結Markdownを返す(`server/illustratedNovel.js`。本文に現れなかった画像は末尾「## 挿絵」節へ救済)。プレーン `GET /novel` と公開小説はマーカー除去済みを返す/保存する。Home画面は挿絵があり小説が生成済みのセッションのみ「挿絵付きでDL」ボタンを表示する(2026-07-25、非同期化に伴いボタン名・表示条件を変更。10.6節・05-ui-ux.md 14.1節参照)。
 - **キャラポートレート+参照画像一貫性(サブプロジェクト3、実装済み 2026-07-24)**: シーン解析で見つかった初登場キャラのポートレート(バストアップ・無地背景、`server/imagePrompt.js` の `buildPortraitPrompt`)を自動生成し、見た目レジストリ項目に `imageId` を保存する。以降のシーン挿絵生成では、登場キャラのポートレートを**参照画像(最大3枚)**としてGeminiへ渡し(`server/imageProvider.js` の `referenceImages`→`inlineData`)、プロンプトに「参照画像の人物の外見を厳密に維持」と付記して外見を強く一貫させる。ポートレートの生成失敗・日次上限超過は非致命で、テキストのみの一貫性へフォールバックする。1.1(場面挿絵の生成)は全サブプロジェクト完了。ライブラリCharacterタブでのポートレート表示は未実装の将来候補。
 
@@ -65,12 +65,12 @@ Home画面はマウント時に`GET /api/novel-jobs`(全セッション分のジ
 
 セッションのターン数に上限は無いため、単発リクエストでは長いログの小説化が`max_tokens`で途中打ち切りになる。以前はこの場合に生成済み本文を破棄して`error`に倒していた(利用枠を消費して何も残らない)。
 
-現在は`server/novelGeneration.js`の`generateNovel()`が継続ループを持つ。上流の`stop_reason`が`max_tokens`なら、それまでの出力を**中間の**assistantターンとして積み、末尾をuserターンの継続指示(「切れた箇所の直後から、繰り返さず、前置き無しで書き続けよ」)にして再送する。返った本文は区切り文字なしで連結する。
+現在は`server/novelGeneration.js`の`generateNovel()`が継続ループを持つ。Geminiの`finishReason: MAX_TOKENS`は互換層で`stop_reason: max_tokens`へ変換される。それまでの出力を**中間の**modelターンとして積み、末尾をuserターンの継続指示(「切れた箇所の直後から、繰り返さず、前置き無しで書き続けよ」)にして再送する。返った本文は区切り文字なしで連結する。
 
-- **末尾assistantターン(プレフィル)は使えない**。Claude Sonnet 5は最終assistantターンのプレフィルを400で拒否するため、`[user(トランスクリプト), assistant(既出力), user(継続指示)]`という形を取る。会話途中のassistantターン自体は制約されない
+- **末尾modelターンのプレフィルは使わない**。`[user(トランスクリプト), model(既出力), user(継続指示)]`という完了済み会話履歴として送り、常に新しいuser指示から続行させる
 - `max_tokens`は12000→16000。非ストリーミングで安全に受け取れる範囲で継続回数を減らす
 - 継続上限は`NOVELIZE_MAX_CONTINUATIONS`(4回、初回と合わせて最大5リクエスト)。モデルが終われない場合にコストが際限なく膨らむのを防ぐ頭打ち
-- トランスクリプトは継続のたびに再送されるため、最初のuserブロックに`cache_control: { type: 'ephemeral' }`を付ける。継続が起きるのは長いログのときであり、プロンプトキャッシュが最も効く場面と一致する
+- トランスクリプトは継続のたびに先頭へ同じ内容で再送する。Gemini 2.5以降のimplicit cachingが共通prefixを認識しやすい配置にする
 - 継続の途中で上流がエラーを返した場合・本文が空だった場合は、部分的な結果を保存せず従来どおり`error`に倒す(再実行で解決しうるため)
 
 **上限に達しても完結しなかった場合**は、そこまでの本文を保存して`status`は`done`とし、小説メタ(`users/{userId}/sessions/{sessionId}/novel`)に`truncated: true`を記録する。`GET /api/novel-jobs`が`truncated`を返し、Home画面のカードが「小説が出力上限に達したため、末尾が欠けている可能性があります。」と警告する(`stale`警告と同じ表示形式・同時表示しうる)。この変更以前に生成された小説はメタに`truncated`を持たないが、完結扱い(`false`)になるためマイグレーションは不要。
@@ -79,11 +79,11 @@ Home画面はマウント時に`GET /api/novel-jobs`(全セッション分のジ
 
 ## 10.7 エンディング命名(実装済み 2026-07-25)
 
-Play画面で「この物語を終える」を確定すると(05-ui-ux.md 7章)、`POST /api/sessions/:id/ending`が`server/endingNaming.js`の`nameEnding()`でAnthropicを1回呼び、GMに結末を命名させる。
+Play画面で「この物語を終える」を確定すると(05-ui-ux.md 7章)、`POST /api/sessions/:id/ending`が`server/endingNaming.js`の`nameEnding()`でGeminiテキストモデルを1回呼び、GMに結末を命名させる。
 
 **入力**(GM専用情報は渡さない、既存方針を踏襲): `state.history_summary`(物語要約)、PC設定(`session.pc.raw`/`goal`/`bonds`)、結末付近の地の文4件(直近のGMログエントリ、`CLOSING_NARRATION_COUNT`)。シナリオ本文・GM専用情報・フラグ等は入力に含めない。
 
-**出力**: structured outputs(`output_config.format`のjson_schema)で`{ ending_title, summary }`を得る。`ending_title`は20字程度の日本語タイトル、`summary`は2〜3文の総括。system promptはゲーム的表現(フラグのキー名・数値・選択肢)や物語内で明かされなかった秘密を書かないよう指示する。
+**出力**: structured outputsで`{ ending_title, summary }`を得る。クライアント互換形式の`output_config.format.schema`は`server/textProvider.js`がGeminiの`generationConfig.responseJsonSchema`へ変換する。`ending_title`は20字程度の日本語タイトル、`summary`は2〜3文の総括。system promptはゲーム的表現(フラグのキー名・数値・選択肢)や物語内で明かされなかった秘密を書かないよう指示する。
 
 AI呼び出しは既存の`messages`日次利用枠に相乗りする(専用の新種別は作らない)。失敗時(上流エラー・不正なJSON・空タイトル)はエンディングの記録自体を作らず`502`を返し、Play画面・Home画面は再試行ボタンを出す(04-persistence.md・05-ui-ux.md参照)。ダイス統計(`stats`)自体はここでは生成せず、クライアントが`summarizeRolls`(`src/engine/rollStats.js`)で計算しリクエストボディに含めて送る(02-data-model.md 3.6節参照)。
 

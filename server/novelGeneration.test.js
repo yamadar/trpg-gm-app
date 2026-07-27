@@ -11,8 +11,10 @@ function sequenceFetch(...responses) {
     return {
       ok: true,
       json: async () => ({
-        content: [{ type: 'text', text: r.text }],
-        stop_reason: r.stop_reason,
+        candidates: [{
+          content: { parts: [{ text: r.text }] },
+          finishReason: r.stop_reason === 'max_tokens' ? 'MAX_TOKENS' : 'STOP',
+        }],
       }),
     };
   });
@@ -22,7 +24,17 @@ function bodyOf(fetchImpl, callIndex) {
   return JSON.parse(fetchImpl.mock.calls[callIndex][1].body);
 }
 
-const BASE = { transcript: 'PL: 進む\nGM: 扉があった。', hasImages: false, pov: 'third', apiKey: 'k' };
+const BASE = {
+  transcript: 'PL: 進む\nGM: 扉があった。',
+  hasImages: false,
+  pov: 'third',
+  apiKey: 'k',
+  model: 'gemini-text',
+};
+
+function systemOf(fetchImpl, callIndex = 0) {
+  return bodyOf(fetchImpl, callIndex).systemInstruction.parts[0].text;
+}
 
 describe('generateNovel', () => {
   it('returns the text as-is when the first response completes', async () => {
@@ -44,7 +56,7 @@ describe('generateNovel', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  // Sonnet 5は末尾assistantターン(prefill)を400で拒否する。継続は必ずuserターンで終える。
+  // 最終modelターンのprefillに依存せず、継続は必ずuserターンで終える。
   it('ends the continuation request with a user turn, not an assistant prefill', async () => {
     const fetchImpl = sequenceFetch(
       { text: '途中', stop_reason: 'max_tokens' },
@@ -52,7 +64,7 @@ describe('generateNovel', () => {
     );
     await generateNovel({ ...BASE, fetchImpl });
 
-    const messages = bodyOf(fetchImpl, 1).messages;
+    const messages = bodyOf(fetchImpl, 1).contents;
     expect(messages[messages.length - 1].role).toBe('user');
   });
 
@@ -64,11 +76,11 @@ describe('generateNovel', () => {
     );
     await generateNovel({ ...BASE, fetchImpl });
 
-    const second = bodyOf(fetchImpl, 1).messages;
-    expect(second.find((m) => m.role === 'assistant').content).toBe('一回目');
+    const second = bodyOf(fetchImpl, 1).contents;
+    expect(second.find((m) => m.role === 'model').parts[0].text).toBe('一回目');
     // 2度目の継続では、それまでの全出力が渡る。
-    const third = bodyOf(fetchImpl, 2).messages;
-    expect(third.find((m) => m.role === 'assistant').content).toBe('一回目二回目');
+    const third = bodyOf(fetchImpl, 2).contents;
+    expect(third.find((m) => m.role === 'model').parts[0].text).toBe('一回目二回目');
   });
 
   it('resends the same transcript on every request', async () => {
@@ -79,16 +91,16 @@ describe('generateNovel', () => {
     await generateNovel({ ...BASE, fetchImpl });
 
     for (const i of [0, 1]) {
-      expect(bodyOf(fetchImpl, i).messages[0].content[0].text).toBe(BASE.transcript);
+      expect(bodyOf(fetchImpl, i).contents[0].parts[0].text).toBe(BASE.transcript);
     }
   });
 
-  // 継続のたびにtranscriptを再送するため、キャッシュが効かないと長いログほど高くつく。
-  it('marks the transcript block for prompt caching', async () => {
+  // Geminiのimplicit cachingが共通prefixを認識できるよう、ログは先頭に置く。
+  it('puts the transcript first for implicit prompt caching', async () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, fetchImpl });
 
-    expect(bodyOf(fetchImpl, 0).messages[0].content[0].cache_control).toEqual({ type: 'ephemeral' });
+    expect(bodyOf(fetchImpl, 0).contents[0].parts[0].text).toBe(BASE.transcript);
   });
 
   it('gives up as truncated once the continuation limit is reached', async () => {
@@ -120,7 +132,9 @@ describe('generateNovel', () => {
       if (call === 1) {
         return {
           ok: true,
-          json: async () => ({ content: [{ type: 'text', text: '途中' }], stop_reason: 'max_tokens' }),
+          json: async () => ({
+            candidates: [{ content: { parts: [{ text: '途中' }] }, finishReason: 'MAX_TOKENS' }],
+          }),
         };
       }
       return { ok: false, status: 503, text: async () => 'upstream down' };
@@ -132,7 +146,7 @@ describe('generateNovel', () => {
   it('throws when the response has no text', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ content: [], stop_reason: 'end_turn' }),
+      json: async () => ({ candidates: [{ content: { parts: [] }, finishReason: 'STOP' }] }),
     });
     await expect(generateNovel({ ...BASE, fetchImpl })).rejects.toThrow(/empty/);
   });
@@ -140,25 +154,25 @@ describe('generateNovel', () => {
   it('includes the marker instruction only when the session has images', async () => {
     const withImages = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, hasImages: true, fetchImpl: withImages });
-    expect(bodyOf(withImages, 0).system).toContain('挿絵挿入位置');
+    expect(systemOf(withImages)).toContain('挿絵挿入位置');
 
     const withoutImages = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, fetchImpl: withoutImages });
-    expect(bodyOf(withoutImages, 0).system).not.toContain('挿絵挿入位置');
+    expect(systemOf(withoutImages)).not.toContain('挿絵挿入位置');
   });
 
   it('uses a first person prompt when pov is first', async () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, pov: 'first', fetchImpl });
 
-    expect(bodyOf(fetchImpl, 0).system).toContain('一人称');
+    expect(systemOf(fetchImpl)).toContain('一人称');
   });
 
   it('names the protagonist in the system prompt when pcName is given', async () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, pcName: 'カイ', fetchImpl });
 
-    expect(bodyOf(fetchImpl, 0).system).toContain('主人公の名前は「カイ」である');
+    expect(systemOf(fetchImpl)).toContain('主人公の名前は「カイ」である');
   });
 
   // 名無しのまま遊び終わった既存セッションの救済。呼称をモデルに一つ決めさせる。
@@ -166,7 +180,7 @@ describe('generateNovel', () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, fetchImpl });
 
-    const system = bodyOf(fetchImpl, 0).system;
+    const system = systemOf(fetchImpl);
     expect(system).toContain('一つだけ定め');
     expect(system).not.toContain('主人公の名前は「');
     // 固定の呼び名を作らせる前に、まずログから読み取れる名前を優先させる文言を検証する。
@@ -178,7 +192,7 @@ describe('generateNovel', () => {
     for (const pcName of ['カイ', '']) {
       const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
       await generateNovel({ ...BASE, pcName, fetchImpl });
-      expect(bodyOf(fetchImpl, 0).system).toContain('二人以上の人物を「彼」「彼女」で受けないこと');
+      expect(systemOf(fetchImpl)).toContain('二人以上の人物を「彼」「彼女」で受けないこと');
     }
   });
 
@@ -187,7 +201,7 @@ describe('generateNovel', () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, pov: 'first', pcName: 'カイ', fetchImpl });
 
-    const system = bodyOf(fetchImpl, 0).system;
+    const system = systemOf(fetchImpl);
     expect(system).not.toContain('主人公の名前は「カイ」である');
     expect(system).not.toContain('一つだけ定め');
     expect(system).toContain('二人以上の人物を「彼」「彼女」で受けないこと');
@@ -198,7 +212,7 @@ describe('generateNovel', () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, hasImages: true, pcName: 'カイ', fetchImpl });
 
-    const system = bodyOf(fetchImpl, 0).system;
+    const system = systemOf(fetchImpl);
     expect(system.indexOf('人物の書き分け')).toBeLessThan(system.indexOf('挿絵挿入位置'));
   });
 });

@@ -9,7 +9,7 @@
    - ルール性向(`ruleset.label`/`hint`)
    - 直前state(current_scene, flags, history_summary)
    - 直近ログ(recent_log)
-3. Claude API呼び出し(`src/api/session.js`の`takeTurn`)
+3. Google Gemini API呼び出し(`src/api/session.js`の`takeTurn`、サーバー変換は`server/textProvider.js`)
    - 判定必要と判断 → tool_use `roll_check({check_label, success_percent, check_kind?})` を返す。`check_kind`はアダプタが副作用kind(coc7eの`sanity`等)を持つ場合のみスキーマに追加される任意フィールド(`src/api/prompts.js`の`buildRollTool`)
    - Game Engine側(`src/engine/rulesetAdapters.js`の`getAdapter(formula).evaluate`。simpleは`src/engine/dice.js`の`evaluateRoll`に委譲)でd100ロールと判定式アダプタ別のdegree算出を実行 → `check_kind`に対応する副作用があれば`sideEffect`が決定論的にリソース増減(SAN等)を計算・反映 → 結果(roll/success/degree、副作用があれば`san_loss`/`san_now`)をtool_resultとして返送 → 続きの物語生成(詳細は5章)
 4. 応答から構造化出力を抽出(実際の出力形式。`src/api/prompts.js`の指示文)

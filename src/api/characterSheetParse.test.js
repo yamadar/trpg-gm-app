@@ -8,7 +8,7 @@ beforeEach(() => {
 
 describe('parseCharacterSheet', () => {
   it('parses name, goal and bonds from the model response', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [
         { type: 'text', text: JSON.stringify({ name: 'アリス', goal: '妹を救い出す', bonds: '幼馴染のNPC' }) },
       ],
@@ -18,7 +18,7 @@ describe('parseCharacterSheet', () => {
   });
 
   it('defaults every field to an empty string when the model omits them', async () => {
-    vi.spyOn(client, 'callClaude').mockResolvedValue({
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({}) }],
     });
     const result = await parseCharacterSheet('PC名: ボブ');
@@ -26,19 +26,19 @@ describe('parseCharacterSheet', () => {
   });
 
   it('sends the raw character sheet as the user message', async () => {
-    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({ name: '', goal: '', bonds: '' }) }],
     });
     await parseCharacterSheet('PC名: キャロル');
-    expect(callClaudeMock.mock.calls[0][0].messages[0].content).toBe('PC名: キャロル');
+    expect(callTextModelMock.mock.calls[0][0].messages[0].content).toBe('PC名: キャロル');
   });
 
   it('asks the model for the name in the output schema', async () => {
-    const callClaudeMock = vi.spyOn(client, 'callClaude').mockResolvedValue({
+    const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({ name: '', goal: '', bonds: '' }) }],
     });
     await parseCharacterSheet('PC名: キャロル');
-    const schema = callClaudeMock.mock.calls[0][0].output_config.format.schema;
+    const schema = callTextModelMock.mock.calls[0][0].output_config.format.schema;
     expect(schema.properties).toHaveProperty('name');
     expect(schema.required).toContain('name');
   });

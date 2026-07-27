@@ -1,13 +1,9 @@
-import { callClaude, extractText, extractToolUse, parseJsonLoose } from './client.js';
+import { callTextModel, extractText, extractToolUse, parseJsonLoose } from './client.js';
 import { buildRollTool, resolveAdapter, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
 
-const MODEL = 'claude-sonnet-5';
-
 export async function summarizeWorld(raw) {
-  const data = await callClaude({
-    model: MODEL,
+  const data = await callTextModel({
     max_tokens: 2000,
-    thinking: { type: 'disabled' },
     system:
       '以下の世界観資料を、TRPGのGMが毎ターン参照できる程度の要約(600〜900字)に圧縮せよ。地名・組織・時代背景などキーとなる設定は保持すること。説明文やコードブロック記号は付けず、要約文のみを出力すること。',
     messages: [{ role: 'user', content: raw }],
@@ -19,10 +15,8 @@ export async function generateScenario(genre, pcRaw, worldSummary) {
   const hookLine = pcRaw
     ? '\nPCのgoal/bondsに関連する引き(hook)を導入部に必ず含めること。'
     : '';
-  const data = await callClaude({
-    model: MODEL,
+  const data = await callTextModel({
     max_tokens: 3000,
-    thinking: { type: 'disabled' },
     system: `TRPGシナリオを作成せよ。
 
 # ジャンル要望
@@ -69,15 +63,13 @@ export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
   const system = buildSystemBlocks(session);
   let messages = [{ role: 'user', content: buildTurnUserContent(session, playerText) }];
   const base = {
-    model: MODEL,
     max_tokens: 2000,
-    thinking: { type: 'disabled' },
     system,
     ...(allowRoll ? { tools: [buildRollTool(adapter)] } : {}),
     output_config: { format: TURN_OUTPUT_FORMAT },
   };
 
-  let data = await callClaude({ ...base, messages });
+  let data = await callTextModel({ ...base, messages });
   let roll = null;
   let resourceChange = null;
 
@@ -125,7 +117,7 @@ export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
     // ためだけの空JSON(narrative空・choices空)を添えて返すことがある。その2度目の
     // 呼び出しは下の1回きりの分岐では拾われず、空JSONがそのままターンの内容として
     // 表示される。tool_choice:noneで追撃時のツールを閉じ、本文の生成を必ず終わらせる。
-    data = await callClaude({ ...base, messages, tool_choice: { type: 'none' } });
+    data = await callTextModel({ ...base, messages, tool_choice: { type: 'none' } });
   }
 
   const text = extractText(data.content);
@@ -152,10 +144,8 @@ export async function recallMemory(session) {
     .filter(Boolean)
     .join('\n');
 
-  const data = await callClaude({
-    model: MODEL,
+  const data = await callTextModel({
     max_tokens: 600,
-    thinking: { type: 'disabled' },
     system:
       'あなたはTRPGのGM。PCがこれまでに知り得たこと・手に入れたものを、PC視点で簡潔に思い返す短い地の文(200字程度)を書け。ゲーム的表現(フラグのキー名・数値・選択肢)はそのまま出さず、自然な日本語に翻訳すること。未開示の秘密やメタ情報は書かない。まだ何も無ければその旨を一言。説明やコードブロック記号は付けず、回想の地の文のみを出力せよ。',
     messages: [
@@ -182,10 +172,8 @@ export async function advanceCampaignPc(session) {
       .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
       .join('\n') || '(まだなし)';
 
-  const data = await callClaude({
-    model: MODEL,
+  const data = await callTextModel({
     max_tokens: 1500,
-    thinking: { type: 'disabled' },
     system:
       'あなたはTRPGのGM。1つの冒険を終えたPCの、次の冒険へ持ち越す更新版キャラクターシートを書け。元シートの体裁(PC名・能力・持ち物・goal・bonds等)を保ちつつ、この冒険で得た物・能力や経験の成長・出来事・新たな因縁や関係の変化を反映すること。ゲーム的表現(フラグのキー名・数値・選択肢)や未開示の秘密・メタ情報は書かない。説明やコードブロック記号は付けず、更新版シート本文のみを出力せよ。',
     messages: [

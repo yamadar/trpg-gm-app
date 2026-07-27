@@ -1,5 +1,6 @@
+import { generateText } from './textProvider.js';
+
 const ANALYSIS_TIMEOUT_MS = 60000;
-const MODEL = 'claude-sonnet-5';
 
 const ANALYSIS_FORMAT = {
   type: 'json_schema',
@@ -37,7 +38,7 @@ const SYSTEM = `この場面の地の文を読み、挿絵に描くべき人物�
   悪い例: 「ゲオルクの息子。迷信を信じない現実主義者。この場面には登場せず言及されるのみ」
 - 既知キャラの見た目は変更しない。PCシートに見た目の記述があればそれを優先する。`;
 
-export async function analyzeScene({ narrative, registry = {}, pcRaw = '', apiKey, fetchImpl = fetch }) {
+export async function analyzeScene({ narrative, registry = {}, pcRaw = '', apiKey, model, fetchImpl = fetch }) {
   if (!apiKey) return { presentNames: [], newAppearances: [] };
   const known =
     Object.values(registry)
@@ -45,21 +46,18 @@ export async function analyzeScene({ narrative, registry = {}, pcRaw = '', apiKe
       .join('\n') || '(なし)';
   const user = `# 地の文\n${narrative}\n\n# 既知キャラ\n${known}\n\n# PCシート(抜粋)\n${(pcRaw || '').slice(0, 600) || '(なし)'}`;
   try {
-    const upstream = await fetchImpl('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: MODEL,
+    const data = await generateText({
+      apiKey,
+      model,
+      fetchImpl,
+      timeoutMs: ANALYSIS_TIMEOUT_MS,
+      request: {
         max_tokens: 2000,
-        thinking: { type: 'disabled' },
         system: SYSTEM,
         output_config: { format: ANALYSIS_FORMAT },
         messages: [{ role: 'user', content: user }],
-      }),
-      signal: AbortSignal.timeout(ANALYSIS_TIMEOUT_MS),
+      },
     });
-    if (!upstream.ok) return { presentNames: [], newAppearances: [] };
-    const data = await upstream.json();
     const text = (data.content || [])
       .filter((b) => b.type === 'text')
       .map((b) => b.text)

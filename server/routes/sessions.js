@@ -87,7 +87,7 @@ export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey,
   // 生成は待たずに202を返す。進行状況は GET /novel-jobs で参照する。
   router.post('/sessions/:id/novelize', asyncHandler(async (req, res) => {
     if (!apiKey) {
-      res.status(500).json({ error: 'ANTHROPIC_API_KEY is not configured on the server' });
+      res.status(500).json({ error: 'GEMINI_TEXT_API_KEY is not configured on the server' });
       return;
     }
     const session = await dataStore.get(sessionKey(req.userId, req.params.id));
