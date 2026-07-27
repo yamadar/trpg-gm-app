@@ -3,12 +3,15 @@ import { render, renderHook, waitFor, act } from '@testing-library/react';
 import { AuthContext } from './AuthContext.jsx';
 import { useSessionTakeover } from './useSessionTakeover.js';
 
-vi.mock('../storage/index.js', () => ({ listSessions: vi.fn() }));
+vi.mock('../storage/index.js', () => ({ listSessions: vi.fn(), saveSession: vi.fn().mockResolvedValue(true) }));
 vi.mock('../api/sessionSyncClient.js', () => ({
   listServerSessions: vi.fn(),
   putSessionToServer: vi.fn().mockResolvedValue({}),
+  getSessionSyncState: vi.fn().mockReturnValue(null),
+  rememberSessionSync: vi.fn(),
+  dispatchSessionConflict: vi.fn(),
 }));
-import { listSessions } from '../storage/index.js';
+import { listSessions, saveSession } from '../storage/index.js';
 import { listServerSessions, putSessionToServer } from '../api/sessionSyncClient.js';
 
 function wrapper(user) {
@@ -34,6 +37,18 @@ describe('useSessionTakeover', () => {
     ]);
     const { result } = renderHook(() => useSessionTakeover(), { wrapper: wrapper({ id: 'u1' }) });
     await waitFor(() => expect(result.current.pendingCount).toBe(2)); // a と c
+  });
+
+  it('downloads a server-only session to this device', async () => {
+    const remote = { id: 'remote', updatedAt: 300, _sync: { revision: 2, clientUpdatedAt: 300 } };
+    listSessions.mockResolvedValue([]);
+    listServerSessions.mockResolvedValue([remote]);
+
+    const { result } = renderHook(() => useSessionTakeover(), { wrapper: wrapper({ id: 'u1' }) });
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(saveSession).toHaveBeenCalledWith(remote);
+    expect(result.current.syncVersion).toBe(1);
   });
 
   it('confirm uploads the candidates and clears the count', async () => {

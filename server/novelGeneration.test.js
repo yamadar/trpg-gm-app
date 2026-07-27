@@ -119,6 +119,23 @@ describe('generateNovel', () => {
     expect(continuation).toContain('です・ます調へ変えない');
   });
 
+  it('requests readable Markdown structure and preserves it during continuations', async () => {
+    const fetchImpl = sequenceFetch(
+      { text: '## 霧の港\n\n**古い鍵**', stop_reason: 'max_tokens' },
+      { text: 'が光った。', stop_reason: 'end_turn' },
+    );
+    await generateNovel({ ...BASE, fetchImpl });
+
+    const system = systemOf(fetchImpl);
+    const continuation = bodyOf(fetchImpl, 1).contents.at(-1).parts[0].text;
+    expect(system).toContain('Markdown');
+    expect(system).toContain('場面転換');
+    expect(system).toContain('## 小見出し');
+    expect(system).toContain('**太字**');
+    expect(system).toContain('重要な固有名詞');
+    expect(continuation).toContain('Markdown');
+  });
+
   it('resends the same transcript on every request', async () => {
     const fetchImpl = sequenceFetch(
       { text: 'a', stop_reason: 'max_tokens' },

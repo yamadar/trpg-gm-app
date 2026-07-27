@@ -95,6 +95,71 @@ describe('sessions routes', () => {
     expect(res.body.map((s) => s.id).sort()).toEqual(['s1', 's2']);
   });
 
+  it('rejects a stale device revision without overwriting server progress', async () => {
+    const first = await request(app)
+      .put('/api/sessions/s1')
+      .set('X-Device-Id', 'device_a')
+      .set('If-Match', '"0"')
+      .send({ title: '端末A', updatedAt: 100 });
+    expect(first.status).toBe(200);
+    expect(first.body._sync).toMatchObject({ revision: 1, updatedByDeviceId: 'device_a' });
+
+    const stale = await request(app)
+      .put('/api/sessions/s1')
+      .set('X-Device-Id', 'device_b')
+      .set('If-Match', '"0"')
+      .send({ title: '端末B', updatedAt: 200 });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({
+      code: 'SESSION_CONFLICT',
+      current: { title: '端末A', _sync: { revision: 1 } },
+    });
+
+    const stored = await request(app).get('/api/sessions/s1');
+    expect(stored.body.title).toBe('端末A');
+  });
+
+  it('allows an explicit overwrite after a conflict and advances revision', async () => {
+    await request(app)
+      .put('/api/sessions/s1')
+      .set('X-Device-Id', 'device_a')
+      .set('If-Match', '"0"')
+      .send({ title: '端末A' });
+
+    const forced = await request(app)
+      .put('/api/sessions/s1')
+      .set('X-Device-Id', 'device_b')
+      .set('If-Match', '"0"')
+      .set('X-Force-Overwrite', 'true')
+      .send({ title: '端末B' });
+    expect(forced.status).toBe(200);
+    expect(forced.body).toMatchObject({
+      title: '端末B',
+      _sync: { revision: 2, updatedByDeviceId: 'device_b' },
+    });
+  });
+
+  it('reports another active device playing the same session', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' });
+    const first = await request(app)
+      .post('/api/sessions/s1/presence')
+      .set('X-Device-Id', 'device_a');
+    expect(first.body.otherDeviceActive).toBe(false);
+
+    const second = await request(app)
+      .post('/api/sessions/s1/presence')
+      .set('X-Device-Id', 'device_b');
+    expect(second.body.otherDeviceActive).toBe(true);
+
+    await request(app)
+      .delete('/api/sessions/s1/presence')
+      .set('X-Device-Id', 'device_a');
+    const afterRelease = await request(app)
+      .post('/api/sessions/s1/presence')
+      .set('X-Device-Id', 'device_b');
+    expect(afterRelease.body.otherDeviceActive).toBe(false);
+  });
+
   it('returns 404 from novelize when the session does not exist', async () => {
     const res = await request(app).post('/api/sessions/missing/novelize');
     expect(res.status).toBe(404);

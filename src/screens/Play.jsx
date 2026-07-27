@@ -5,7 +5,15 @@ import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import CharacterPanel from '../components/play/CharacterPanel.jsx';
 import { takeTurn, recallMemory } from '../api/session.js';
 import { saveSession } from '../storage/index.js';
-import { putSessionToServer } from '../api/sessionSyncClient.js';
+import {
+  dispatchSessionConflict,
+  getDeviceId,
+  getServerSession,
+  getSessionSyncState,
+  heartbeatSession,
+  putSessionToServer,
+  releaseSessionPresence,
+} from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
 import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -32,6 +40,7 @@ const LOGGED_OUT_COMPOSER_RESERVE = 190;
 // 文字列なので、同じ場面が続いていても言い回しが揺れて「シーン変化」と判定されうる。
 // 変化の検出だけに任せると挿絵が毎ターン挟まるため、最低間隔で頻度に上限を掛ける。
 const AUTO_ILLUSTRATE_MIN_TURNS = 3;
+const PRESENCE_HEARTBEAT_MS = 15_000;
 export const SLOW_RESPONSE_NOTICE_MS = 12000;
 
 export default function Play({ session, setSession }) {
@@ -42,6 +51,7 @@ export default function Play({ session, setSession }) {
   const [slowResponse, setSlowResponse] = useState(false);
   const [error, setError] = useState('');
   const [saveWarning, setSaveWarning] = useState('');
+  const [otherDeviceActive, setOtherDeviceActive] = useState(false);
   const [narrating, setNarrating] = useState(false);
   const handleNarrationDone = useCallback(() => setNarrating(false), []);
   const [imageGen, setImageGen] = useState(false);
@@ -85,6 +95,52 @@ export default function Play({ session, setSession }) {
       .then((c) => setImageGen(!!c.imageGen))
       .catch(() => setImageGen(false));
   }, []);
+
+  // 同じセッションを開いている端末をサーバーへ通知する。ハートビート応答の
+  // revisionが進んでいれば本文も取得し、次のPUTを待たずに競合選択を出す。
+  useEffect(() => {
+    if (!user) {
+      setOtherDeviceActive(false);
+      return;
+    }
+    let cancelled = false;
+    let checking = false;
+
+    async function checkPresence() {
+      if (checking) return;
+      checking = true;
+      try {
+        const presence = await heartbeatSession(session.id);
+        if (cancelled) return;
+        setOtherDeviceActive(presence.otherDeviceActive === true);
+
+        const knownRevision = getSessionSyncState(sessionRef.current)?.revision ?? 0;
+        const remoteRevision = presence.sync?.revision ?? 0;
+        if (
+          remoteRevision > knownRevision &&
+          presence.sync?.updatedByDeviceId &&
+          presence.sync.updatedByDeviceId !== getDeviceId()
+        ) {
+          const remote = await getServerSession(session.id);
+          if (!cancelled) dispatchSessionConflict(sessionRef.current, remote, 'remote-update');
+        }
+      } catch (e) {
+        // 新規セッションは導入ターンのPUT完了までサーバー上に存在しない。
+        // 404や一時的な回線断でプレイ自体は止めず、次回ハートビートで再試行する。
+        if (e.status !== 404) console.error('session presence check failed', e);
+      } finally {
+        checking = false;
+      }
+    }
+
+    checkPresence();
+    const timer = setInterval(checkPresence, PRESENCE_HEARTBEAT_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      releaseSessionPresence(session.id).catch(() => {});
+    };
+  }, [user?.id, session.id]);
 
   // 挿絵生成。baseSession を引数に取り、手動ボタンとシーン変化時の自動生成の双方で再利用する。
   // runTurn より前に定義し、runTurn から参照できるようにする。
@@ -403,6 +459,24 @@ export default function Play({ session, setSession }) {
             )}
           </div>
         </div>
+
+        {otherDeviceActive && (
+          <div
+            role="alert"
+            style={{
+              fontFamily: F_MONO,
+              fontSize: 12,
+              lineHeight: 1.6,
+              color: COLORS.stamp,
+              border: `1px solid ${COLORS.stamp}`,
+              borderRadius: 4,
+              padding: '10px 12px',
+              marginBottom: 16,
+            }}
+          >
+            別端末で同じセッションをプレイ中。進捗が競合した場合、上書き前に確認が表示される。
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {session.log.map((entry, i) =>

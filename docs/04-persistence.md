@@ -8,6 +8,7 @@
   - sessionStorageはタブを閉じると消えるため、「続きから再開」機能と両立しない
   - 将来的に画像等のバイナリデータを扱う計画があり、IndexedDBならBlobを直接扱え容量上限も大きい
 - 一覧表示(ホーム画面の「続きから再開」)はIndexedDBの`getAll()`で全セッションを取得し`updatedAt`降順にソートして使う。専用の索引(旧`sessions_index`)は持たない。
+- `localStorage`はセッション本体には使わず、端末ID(`trpg-gm-device-id`)とセッション別の既知サーバーrevision(`trpg-gm-session-sync`)だけに使う。サーバーから取得したセッションにも`_sync`メタを埋め、localStorage消去時のrevision復元に使う。
 - スキーマバージョン管理: session内に`schema_version`を持たせ、将来の移行に対応(未実装、Phase以降で必要になれば追加)。
 
 ## サーバー側(dataStore / textStore)
@@ -16,7 +17,11 @@
   - `dataStore`: 将来Redis等のキーバリューストアへの差し替えを想定
   - `textStore`: 将来S3等のクラウドストレージへの差し替えを想定
 - 認証機能の追加に伴い、素材ライブラリ・セッション関連のキーはすべて**ユーザー単位の名前空間`users/{userId}/...`配下**に置かれる(`server/storage/paths.js`)。認証(識別情報・セッショントークン)自体はユーザー名前空間の外側に置かれる。
-- Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**フロントエンドからの自動同期は実装済み**: `Play.jsx`が毎ターン、IndexedDBへの保存に加えて`putSessionToServer`(`src/api/sessionSyncClient.js`)経由で`PUT /api/sessions/:id`を呼び、サーバー側にもセッション全体を同期する(失敗してもプレイは継続、コンソールにエラーを出すのみ)。
+- Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**双方向同期・競合保護は実装済み**:
+  - 新規開始・毎ターン・完結等の更新時、IndexedDB保存後に`putSessionToServer`(`src/api/sessionSyncClient.js`)でサーバーへ同期する。同一セッションのクライアントPUTはキューで直列化する。
+  - ログイン時、`useSessionTakeover`がローカル/サーバー一覧を突き合わせる。Home表示中も15秒間隔で同じ照合を行う。サーバーだけにあるセッション、またはローカル未変更でサーバーrevisionが新しいセッションはIndexedDBへ自動取得する。ローカルだけ/ローカル変更済みのセッションは従来どおりアカウント保存確認対象にする。`#/play/:sessionId`直アクセスもIndexedDBに無ければサーバー取得へフォールバックする。
+  - サーバー保存セッションは`_sync: { revision, updatedAt, updatedByDeviceId, clientUpdatedAt }`を持つ。クライアントは`If-Match: "{knownRevision}"`と`X-Device-Id`を付けてPUTする。既知revisionと現行revisionが違えば`409 { code: "SESSION_CONFLICT", current }`を返し、保存済み進捗を変更しない。UIは両端末のターン数と上書き警告を出し、「別端末の進捗を使う」か「この端末で上書き」を選ばせる。明示上書き時だけ`X-Force-Overwrite: true`を送る。
+  - `POST /api/sessions/:id/presence`を15秒間隔で呼び、45秒以内に別端末のハートビートがあればPlay画面へ同時プレイ警告を表示する。離脱時は`DELETE /api/sessions/:id/presence`で端末在席を解除する。在席情報はプロセスメモリ上の短期情報で、セッション進捗自体はrevision付きdataStoreへ永続化する。
 - World/Character/Scenario/Rulesetについては、`server/storage/paths.js`のキー生成関数(`users/{userId}/worlds/{worldId}/...`等)を使った**保存API・素材ライブラリUIが両方稼働している**(データモデルは[02-data-model.md](02-data-model.md)の3.5節のフォルダ構造に対応)。フロントエンドの`src/screens/Library.jsx`(World/Character/Scenario/Rulesetタブ)からこれらのAPIを呼び出し、CRUDが完結する。
 - World・Scenarioのメタ情報は`moods`(雰囲気タグ)フィールドを持つ(`server/storage/worldLibrary.js`・`scenarioLibrary.js`)。値は`server/storage/moods.js`の`MOODS`(固定8種: ホラー/冒険/ミステリー/日常/SF/ファンタジー/コメディ/シリアス)の部分集合の配列で、`PUT /api/worlds/:id`・`PUT /api/worlds/:worldId/scenarios/:id`のボディに`moods`があれば`isValidMoods`で検証し、語彙外の値を含む場合`400`(`moods must be an array of known mood labels`)を返す。省略時・未設定時は`[]`。フロントエンドの語彙定義は`src/constants/moods.js`にサーバーと同内容で複製されている(`server/storage/slugify.js`↔`src/utils/slugify.js`と同じ前例)。
 

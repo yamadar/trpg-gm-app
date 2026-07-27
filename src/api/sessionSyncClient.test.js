@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { putSessionToServer, novelizeSession, getNovel, getIllustratedNovel, listNovelJobs } from './sessionSyncClient.js';
+import {
+  putSessionToServer,
+  novelizeSession,
+  getNovel,
+  getIllustratedNovel,
+  listNovelJobs,
+  SESSION_CONFLICT_EVENT,
+} from './sessionSyncClient.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -13,7 +20,11 @@ describe('putSessionToServer', () => {
     await putSessionToServer(session);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sessions/s1',
-      expect.objectContaining({ method: 'PUT', body: JSON.stringify(session) })
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify(session),
+        headers: expect.objectContaining({ 'If-Match': '"0"', 'X-Device-Id': expect.any(String) }),
+      })
     );
   });
 
@@ -21,6 +32,45 @@ describe('putSessionToServer', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' });
     vi.stubGlobal('fetch', fetchMock);
     await expect(putSessionToServer({ id: 's1' })).rejects.toThrow('API error 500: boom');
+  });
+
+  it('dispatches server progress with a conflict event on 409', async () => {
+    const remote = { id: 's-conflict', title: 'remote', _sync: { revision: 2 } };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ code: 'SESSION_CONFLICT', current: remote }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const listener = vi.fn();
+    window.addEventListener(SESSION_CONFLICT_EVENT, listener);
+
+    await expect(putSessionToServer({ id: 's-conflict', title: 'local' })).rejects.toMatchObject({ status: 409 });
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener.mock.calls[0][0].detail).toMatchObject({
+      sessionId: 's-conflict',
+      local: { title: 'local' },
+      remote: { title: 'remote' },
+    });
+    window.removeEventListener(SESSION_CONFLICT_EVENT, listener);
+  });
+
+  it('does not send queued stale writes after the first write conflicts', async () => {
+    const remote = { id: 's-queued', title: 'remote', _sync: { revision: 2 } };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ code: 'SESSION_CONFLICT', current: remote }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = putSessionToServer({ id: 's-queued', title: 'local-1' });
+    const queued = putSessionToServer({ id: 's-queued', title: 'local-2' });
+
+    await expect(first).rejects.toMatchObject({ status: 409 });
+    await expect(queued).rejects.toMatchObject({ code: 'SESSION_SYNC_BLOCKED' });
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
 

@@ -74,12 +74,27 @@ beforeEach(() => {
   // out by default so it doesn't inflate fetch-call-count assertions in unrelated tests.
   // The dedicated sync test below overrides this with its own mockRejectedValue.
   vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
+  vi.spyOn(sessionSyncClient, 'heartbeatSession').mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+  vi.spyOn(sessionSyncClient, 'releaseSessionPresence').mockResolvedValue({ ok: true });
+  vi.spyOn(sessionSyncClient, 'getServerSession').mockResolvedValue(makeSession());
+  vi.spyOn(sessionSyncClient, 'getSessionSyncState').mockReturnValue(null);
   // 挿絵クライアントのモックはテスト間で呼び出し履歴が残るため毎回リセットし、既定を復元する。
   sceneImageClient.getConfig.mockReset().mockResolvedValue({ imageGen: false });
   sceneImageClient.generateSceneImage.mockReset();
 });
 
 describe('Play', () => {
+  it('warns when another device is playing the same session', async () => {
+    sessionSyncClient.heartbeatSession.mockResolvedValue({ otherDeviceActive: true, sync: null });
+    renderWithAuth(
+      <Harness
+        initialSession={makeSession({ log: [{ role: 'gm', text: '進行中' }] })}
+      />
+    );
+
+    expect(await screen.findByText(/別端末で同じセッションをプレイ中/)).toBeInTheDocument();
+  });
+
   it('requests an opening scene when the log is empty and renders the narrative', async () => {
     renderWithAuth(<Harness initialSession={makeSession()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());

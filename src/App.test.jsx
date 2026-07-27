@@ -36,6 +36,43 @@ describe('App', () => {
     expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('shows overwrite warning and can adopt progress from another device', async () => {
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    render(<App />);
+    await findHome();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(sessionSyncClient.SESSION_CONFLICT_EVENT, {
+          detail: {
+            sessionId: 's1',
+            reason: 'write-conflict',
+            local: { id: 's1', title: 'local', state: { turn_count: 2 }, log: [], updatedAt: 2 },
+            remote: {
+              id: 's1',
+              title: 'remote',
+              state: { turn_count: 3 },
+              log: [],
+              updatedAt: 3,
+              _sync: { revision: 2 },
+            },
+          },
+        })
+      );
+    });
+
+    expect(screen.getByRole('heading', { name: '別端末の進捗を検出' })).toBeInTheDocument();
+    expect(screen.getByText(/別端末の進捗が失われる/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '別端末の進捗を使う' }));
+
+    await waitFor(() =>
+      expect(saveSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 's1', title: 'remote' }))
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: '別端末の進捗を検出' })).not.toBeInTheDocument()
+    );
+  });
+
   it('does not read the session list when opening a play route directly', async () => {
     // ホーム一覧は #/play では使わない。マウント時に無条件で取っていたころは
     // 開くだけで無駄な読み取りが1回走っていた。

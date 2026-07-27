@@ -19,9 +19,53 @@ function isStale(meta, session) {
   return meta.turnCount !== currentTurn;
 }
 
-export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }) {
+const PRESENCE_TTL_MS = 45_000;
+const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+function revisionOf(session) {
+  const revision = session?._sync?.revision;
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
+function parseExpectedRevision(value) {
+  if (value == null) return null;
+  const match = String(value).trim().match(/^(?:W\/)?"?(\d+)"?$/);
+  if (!match) return NaN;
+  const revision = Number(match[1]);
+  return Number.isSafeInteger(revision) ? revision : NaN;
+}
+
+function deviceIdOf(req, fallback = 'legacy-client') {
+  const value = String(req.get('X-Device-Id') || '').trim();
+  return DEVICE_ID_RE.test(value) ? value : fallback;
+}
+
+export function createSessionsRouter({
+  dataStore,
+  textStore,
+  imageStore,
+  apiKey,
+  novelJobs,
+  usage,
+  now = Date.now,
+}) {
   const router = Router();
   router.param('id', idParamGuard);
+  // 同じNodeプロセスへ同時に届いた条件付きPUTを直列化する。読み取りと書き込みを
+  // 別々にawaitすると、双方が同じrevisionを読んで両方成功する競合窓ができるため。
+  const sessionLocks = new Map();
+  const activePlayers = new Map();
+
+  async function withSessionLock(key, operation) {
+    const previous = sessionLocks.get(key) || Promise.resolve();
+    const current = previous.catch(() => {}).then(operation);
+    sessionLocks.set(key, current);
+    try {
+      return await current;
+    } finally {
+      if (sessionLocks.get(key) === current) sessionLocks.delete(key);
+    }
+  }
 
   router.get('/sessions', asyncHandler(async (req, res) => {
     const keys = await dataStore.list(sessionListPrefix(req.userId));
@@ -79,9 +123,77 @@ export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey,
       res.status(400).json({ error: 'session body must be an object' });
       return;
     }
-    const session = { ...req.body, id: req.params.id };
-    await dataStore.set(sessionKey(req.userId, req.params.id), session);
-    res.json(session);
+    const expectedRevision = parseExpectedRevision(req.get('If-Match'));
+    if (Number.isNaN(expectedRevision)) {
+      res.status(400).json({ error: 'If-Match must contain a non-negative revision' });
+      return;
+    }
+    const force = req.get('X-Force-Overwrite') === 'true';
+    const key = sessionKey(req.userId, req.params.id);
+    const result = await withSessionLock(key, async () => {
+      const current = await dataStore.get(key);
+      const currentRevision = revisionOf(current);
+      if (!force && current && expectedRevision !== null && expectedRevision !== currentRevision) {
+        return { conflict: current };
+      }
+      const savedAt = now();
+      const session = {
+        ...req.body,
+        id: req.params.id,
+        _sync: {
+          revision: currentRevision + 1,
+          updatedAt: savedAt,
+          updatedByDeviceId: deviceIdOf(req),
+          clientUpdatedAt: Number.isFinite(req.body.updatedAt) ? req.body.updatedAt : null,
+        },
+      };
+      await dataStore.set(key, session);
+      return { session };
+    });
+    if (result.conflict) {
+      res.status(409).json({
+        error: 'session was updated by another device',
+        code: 'SESSION_CONFLICT',
+        current: result.conflict,
+      });
+      return;
+    }
+    res.json(result.session);
+  }));
+
+  router.post('/sessions/:id/presence', asyncHandler(async (req, res) => {
+    const key = sessionKey(req.userId, req.params.id);
+    const session = await dataStore.get(key);
+    if (!session) {
+      res.status(404).json({ error: 'session not found' });
+      return;
+    }
+    const deviceId = deviceIdOf(req, '');
+    if (!deviceId) {
+      res.status(400).json({ error: 'X-Device-Id is required' });
+      return;
+    }
+    const timestamp = now();
+    const presenceKey = `${req.userId}/${req.params.id}`;
+    const devices = activePlayers.get(presenceKey) || new Map();
+    for (const [id, lastSeenAt] of devices) {
+      if (timestamp - lastSeenAt > PRESENCE_TTL_MS) devices.delete(id);
+    }
+    const otherDeviceActive = [...devices.keys()].some((id) => id !== deviceId);
+    devices.set(deviceId, timestamp);
+    activePlayers.set(presenceKey, devices);
+    res.json({ otherDeviceActive, sync: session._sync || null });
+  }));
+
+  router.delete('/sessions/:id/presence', asyncHandler(async (req, res) => {
+    const deviceId = deviceIdOf(req, '');
+    const presenceKey = `${req.userId}/${req.params.id}`;
+    const devices = activePlayers.get(presenceKey);
+    if (devices && deviceId) {
+      devices.delete(deviceId);
+      if (devices.size === 0) activePlayers.delete(presenceKey);
+    }
+    res.json({ ok: true });
   }));
 
   // 生成は待たずに202を返す。進行状況は GET /novel-jobs で参照する。
