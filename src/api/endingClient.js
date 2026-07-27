@@ -20,12 +20,6 @@ export async function renameEnding(sessionId, endingTitle) {
   });
 }
 
-// 204(本文なし)を返すため、JSONを読むapiFetchではなく素のfetchを使う
-// (src/api/campaignClient.js の削除と同じ流儀)。
 export async function deleteEnding(sessionId) {
-  const res = await fetch(`/api/endings/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
+  return apiFetch(`/api/endings/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 }

@@ -1,11 +1,4 @@
-async function apiFetch(url, options) {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
-  return res.json();
-}
+import { apiFetch } from './apiFetch.js';
 
 export async function getScenario(worldId, id) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(id)}`, { method: 'GET' });
@@ -24,9 +17,5 @@ export async function listScenarios(worldId) {
 }
 
 export async function deleteScenario(worldId, id) {
-  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
+  return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

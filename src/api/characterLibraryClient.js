@@ -1,11 +1,4 @@
-async function apiFetch(url, options) {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
-  return res.json();
-}
+import { apiFetch } from './apiFetch.js';
 
 export async function getCharacter(worldId, kind, name) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`, { method: 'GET' });
@@ -24,11 +17,7 @@ export async function listCharacters(worldId, kind) {
 }
 
 export async function deleteCharacter(worldId, kind, name) {
-  const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
+  return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`, { method: 'DELETE' });
 }
 
 export async function putCharacterParsed(worldId, kind, name, { parsed, parsedHash }) {

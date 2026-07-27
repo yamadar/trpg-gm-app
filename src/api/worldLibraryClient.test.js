@@ -111,6 +111,19 @@ describe('listWorlds', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/worlds', expect.objectContaining({ method: 'GET' }));
     expect(result).toEqual([{ id: 'w1', title: 'A' }]);
   });
+
+  it('uses the shared retry message without exposing a 502 html response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      text: async () => '<!DOCTYPE html><html><title>502</title></html>',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const err = await listWorlds().catch((e) => e);
+    expect(err.message).toContain('サーバーが一時的に応答できません');
+    expect(err.message).not.toContain('<!DOCTYPE html>');
+    expect(err.status).toBe(502);
+  });
 });
 
 describe('deleteWorld', () => {

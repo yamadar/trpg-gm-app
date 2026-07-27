@@ -1,16 +1,7 @@
 import { apiFetch } from './apiFetch.js';
 
-// DELETE endpoints return 204 with no body; apiFetch always calls res.json(),
-// which throws on an empty body. Existing delete-style clients (see
-// worldLibraryClient.js's deleteWorld/deleteRegion/deleteCategory) work
-// around this with a raw fetch that never calls res.json(). Follow that
-// same precedent here for unpublish*.
 async function rawDelete(url) {
-  const res = await fetch(url, { method: 'DELETE' });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-  }
+  return apiFetch(url, { method: 'DELETE' });
 }
 
 export async function listPublic(type, { q, moods, ruleset, ownerId, limit, offset } = {}) {

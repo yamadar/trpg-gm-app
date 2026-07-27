@@ -18,6 +18,11 @@ describe('apiFetch', () => {
     expect(await apiFetch('/api/x')).toEqual({ a: 1 });
   });
 
+  it('returns undefined for a successful response without content', async () => {
+    stubFetch(204, '');
+    await expect(apiFetch('/api/x', { method: 'DELETE' })).resolves.toBeUndefined();
+  });
+
   it('maps 401 to a login-required message', async () => {
     stubFetch(401, '{"error":"login required"}');
     const err = await apiFetch('/api/x').catch((e) => e);
@@ -56,6 +61,14 @@ describe('apiFetch', () => {
     stubFetch(500, 'boom');
     const err = await apiFetch('/api/x').catch((e) => e);
     expect(err.message).toContain('API error 500');
+    expect(err.status).toBe(500);
+  });
+
+  it('does not expose an html response for other error statuses', async () => {
+    stubFetch(500, '  <html><body>internal proxy error</body></html>');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.message).toBe('API error 500');
+    expect(err.message).not.toContain('<html>');
     expect(err.status).toBe(500);
   });
 
