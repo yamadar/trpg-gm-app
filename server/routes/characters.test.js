@@ -39,10 +39,26 @@ describe('characters routes', () => {
   });
 
   it('saves and retrieves a pc', async () => {
-    await request(app).put('/api/worlds/w1/characters/pc/alice').send({ raw: 'PC名: アリス' });
+    await request(app)
+      .put('/api/worlds/w1/characters/pc/alice')
+      .send({ characterName: 'アリス', raw: 'PC名: 別名' });
     const res = await request(app).get('/api/worlds/w1/characters/pc/alice');
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ id: 'alice', kind: 'pc', raw: 'PC名: アリス', revealed: null });
+    expect(res.body).toMatchObject({
+      id: 'alice',
+      kind: 'pc',
+      characterName: 'アリス',
+      raw: 'PC名: 別名',
+      revealed: null,
+    });
+  });
+
+  it('rejects a non-string user-entered character name', async () => {
+    const res = await request(app)
+      .put('/api/worlds/w1/characters/pc/alice')
+      .send({ characterName: 123, raw: '本文' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('characterName must be a string');
   });
 
   it('saves an npc with revealed', async () => {
@@ -72,6 +88,21 @@ describe('characters routes', () => {
       name: 'howard-kane',
       displayName: 'ハワード・ケイン',
       excerpt: '新聞記者。兄の死の真相を追っている。',
+    });
+  });
+
+  it('uses the user-entered name before AI and sheet names in the list', async () => {
+    await request(app)
+      .put('/api/worlds/w1/characters/pc/alice')
+      .send({ characterName: '手入力のアリス', raw: 'PC名: タグ名のアリス' });
+    await request(app)
+      .put('/api/worlds/w1/characters/pc/alice/parsed')
+      .send({ parsed: { name: 'AIのアリス', goal: '', bonds: '' }, parsedHash: 'h1' });
+
+    const res = await request(app).get('/api/worlds/w1/characters/pc');
+    expect(res.body[0]).toMatchObject({
+      characterName: '手入力のアリス',
+      displayName: '手入力のアリス',
     });
   });
 

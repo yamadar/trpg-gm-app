@@ -41,8 +41,8 @@ describe('PublicItemDetail', () => {
           ownerName: 'Alice',
           publishedAt: PUBLISHED_AT,
           raw: 'メイン本文',
-          regions: [{ name: 'North', raw: '北の地域' }],
-          categories: [{ name: 'Lore', raw: '伝承の中身' }],
+          regions: [{ name: 'north.md', title: 'North', raw: '北の地域' }],
+          categories: [{ name: 'lore.md', title: 'Lore', raw: '伝承の中身' }],
         }}
       />
     );

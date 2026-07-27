@@ -17,6 +17,20 @@ beforeEach(() => {
   // listCharacters(worldId, 'pc')を呼ぶため、未モックの実fetchを避けるデフォルトを用意する。
   vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([]);
   vi.spyOn(rulesetLibraryClient, 'listRulesets').mockResolvedValue([]);
+  vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockImplementation(async (_worldId, _kind, name) => ({
+    name:
+      name === 'alice'
+        ? 'アリス'
+        : name === 'howard'
+          ? 'ハワード'
+          : name === 'howard-kane'
+            ? 'ハワード・ケイン'
+          : name === 'mabel-thorne'
+            ? 'メイベル'
+            : '',
+    goal: '',
+    bonds: '',
+  }));
 });
 
 describe('Setup', () => {
@@ -397,16 +411,19 @@ describe('Setup', () => {
     expect(screen.getByText('新聞記者。兄の死の真相を追っている。')).toBeInTheDocument();
     expect(screen.getByText('目標: 禁書を取り戻す')).toBeInTheDocument();
     expect(screen.getByText('因縁: 亡き師との約束')).toBeInTheDocument();
-    // ストレージ上の名前も、表示名と違うときは手掛かりとして残す(選択はこの名前で行う)。
-    expect(screen.getByText('howard-kane')).toBeInTheDocument();
+    expect(screen.queryByText('howard-kane')).not.toBeInTheDocument();
   });
 
-  // 表示名や抜粋を返さない一覧(旧サーバー)でも、名前だけで選べる状態は保つ。
-  it('falls back to the storage name when the list carries no display name', async () => {
+  it('uses the AI-extracted name when the list carries no display name', async () => {
     worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
     vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
     characterLibraryClient.listCharacters.mockResolvedValue([{ worldId: 'w1', kind: 'pc', name: 'alice' }]);
+    vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockResolvedValue({
+      name: 'アリス',
+      goal: '',
+      bonds: '',
+    });
 
     render(<Setup onStart={vi.fn()} />);
     fireEvent.click(screen.getByText('既存を選ぶ'));
@@ -418,7 +435,8 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ'));
     fireEvent.click(screen.getByText('既存を選ぶ'));
 
-    expect(await screen.findByText('alice')).toBeInTheDocument();
+    expect(await screen.findByText('アリス')).toBeInTheDocument();
+    expect(screen.queryByText('alice')).not.toBeInTheDocument();
   });
 
   it("embeds the selected PC's parsed goal/bonds into the session when the PC is library-linked", async () => {
@@ -426,7 +444,14 @@ describe('Setup', () => {
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
     vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
     characterLibraryClient.listCharacters.mockResolvedValue([
-      { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
+      {
+        id: 'w1/pc/alice',
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'alice',
+        displayName: 'アリス',
+        revealed: null,
+      },
     ]);
     vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
       raw: 'PC名: アリス',
@@ -450,8 +475,8 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
     fireEvent.click(screen.getByText('既存を選ぶ'));
-    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('alice'));
+    await waitFor(() => expect(screen.getByText('アリス')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('アリス'));
     await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalledWith('w1', 'pc', 'alice'));
 
     fireEvent.click(screen.getByText('次へ')); // -> 確認
@@ -557,7 +582,14 @@ describe('Setup', () => {
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
     vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
     characterLibraryClient.listCharacters.mockResolvedValue([
-      { id: 'w1/pc/howard', worldId: 'w1', kind: 'pc', name: 'howard', revealed: null },
+      {
+        id: 'w1/pc/howard',
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'howard',
+        displayName: 'ハワード',
+        revealed: null,
+      },
     ]);
     vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
       raw: 'PC名: ハワード',
@@ -578,8 +610,8 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
     fireEvent.click(screen.getByText('既存を選ぶ'));
-    await waitFor(() => expect(screen.getByText('howard')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('howard'));
+    await waitFor(() => expect(screen.getByText('ハワード')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('ハワード'));
     await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalledWith('w1', 'pc', 'howard'));
 
     fireEvent.click(screen.getByText('次へ')); // -> 確認
@@ -589,6 +621,55 @@ describe('Setup', () => {
     expect(characterSheetCache.getOrParseCharacter).toHaveBeenCalled();
     const session = onStart.mock.calls[0][0];
     expect(session.pc.name).toBe('ハワード');
+  });
+
+  it('keeps the user-entered name when AI extracts a different name for an existing PC', async () => {
+    worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
+    vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({
+      id: 'w1',
+      title: 'Waterdeep',
+      raw: '要約本文',
+    });
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    characterLibraryClient.listCharacters.mockResolvedValue([
+      {
+        id: 'w1/pc/alice',
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'alice',
+        characterName: '手入力のアリス',
+        parsed: { name: 'AIのアリス', goal: '', bonds: '' },
+      },
+    ]);
+    vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
+      name: 'alice',
+      characterName: '手入力のアリス',
+      raw: 'PC名: タグ名のアリス',
+      revealed: null,
+    });
+    vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockResolvedValue({
+      name: 'AIのアリス',
+      goal: '',
+      bonds: '',
+    });
+    vi.spyOn(sessionApi, 'generateScenario').mockResolvedValue('生成されたシナリオ');
+    const onStart = vi.fn();
+
+    render(<Setup onStart={onStart} />);
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    fireEvent.click(await screen.findByText('Waterdeep'));
+    await waitFor(() => expect(worldLibraryClient.getWorld).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('既存を選ぶ'));
+    fireEvent.click(await screen.findByText('手入力のアリス'));
+    await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('次へ'));
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(onStart.mock.calls[0][0].pc.name).toBe('手入力のアリス');
   });
 
   // キャンペーンの章をまたぐたびに名前を打ち直させないための前埋め。
@@ -634,13 +715,12 @@ describe('Setup', () => {
     expect(session.pc.raw).toBe('PC名: カイ\ngoal: 生き延びる');
   });
 
-  // 新規PC経路は`if (pcMode === 'existing' && parsed.name)`で絞られており、AI解析の結果が
-  // 上書きしない。ユーザーが入力した名前が確定済みの値として優先されることを固定する。
+  // 新規PC経路は入力欄の名前が確定値。AI解析の結果で上書きしない。
   it('keeps the entered PC name even when parsing returns a different name (new-PC path)', async () => {
     worldLibraryClient.listWorlds.mockResolvedValue([{ id: 'w1', title: 'Waterdeep', updatedAt: 1 }]);
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
     vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
-    vi.spyOn(characterLibraryClient, 'putCharacter').mockResolvedValue({});
+    const putSpy = vi.spyOn(characterLibraryClient, 'putCharacter').mockResolvedValue({});
     vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockResolvedValue({
       name: '別の名前',
       goal: '',
@@ -664,6 +744,16 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('ゲーム開始'));
 
     await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(putSpy).toHaveBeenCalledWith(
+      'w1',
+      'pc',
+      expect.stringMatching(/^pc-[0-9]+-[a-z0-9]{4}$/),
+      {
+        characterName: 'カイ',
+        raw: 'PC名: カイ\ngoal: 生き延びる',
+        revealed: undefined,
+      }
+    );
     expect(characterSheetCache.getOrParseCharacter).toHaveBeenCalled();
     const session = onStart.mock.calls[0][0];
     expect(session.pc.name).toBe('カイ');
@@ -696,7 +786,14 @@ describe('Setup', () => {
     vi.spyOn(worldLibraryClient, 'getWorld').mockResolvedValue({ id: 'w1', title: 'Waterdeep', raw: '要約本文' });
     vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
     characterLibraryClient.listCharacters.mockResolvedValue([
-      { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
+      {
+        id: 'w1/pc/alice',
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'alice',
+        displayName: 'アリス',
+        revealed: null,
+      },
     ]);
     vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
       raw: 'PC名: アリス',
@@ -721,8 +818,8 @@ describe('Setup', () => {
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
     fireEvent.click(screen.getByText('既存を選ぶ'));
-    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('alice'));
+    await waitFor(() => expect(screen.getByText('アリス')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('アリス'));
     await waitFor(() => expect(characterLibraryClient.getCharacter).toHaveBeenCalledWith('w1', 'pc', 'alice'));
 
     fireEvent.click(screen.getByText('次へ')); // -> 確認
@@ -840,7 +937,8 @@ describe('Setup', () => {
 
     it('opens on the PC step with world, scenario and ruleset already chosen', async () => {
       vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
-        { name: 'howard-kane' }, { name: 'mabel-thorne' },
+        { name: 'howard-kane', displayName: 'ハワード' },
+        { name: 'mabel-thorne', displayName: 'メイベル' },
       ]);
       // マウント時点でworldIdが既に埋まっているため、[worldId]のuseEffectが即listScenariosを
       // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
@@ -854,7 +952,7 @@ describe('Setup', () => {
       expect(await screen.findByText('PCの用意方法')).toBeInTheDocument();
       // PC一覧が選択済みWorldから取れている
       await waitFor(() => expect(characterLibraryClient.listCharacters).toHaveBeenCalledWith('arkham-1920s', 'pc'));
-      expect(await screen.findByText('howard-kane')).toBeInTheDocument();
+      expect(await screen.findByText('ハワード・ケイン')).toBeInTheDocument();
     });
 
     // worldId が最初から埋まっているので、マウント時に走る useEffect が選択を消してはいけない
@@ -876,7 +974,9 @@ describe('Setup', () => {
     });
 
     it('starts a session carrying the starter world, scenario, moods and ruleset', async () => {
-      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([{ name: 'howard-kane' }]);
+      vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+        { name: 'howard-kane', displayName: 'ハワード' },
+      ]);
       vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({ name: 'howard-kane', raw: 'PC名: ハワード' });
       // マウント時点でworldIdが既に埋まっているため、[worldId]のuseEffectが即listScenariosを
       // 呼ぶ。モックしないとjsdomで実fetchが失敗し、catchでerror stateへ吸収されてしまうため、
@@ -885,7 +985,7 @@ describe('Setup', () => {
       const onStart = vi.fn();
       render(<Setup onStart={onStart} starterContext={STARTER} />);
 
-      fireEvent.click(await screen.findByText('howard-kane'));
+      fireEvent.click(await screen.findByText('ハワード・ケイン'));
       fireEvent.click(screen.getByText('次へ')); // → 確認
       fireEvent.click(await screen.findByText('ゲーム開始'));
 

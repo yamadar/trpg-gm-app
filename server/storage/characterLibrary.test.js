@@ -98,6 +98,34 @@ describe('Character library functions', () => {
     expect(pc.parsed).toBeNull();
     expect(pc.parsedHash).toBeNull();
   });
+
+  it('stores, preserves, and explicitly clears the user-entered character name', async () => {
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      characterName: '  アリス  ',
+      raw: '初版',
+    });
+    expect((await getCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice')).characterName).toBe('アリス');
+
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      raw: '旧クライアントから更新',
+    });
+    expect((await getCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice')).characterName).toBe('アリス');
+
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      characterName: '',
+      raw: '名前を自動抽出へ戻す',
+    });
+    expect((await getCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice')).characterName).toBeNull();
+  });
 });
 
 describe('saveCharacterParsed', () => {

@@ -21,12 +21,12 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import MoodChips from '../../components/ui/MoodChips.jsx';
 import MarkdownEditor from '../../components/ui/MarkdownEditor.jsx';
 import { normalizeMarkdown } from '../../utils/markdown.js';
+import { makeId } from '../../utils/makeId.js';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
   const { user } = useAuth();
   const [publishedWorldIds, setPublishedWorldIds] = useState({});
   const [creating, setCreating] = useState(false);
-  const [newId, setNewId] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [newRaw, setNewRaw] = useState('');
 
@@ -82,14 +82,14 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
         setRegions(
           regionIds.map((region) =>
             typeof region === 'string'
-              ? { id: region, title: region, content: null }
+              ? { id: region, title: '名称未設定の地域', content: null }
               : { ...region, content: null }
           )
         );
         setCategories(
           categoryIds.map((category) =>
             typeof category === 'string'
-              ? { id: category, title: category, content: null }
+              ? { id: category, title: '名称未設定のカテゴリ', content: null }
               : { ...category, content: null }
           )
         );
@@ -155,16 +155,15 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
     setBusy(true);
     setError('');
     try {
-      const split = await importWorld(newId, newTitle, newRaw);
+      const generatedId = makeId(newTitle);
+      const split = await importWorld(generatedId, newTitle, newRaw);
       setRegions(split.regions.map((r) => ({ id: r.id, title: r.title, content: r.content })));
       setCategories(split.categories.map((c) => ({ id: c.id, title: c.title, content: c.content })));
       setCreating(false);
-      const createdId = newId;
-      setNewId('');
       setNewTitle('');
       setNewRaw('');
       await onWorldsChanged();
-      onSelectWorld(createdId);
+      onSelectWorld(generatedId);
     } catch (e) {
       setError('World作成に失敗した: ' + e.message);
     } finally {
@@ -368,14 +367,6 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
 
       {creating && (
         <Card>
-          <Field label="識別子(id)" hint="内部で使う一意なキー(英数字推奨)。本文中の名称とは別。">
-            <input
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-              placeholder="例: waterdeep-campaign"
-              style={inputStyle}
-            />
-          </Field>
           <Field label="タイトル">
             <input
               value={newTitle}
@@ -393,7 +384,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
               style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
             />
           </Field>
-          <Button variant="brass" onClick={handleCreate} disabled={busy || !newId || !newTitle}>
+          <Button variant="brass" onClick={handleCreate} disabled={busy || !newTitle.trim()}>
             {busy ? '作成中…' : '作成する'}
           </Button>
         </Card>
@@ -535,7 +526,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
 
       <ConfirmModal
         open={deleteTarget !== null}
-        message={`World「${deleteTarget}」を削除する。よいか?`}
+        message={`World「${worlds.find((world) => world.id === deleteTarget)?.title || '名称未設定のWorld'}」を削除する。よいか?`}
         confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}

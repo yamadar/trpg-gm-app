@@ -90,6 +90,28 @@ describe('POST /messages', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it('returns a structured overload error when Gemini responds with 503', async () => {
+    const upstreamBody = JSON.stringify({
+      error: {
+        code: 503,
+        message: 'This model is currently experiencing high demand.',
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: async () => upstreamBody,
+    });
+    buildApp({ fetchImpl });
+
+    const res = await request(app).post('/api/messages').send({ messages: [] });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'ai_service_overloaded', upstreamStatus: 503 });
+    expect(JSON.stringify(res.body)).not.toContain('high demand');
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
   it('returns 502 with the block reason when Gemini rejects the prompt', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

@@ -5,6 +5,9 @@ export async function apiFetch(url, options) {
     let message;
     if (res.status === 401) message = 'ログインが必要です。右上からログインしてください。';
     else if (res.status === 429) message = '本日のAI利用上限に達しました。明日また遊べます。';
+    else if (res.status === 502 || res.status === 503) {
+      message = 'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。';
+    }
     else message = `API error ${res.status}: ${t.slice(0, 200)}`;
     const err = new Error(message);
     err.status = res.status;

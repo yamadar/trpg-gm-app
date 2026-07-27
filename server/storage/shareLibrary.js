@@ -10,10 +10,16 @@ import {
 import { getWorld } from './worldLibrary.js';
 import { getCharacter } from './characterLibrary.js';
 import { getScenario } from './scenarioLibrary.js';
-import { listRegions, getRegion, listCategories, getCategory } from './worldContentLibrary.js';
+import {
+  listRegions,
+  getRegion,
+  listCategories,
+  getCategory,
+  titleFromMarkdown,
+} from './worldContentLibrary.js';
 import { MOODS } from './moods.js';
 import { stripImageMarkers } from '../novelMarkers.js';
-import { summarizeSheet } from './characterSummary.js';
+import { characterTitle, unnamedCharacterTitle } from './characterSummary.js';
 
 function newPublicId() {
   return `pub_${crypto.randomBytes(6).toString('hex')}`;
@@ -79,11 +85,11 @@ export async function publishCharacter(dataStore, textStore, userId, worldId, ki
   const publicId = await resolvePublicId(dataStore, mapKey);
   await textStore.write(publicCharacterDocPath(publicId), character.raw);
   const worldMeta = await dataStore.get(worldMetaKey(userId, worldId));
-  const { displayName } = summarizeSheet(character.raw);
   const meta = await buildMeta(dataStore, 'characters', publicId, owner, {
-    title: displayName || character.parsed?.name || name,
+    title: characterTitle(character),
     kind,
     name,
+    characterName: character.characterName ?? null,
     worldId,
     worldTitle: worldMeta?.title ?? null,
   });
@@ -166,8 +172,17 @@ export async function listPublic(dataStore, type) {
 async function withCharacterDisplayName(textStore, meta) {
   if (!textStore) return meta;
   const raw = (await textStore.read(publicCharacterDocPath(meta.publicId))) ?? '';
-  const { displayName } = summarizeSheet(raw);
-  return displayName ? { ...meta, title: displayName } : meta;
+  const title = characterTitle({
+    characterName: meta.characterName,
+    parsed: meta.parsed,
+    raw,
+    kind: meta.kind,
+  });
+  if (title !== unnamedCharacterTitle(meta.kind)) return { ...meta, title };
+  // 新しい公開データはAI抽出済みの表示名をtitleへ保存する。旧データでもtitleが
+  // 内部nameと異なるなら、その表示名を維持する。
+  if (meta.title && meta.title !== meta.name) return meta;
+  return { ...meta, title };
 }
 
 export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId, limit, offset } = {}, textStore) {
@@ -206,20 +221,28 @@ export async function getPublicWorld(dataStore, textStore, publicId) {
   const regions = await Promise.all(
     (meta.regions ?? []).map(async (entry) => {
       const id = typeof entry === 'string' ? entry : entry.id;
+      const raw = (await textStore.read(publicRegionDocPath(publicId, id))) ?? '';
       return {
         name: id,
-        title: typeof entry === 'string' ? entry : entry.title,
-        raw: (await textStore.read(publicRegionDocPath(publicId, id))) ?? '',
+        title:
+          typeof entry === 'string'
+            ? titleFromMarkdown(raw, '名称未設定の地域')
+            : entry.title || titleFromMarkdown(raw, '名称未設定の地域'),
+        raw,
       };
     })
   );
   const categories = await Promise.all(
     (meta.categories ?? []).map(async (entry) => {
       const id = typeof entry === 'string' ? entry : entry.id;
+      const raw = (await textStore.read(publicCategoryDocPath(publicId, id))) ?? '';
       return {
         name: id,
-        title: typeof entry === 'string' ? entry : entry.title,
-        raw: (await textStore.read(publicCategoryDocPath(publicId, id))) ?? '',
+        title:
+          typeof entry === 'string'
+            ? titleFromMarkdown(raw, '名称未設定のカテゴリ')
+            : entry.title || titleFromMarkdown(raw, '名称未設定のカテゴリ'),
+        raw,
       };
     })
   );
@@ -237,8 +260,19 @@ export async function getPublicItem(dataStore, textStore, type, publicId) {
   if (!meta) return null;
   const raw = (await textStore.read(ITEM_DOC_PATH[type](publicId))) ?? '';
   if (type === 'characters') {
-    const { displayName } = summarizeSheet(raw);
-    return { ...meta, ...(displayName ? { title: displayName } : {}), raw };
+    const extractedTitle = characterTitle({
+      characterName: meta.characterName,
+      parsed: meta.parsed,
+      raw,
+      kind: meta.kind,
+    });
+    const title =
+      extractedTitle !== unnamedCharacterTitle(meta.kind)
+        ? extractedTitle
+        : meta.title && meta.title !== meta.name
+          ? meta.title
+          : extractedTitle;
+    return { ...meta, title, raw };
   }
   return { ...meta, raw };
 }

@@ -7,7 +7,7 @@ import { createFsDataStore } from './dataStore.js';
 import { createFsTextStore } from './textStore.js';
 import { saveWorld } from './worldLibrary.js';
 import { saveRegion, saveCategory, saveWorldSource, deleteRegion } from './worldContentLibrary.js';
-import { saveCharacter } from './characterLibrary.js';
+import { saveCharacter, saveCharacterParsed } from './characterLibrary.js';
 import { saveScenario } from './scenarioLibrary.js';
 import {
   publicMetaKey,
@@ -186,6 +186,25 @@ describe('publishCharacter', () => {
     );
     expect(meta.title).toBe('ギルドマスター・ノーラ');
     expect(meta.name).toBe('guild-master.md');
+  });
+
+  it('uses and snapshots the user-entered name before AI or sheet names', async () => {
+    await seedWorld('usr_1');
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      characterName: '手入力のアリス',
+      raw: 'PC名: タグ名のアリス',
+    });
+    await saveCharacterParsed(dataStore, 'usr_1', 'w1', 'pc', 'alice', {
+      parsed: { name: 'AIのアリス', goal: '', bonds: '' },
+      parsedHash: 'h1',
+    });
+
+    const { meta } = await publishCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice', OWNER);
+    expect(meta.title).toBe('手入力のアリス');
+    expect(meta.characterName).toBe('手入力のアリス');
   });
 
   it('carries worldId and worldTitle (from the owner\'s world meta)', async () => {

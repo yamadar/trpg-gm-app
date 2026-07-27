@@ -13,13 +13,13 @@ import {
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { RULESETS } from '../../data/rulesets.js';
 import MoodChips from '../../components/ui/MoodChips.jsx';
+import { makeId } from '../../utils/makeId.js';
 
 export default function ScenarioTab({ worldId }) {
   const { user } = useAuth();
   const [publishedScenarioIds, setPublishedScenarioIds] = useState({});
   const [scenarios, setScenarios] = useState([]);
   const [creating, setCreating] = useState(false);
-  const [newId, setNewId] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [newRaw, setNewRaw] = useState('');
   const [newRecommendedRuleset, setNewRecommendedRuleset] = useState('');
@@ -125,12 +125,12 @@ export default function ScenarioTab({ worldId }) {
     setBusy(true);
     setError('');
     try {
-      await putScenario(worldId, newId, {
+      const generatedId = makeId(newTitle);
+      await putScenario(worldId, generatedId, {
         title: newTitle,
         raw: newRaw,
         recommendedRuleset: newRecommendedRuleset || null,
       });
-      setNewId('');
       setNewTitle('');
       setNewRaw('');
       setNewRecommendedRuleset('');
@@ -268,14 +268,6 @@ export default function ScenarioTab({ worldId }) {
 
       {creating && (
         <Card>
-          <Field label="識別子(id)" hint="内部で使う一意なキー(英数字推奨)。">
-            <input
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-              placeholder="例: missing-heir"
-              style={inputStyle}
-            />
-          </Field>
           <Field label="タイトル">
             <input
               value={newTitle}
@@ -307,7 +299,7 @@ export default function ScenarioTab({ worldId }) {
               ))}
             </select>
           </Field>
-          <Button variant="brass" onClick={handleCreate} disabled={busy || !newId || !newTitle}>
+          <Button variant="brass" onClick={handleCreate} disabled={busy || !newTitle.trim()}>
             {busy ? '作成中…' : '作成する'}
           </Button>
         </Card>
@@ -361,7 +353,7 @@ export default function ScenarioTab({ worldId }) {
 
       <ConfirmModal
         open={deleteTarget !== null}
-        message={`Scenario「${deleteTarget}」を削除する。よいか?`}
+        message={`Scenario「${scenarios.find((scenario) => scenario.id === deleteTarget)?.title || '名称未設定のScenario'}」を削除する。よいか?`}
         confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}

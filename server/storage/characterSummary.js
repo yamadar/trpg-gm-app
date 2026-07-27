@@ -25,3 +25,16 @@ export function summarizeSheet(raw) {
     excerpt: body.length > EXCERPT_LIMIT ? `${body.slice(0, EXCERPT_LIMIT)}…` : body,
   };
 }
+
+export function unnamedCharacterTitle(kind) {
+  return kind === 'npc' ? '名前未設定のNPC' : '名前未設定のPC';
+}
+
+export function characterTitle({ characterName, parsed, raw, kind }) {
+  const explicitName = String(characterName ?? '').trim();
+  if (explicitName) return explicitName;
+  const parsedName = String(parsed?.name ?? '').trim();
+  if (parsedName) return parsedName;
+  const { displayName } = summarizeSheet(raw);
+  return displayName || unnamedCharacterTitle(kind);
+}

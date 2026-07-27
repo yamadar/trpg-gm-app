@@ -129,9 +129,9 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             {(item.regions || []).map((r) => (
               <div key={r.name} style={{ marginBottom: 12 }}>
                 <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 4 }}>
-                  {r.title || r.name}
+                  {r.title || '名称未設定の地域'}
                 </div>
-                <MarkdownEditor value={r.raw} label={`${r.title || r.name}の本文`} readOnly minHeight={0} />
+                <MarkdownEditor value={r.raw} label={`${r.title || '名称未設定の地域'}の本文`} readOnly minHeight={0} />
               </div>
             ))}
             {(item.regions || []).length === 0 && (
@@ -154,9 +154,9 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             {(item.categories || []).map((c) => (
               <div key={c.name} style={{ marginBottom: 12 }}>
                 <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.ink, marginBottom: 4 }}>
-                  {c.title || c.name}
+                  {c.title || '名称未設定のカテゴリ'}
                 </div>
-                <MarkdownEditor value={c.raw} label={`${c.title || c.name}の本文`} readOnly minHeight={0} />
+                <MarkdownEditor value={c.raw} label={`${c.title || '名称未設定のカテゴリ'}の本文`} readOnly minHeight={0} />
               </div>
             ))}
             {(item.categories || []).length === 0 && (

@@ -32,6 +32,26 @@ describe('apiFetch', () => {
     expect(err.status).toBe(429);
   });
 
+  it('maps 502 to a retry message without exposing an html response', async () => {
+    stubFetch(502, '<!DOCTYPE html><html><title>502</title></html>');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.message).toBe(
+      'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。'
+    );
+    expect(err.message).not.toContain('<!DOCTYPE html>');
+    expect(err.status).toBe(502);
+  });
+
+  it('maps 503 to a retry message without exposing the response body', async () => {
+    stubFetch(503, '{"error":{"message":"high demand"}}');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.message).toBe(
+      'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。'
+    );
+    expect(err.message).not.toContain('high demand');
+    expect(err.status).toBe(503);
+  });
+
   it('keeps the generic message for other errors', async () => {
     stubFetch(500, 'boom');
     const err = await apiFetch('/api/x').catch((e) => e);

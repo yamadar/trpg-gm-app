@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button.jsx';
 import Field from '../../components/ui/Field.jsx';
 import ConfirmModal from '../../components/library/ConfirmModal.jsx';
 import { getRuleset, putRuleset, listRulesets, deleteRuleset } from '../../api/rulesetLibraryClient.js';
+import { makeId } from '../../utils/makeId.js';
 
 const FORMULA_OPTIONS = [
   { value: 'simple', label: 'シンプル(d100成功率)' },
@@ -16,7 +17,6 @@ const FORMULA_OPTIONS = [
 export default function RulesetTab() {
   const [rulesets, setRulesets] = useState([]);
   const [creating, setCreating] = useState(false);
-  const [newId, setNewId] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newHint, setNewHint] = useState('');
@@ -73,14 +73,13 @@ export default function RulesetTab() {
     setBusy(true);
     setError('');
     try {
-      await putRuleset(newId, {
+      await putRuleset(makeId(newLabel), {
         label: newLabel,
         desc: newDesc,
         hint: newHint,
         growthUnit: newGrowthUnit,
         formula: newFormula,
       });
-      setNewId('');
       setNewLabel('');
       setNewDesc('');
       setNewHint('');
@@ -167,9 +166,6 @@ export default function RulesetTab() {
 
       {creating && (
         <Card>
-          <Field label="識別子(id)" hint="内部で使う一意なキー(英数字推奨)。">
-            <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="例: homebrew" style={inputStyle} />
-          </Field>
           <Field label="ラベル">
             <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="ラベル" style={inputStyle} />
           </Field>
@@ -207,7 +203,7 @@ export default function RulesetTab() {
               ))}
             </select>
           </Field>
-          <Button variant="brass" onClick={handleCreate} disabled={busy || !newId || !newLabel}>
+          <Button variant="brass" onClick={handleCreate} disabled={busy || !newLabel.trim()}>
             {busy ? '作成中…' : '作成する'}
           </Button>
         </Card>
@@ -259,7 +255,7 @@ export default function RulesetTab() {
 
       <ConfirmModal
         open={deleteTarget !== null}
-        message={`Ruleset「${deleteTarget}」を削除する。よいか?`}
+        message={`Ruleset「${rulesets.find((ruleset) => ruleset.id === deleteTarget)?.label || '名称未設定のRuleset'}」を削除する。よいか?`}
         confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}

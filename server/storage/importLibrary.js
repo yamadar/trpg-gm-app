@@ -98,6 +98,7 @@ export async function importCharacter(dataStore, textStore, userId, publicId, ta
     worldId: targetWorldId,
     kind: pub.kind,
     name,
+    characterName: pub.characterName,
     raw: pub.raw,
     revealed: false, // インポート先ではNPC秘匿情報を未開示に戻す
     sourcePublicId: publicId,

@@ -23,14 +23,13 @@ describe('RulesetTab', () => {
     await waitFor(() => expect(rulesetLibraryClient.listRulesets).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText('+ 新規Ruleset'));
-    fireEvent.change(screen.getByPlaceholderText('例: homebrew'), { target: { value: 'homebrew' } });
     fireEvent.change(screen.getByPlaceholderText('ラベル'), { target: { value: '自作ルール' } });
     fireEvent.change(screen.getByPlaceholderText('説明'), { target: { value: '独自ルール' } });
     fireEvent.change(screen.getByPlaceholderText('例: 経験値'), { target: { value: 'CP' } });
     fireEvent.click(screen.getByText('作成する'));
 
     await waitFor(() =>
-      expect(putSpy).toHaveBeenCalledWith('homebrew', {
+      expect(putSpy).toHaveBeenCalledWith(expect.stringMatching(/^untitled-[0-9]+-[a-z0-9]{4}$/), {
         label: '自作ルール',
         desc: '独自ルール',
         hint: '',
@@ -45,7 +44,6 @@ describe('RulesetTab', () => {
     const putSpy = vi.spyOn(rulesetLibraryClient, 'putRuleset').mockResolvedValue({});
     render(<RulesetTab />);
     fireEvent.click(screen.getByText('+ 新規Ruleset'));
-    fireEvent.change(screen.getByPlaceholderText('例: homebrew'), { target: { value: 'homebrew' } });
     fireEvent.change(screen.getByPlaceholderText('ラベル'), { target: { value: '自作' } });
     fireEvent.change(screen.getByLabelText('判定式(formula)'), { target: { value: 'coc7e' } });
     fireEvent.click(screen.getByText('作成する'));

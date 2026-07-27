@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { summarizeSheet } from './characterSummary.js';
+import { characterTitle, summarizeSheet } from './characterSummary.js';
 
 describe('summarizeSheet', () => {
   it('takes the display name from the PC名 line and drops it from the excerpt', () => {
@@ -41,5 +41,28 @@ describe('summarizeSheet', () => {
   it('returns empty strings for an empty or missing sheet', () => {
     expect(summarizeSheet('')).toEqual({ displayName: '', excerpt: '' });
     expect(summarizeSheet(undefined)).toEqual({ displayName: '', excerpt: '' });
+  });
+
+  it('prefers the AI-parsed name and never falls back to storage name', () => {
+    expect(
+      characterTitle({
+        kind: 'pc',
+        parsed: { name: 'AI抽出名' },
+        raw: 'PC名: タグ名',
+        name: 'sheet-file.md',
+      })
+    ).toBe('AI抽出名');
+    expect(characterTitle({ kind: 'npc', parsed: null, raw: '', name: 'villain.md' })).toBe('名前未設定のNPC');
+  });
+
+  it('prefers the user-entered name over AI and tagged names', () => {
+    expect(
+      characterTitle({
+        kind: 'pc',
+        characterName: '手入力のアリス',
+        parsed: { name: 'AIが拾ったアリス' },
+        raw: 'PC名: タグ名のアリス',
+      })
+    ).toBe('手入力のアリス');
   });
 });

@@ -3,10 +3,16 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import CharacterTab from './CharacterTab.jsx';
 import * as characterLibraryClient from '../../api/characterLibraryClient.js';
 import * as shareClient from '../../api/shareClient.js';
+import * as characterSheetCache from '../../api/characterSheetCache.js';
 import { renderWithAuth } from '../../test/renderWithAuth.jsx';
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.spyOn(characterSheetCache, 'getOrParseCharacter').mockImplementation(async (_worldId, kind, name) => ({
+    name: name === 'alice' ? 'アリス' : name === 'bob' ? 'ボブ' : kind === 'npc' ? '魔王' : '',
+    goal: '',
+    bonds: '',
+  }));
 });
 
 describe('CharacterTab', () => {
@@ -20,8 +26,26 @@ describe('CharacterTab', () => {
       { id: 'w1/pc/alice', worldId: 'w1', kind: 'pc', name: 'alice', revealed: null },
     ]);
     render(<CharacterTab worldId="w1" />);
-    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('アリス')).toBeInTheDocument());
+    expect(screen.queryByText('alice')).not.toBeInTheDocument();
     expect(characterLibraryClient.listCharacters).toHaveBeenCalledWith('w1', 'pc');
+  });
+
+  it('shows the user-entered name before the AI-extracted name', async () => {
+    vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+      {
+        id: 'w1/pc/alice',
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'alice',
+        characterName: '手入力のアリス',
+        parsed: { name: 'AIのアリス' },
+        revealed: null,
+      },
+    ]);
+    render(<CharacterTab worldId="w1" />);
+    expect(await screen.findByText('手入力のアリス')).toBeInTheDocument();
+    expect(screen.queryByText('AIのアリス')).not.toBeInTheDocument();
   });
 
   it('shows the revealed badge for NPCs and switches list on kind toggle', async () => {
@@ -31,7 +55,8 @@ describe('CharacterTab', () => {
     render(<CharacterTab worldId="w1" />);
     fireEvent.click(screen.getByText('NPC'));
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith('w1', 'npc'));
-    expect(screen.getByText('villain')).toBeInTheDocument();
+    expect(await screen.findByText('魔王')).toBeInTheDocument();
+    expect(screen.queryByText('villain')).not.toBeInTheDocument();
     expect(screen.getByText('開示済み')).toBeInTheDocument();
   });
 
@@ -42,12 +67,52 @@ describe('CharacterTab', () => {
     await waitFor(() => expect(characterLibraryClient.listCharacters).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText('+ 新規Character'));
-    fireEvent.change(screen.getByPlaceholderText('例: alice'), { target: { value: 'alice' } });
+    fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), {
+      target: { value: 'カイ' },
+    });
     fireEvent.change(screen.getByPlaceholderText('PC/NPCシートの本文'), { target: { value: 'goal: ...' } });
     fireEvent.click(screen.getByText('作成する'));
 
     await waitFor(() =>
-      expect(putSpy).toHaveBeenCalledWith('w1', 'pc', 'alice', { raw: 'goal: ...', revealed: undefined })
+      expect(putSpy).toHaveBeenCalledWith(
+        'w1',
+        'pc',
+        expect.stringMatching(/^pc-[0-9]+-[a-z0-9]{4}$/),
+        { characterName: 'カイ', raw: 'goal: ...', revealed: undefined }
+      )
+    );
+  });
+
+  it('edits the user-entered name independently from the sheet body', async () => {
+    vi.spyOn(characterLibraryClient, 'listCharacters').mockResolvedValue([
+      {
+        id: 'w1/pc/alice',
+        worldId: 'w1',
+        kind: 'pc',
+        name: 'alice',
+        characterName: 'アリス',
+        revealed: null,
+      },
+    ]);
+    vi.spyOn(characterLibraryClient, 'getCharacter').mockResolvedValue({
+      characterName: 'アリス',
+      raw: '本文',
+      revealed: null,
+    });
+    const putSpy = vi.spyOn(characterLibraryClient, 'putCharacter').mockResolvedValue({});
+
+    render(<CharacterTab worldId="w1" />);
+    fireEvent.click(await screen.findByText('アリス'));
+    const nameInput = await screen.findByDisplayValue('アリス');
+    fireEvent.change(nameInput, { target: { value: 'アリス・リード' } });
+    fireEvent.click(screen.getByText('保存する'));
+
+    await waitFor(() =>
+      expect(putSpy).toHaveBeenCalledWith('w1', 'pc', 'alice', {
+        characterName: 'アリス・リード',
+        raw: '本文',
+        revealed: undefined,
+      })
     );
   });
 
@@ -59,8 +124,8 @@ describe('CharacterTab', () => {
     const deleteSpy = vi.spyOn(characterLibraryClient, 'deleteCharacter').mockResolvedValue();
 
     render(<CharacterTab worldId="w1" />);
-    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('alice'));
+    await waitFor(() => expect(screen.getByText('アリス')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('アリス'));
     await waitFor(() => expect(screen.getByText('削除')).toBeInTheDocument());
     fireEvent.click(screen.getByText('削除'));
     fireEvent.click(screen.getByText('削除する'));
@@ -85,12 +150,12 @@ describe('CharacterTab', () => {
     });
 
     render(<CharacterTab worldId="w1" />);
-    await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('アリス')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText('alice'));
+    fireEvent.click(screen.getByText('アリス'));
     await waitFor(() => expect(getSpy).toHaveBeenCalledWith('w1', 'pc', 'alice'));
 
-    fireEvent.click(screen.getByText('bob'));
+    fireEvent.click(await screen.findByText('ボブ'));
     await waitFor(() => expect(getSpy).toHaveBeenCalledWith('w1', 'pc', 'bob'));
     await waitFor(() => expect(screen.getByDisplayValue('bobの本文')).toBeInTheDocument());
 
@@ -114,7 +179,7 @@ describe('CharacterTab', () => {
     it('does not render publish controls or fetch published state when logged out', async () => {
       const publishedSpy = vi.spyOn(shareClient, 'publishedCharacters');
       render(<CharacterTab worldId="w1" />);
-      await waitFor(() => expect(screen.getByText('alice')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText('アリス')).toBeInTheDocument());
       expect(screen.queryByText('公開')).not.toBeInTheDocument();
       expect(publishedSpy).not.toHaveBeenCalled();
     });

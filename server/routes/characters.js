@@ -28,10 +28,15 @@ export function createCharactersRouter({ dataStore, textStore }) {
       res.status(400).json({ error: 'raw is required' });
       return;
     }
+    if (req.body.characterName !== undefined && typeof req.body.characterName !== 'string') {
+      res.status(400).json({ error: 'characterName must be a string' });
+      return;
+    }
     const character = await saveCharacter(dataStore, textStore, req.userId, {
       worldId: req.params.worldId,
       kind: req.params.kind,
       name: req.params.name,
+      characterName: req.body.characterName,
       raw: req.body.raw,
       revealed: req.body.revealed,
     });

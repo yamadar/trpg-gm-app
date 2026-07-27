@@ -24,9 +24,11 @@ describe('recordEnding', () => {
     expect(out.endingTitle).toBe('題');
   });
 
-  it('throws with status and truncated body on a non-ok response', async () => {
+  it('throws a safe retry message on a 502 response', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502, text: async () => 'boom' }));
-    await expect(recordEnding('s1', {})).rejects.toThrow('API error 502: boom');
+    await expect(recordEnding('s1', {})).rejects.toThrow(
+      'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。'
+    );
   });
 });
 

@@ -82,10 +82,12 @@ describe('novelizeSession', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s1/novelize', expect.objectContaining({ method: 'POST' }));
   });
 
-  it('throws with status and truncated body on a non-ok response', async () => {
+  it('throws a safe retry message on a 502 response', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 502, text: async () => 'upstream down' });
     vi.stubGlobal('fetch', fetchMock);
-    await expect(novelizeSession('s1')).rejects.toThrow('API error 502: upstream down');
+    await expect(novelizeSession('s1')).rejects.toThrow(
+      'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。'
+    );
   });
 });
 

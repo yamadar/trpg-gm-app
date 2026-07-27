@@ -288,7 +288,7 @@ describe('publicContent routes — authentication-free gallery read', () => {
       const res = await request(app).get(`/api/public/characters/${pub.meta.publicId}`);
       expect(res.status).toBe(200);
       expect(res.body.publicId).toBe(pub.meta.publicId);
-      expect(res.body.title).toBe('Dragon Lord');
+      expect(res.body.title).toBe('名前未設定のNPC');
       expect(res.body.kind).toBe('npc');
       expect(res.body.name).toBe('Dragon Lord');
       expect(res.body.raw).toBe('## Dragon\nMighty dragon of the north');

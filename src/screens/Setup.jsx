@@ -19,6 +19,7 @@ import { extractPcName, composePcRaw } from '../utils/pcName.js';
 import FocusHeader from '../components/nav/FocusHeader.jsx';
 import ConfirmModal from '../components/library/ConfirmModal.jsx';
 import { navigateHash } from '../navigation/useRoute.js';
+import { characterDisplayName } from '../utils/characterDisplayName.js';
 
 export default function Setup({ onStart, campaignContext = null, starterContext = null }) {
   // starterContext はスターターパックを一括インポートした直後の状態。World/Scenario/Ruleset を
@@ -72,6 +73,7 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   const worldTokenRef = useRef(0);
   const scenarioTokenRef = useRef(0);
   const pcTokenRef = useRef(0);
+  const pcListTokenRef = useRef(0);
 
   const worldId = worldMode === 'existing' ? selectedWorld?.id ?? null : null;
   // worldId が変わったときだけ従属する選択をリセットする。campaignContext/starterContext のように
@@ -142,13 +144,31 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   }, [worldId]);
 
   useEffect(() => {
+    const tok = ++pcListTokenRef.current;
     if (!worldId) {
       setExistingPCs([]);
       return;
     }
     listCharacters(worldId, 'pc')
-      .then(setExistingPCs)
-      .catch((e) => setError('PC一覧の取得に失敗した: ' + e.message));
+      .then(async (listed) => {
+        if (pcListTokenRef.current !== tok) return;
+        setExistingPCs(listed);
+        const hydrated = await Promise.all(
+          listed.map(async (character) => {
+            if (character.parsed?.name) return character;
+            try {
+              const parsed = await getOrParseCharacter(worldId, 'pc', character.name);
+              return { ...character, parsed };
+            } catch {
+              return character;
+            }
+          })
+        );
+        if (pcListTokenRef.current === tok) setExistingPCs(hydrated);
+      })
+      .catch((e) => {
+        if (pcListTokenRef.current === tok) setError('PC一覧の取得に失敗した: ' + e.message);
+      });
   }, [worldId]);
 
   useEffect(() => {
@@ -266,13 +286,15 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
       let pcGoal;
       let pcBonds;
       let pcLibraryName = null;
+      let pcExplicitName = '';
 
       if (pcMode === 'existing' && selectedPC) {
         pc = selectedPC.raw;
         pcLibraryName = selectedPC.name;
+        pcExplicitName = String(selectedPC.characterName ?? '').trim();
         // シート本文の「PC名:」行から先に名前を取っておく。AI解析(下のgetOrParseCharacter)は
         // ネットワーク越しでオフライン・429・キー無しだと失敗しうるので、それだけに頼らない。
-        pcResolvedName = extractPcName(selectedPC.raw);
+        pcResolvedName = pcExplicitName || extractPcName(selectedPC.raw);
       } else {
         // 入力されたPC名をシート本文にも残す。ライブラリ原本とGMプロンプトの
         // 「# PC設定」節の両方に名前が載り、プレイ中の地の文も名前で呼べるようになる。
@@ -284,7 +306,11 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
           const pcId = makeId('pc');
           let pcSaved = false;
           await trySaveToLibrary(async () => {
-            await putCharacter(resolvedWorldId, 'pc', pcId, { raw: pc, revealed: undefined });
+            await putCharacter(resolvedWorldId, 'pc', pcId, {
+              characterName: pcName,
+              raw: pc,
+              revealed: undefined,
+            });
             pcSaved = true;
           });
           if (pcSaved) {
@@ -300,7 +326,7 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
           pcBonds = parsed.bonds;
           // 新規PC経路ではユーザーが今入力した名前が確定済みなので上書きしない。
           // 既存PC経路はシート本文の抽出結果をAI解析の結果で補強・上書きしてよい。
-          if (pcMode === 'existing' && parsed.name) pcResolvedName = parsed.name;
+          if (pcMode === 'existing' && !pcExplicitName && parsed.name) pcResolvedName = parsed.name;
         } catch (e) {
           console.error('name/goal/bonds parse failed', e);
         }
@@ -604,17 +630,11 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
                           borderColor: selectedPC?.name === c.name ? COLORS.brass : COLORS.line,
                         }}
                       >
-                        {/* 名前(=ストレージ上のid)だけでは誰を選ぶのか分からないので、
-                            シート本文から拾った表示名と中身の抜粋を添える。
+                        {/* 内部識別子は見せず、AIがシート本文から拾った表示名と中身の抜粋を添える。
                             goal/bonds は一度プレイしたPCにしか無いため、無い場合の
                             受け皿として抜粋を必ず出す。 */}
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                          <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
-                            {c.displayName || c.name}
-                          </div>
-                          {c.displayName && c.displayName !== c.name && (
-                            <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>{c.name}</div>
-                          )}
+                        <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>
+                          {characterDisplayName(c, 'pc')}
                         </div>
                         {c.parsed?.goal && (
                           <div style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft, marginTop: 4 }}>

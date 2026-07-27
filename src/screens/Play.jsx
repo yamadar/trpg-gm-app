@@ -268,7 +268,17 @@ export default function Play({ session, setSession }) {
         return true;
       } catch (e) {
         console.error(e);
-        setError('GM応答の取得に失敗した: ' + e.message);
+        if (e.status === 503 || (e.status === 502 && e.body?.upstreamStatus === 503)) {
+          setError(
+            'AIサービスへのアクセスが集中しています。少し時間をおいてから、もう一度メッセージを送ってください。'
+          );
+        } else if (e.status === 502) {
+          setError(
+            'GM応答を取得できませんでした。少し時間をおいてから、もう一度メッセージを送ってください。'
+          );
+        } else {
+          setError('GM応答の取得に失敗した: ' + e.message);
+        }
         return false;
       } finally {
         clearTimeout(slowResponseTimer);

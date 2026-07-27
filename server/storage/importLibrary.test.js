@@ -149,6 +149,7 @@ describe('importCharacter', () => {
       worldId: 'w1',
       kind: 'npc',
       name: 'bob',
+      characterName: 'ボブ',
       raw: '# ボブの秘密',
       revealed: true,
     });
@@ -170,11 +171,12 @@ describe('importCharacter', () => {
     expect(result.meta.name).toBe('bob-2');
     expect(result.meta.kind).toBe('npc');
     expect(result.meta.worldId).toBe('target');
+    expect(result.meta.characterName).toBe('ボブ');
     expect(result.meta.revealed).toBe(false);
     expect(result.meta.raw).toBe('# ボブの秘密');
 
     const imported = await getCharacter(dataStore, textStore, 'usr_b', 'target', 'npc', 'bob-2');
-    expect(imported).toMatchObject({ raw: '# ボブの秘密', revealed: false });
+    expect(imported).toMatchObject({ characterName: 'ボブ', raw: '# ボブの秘密', revealed: false });
 
     // 既存のnpcは上書きされていない
     const existing = await getCharacter(dataStore, textStore, 'usr_b', 'target', 'npc', 'bob');

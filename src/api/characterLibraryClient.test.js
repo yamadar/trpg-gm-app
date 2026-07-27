@@ -25,15 +25,19 @@ describe('getCharacter', () => {
 });
 
 describe('putCharacter', () => {
-  it('PUTs raw and revealed', async () => {
+  it('PUTs the user-entered name, raw, and revealed', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'alice' }) });
     vi.stubGlobal('fetch', fetchMock);
-    await putCharacter('w1', 'pc', 'alice', { raw: 'PC名: アリス', revealed: undefined });
+    await putCharacter('w1', 'pc', 'alice', {
+      characterName: 'アリス',
+      raw: 'PC名: アリス',
+      revealed: undefined,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/worlds/w1/characters/pc/alice',
       expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify({ raw: 'PC名: アリス', revealed: undefined }),
+        body: JSON.stringify({ characterName: 'アリス', raw: 'PC名: アリス', revealed: undefined }),
       })
     );
   });

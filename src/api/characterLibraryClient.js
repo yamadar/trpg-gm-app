@@ -11,11 +11,11 @@ export async function getCharacter(worldId, kind, name) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`, { method: 'GET' });
 }
 
-export async function putCharacter(worldId, kind, name, { raw, revealed }) {
+export async function putCharacter(worldId, kind, name, { characterName, raw, revealed }) {
   return apiFetch(`/api/worlds/${encodeURIComponent(worldId)}/characters/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw, revealed }),
+    body: JSON.stringify({ characterName, raw, revealed }),
   });
 }
 

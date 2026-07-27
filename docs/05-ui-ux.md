@@ -93,9 +93,11 @@ World/Scenario/PCとも「既存を選ぶ」はWorldを選択している場合�
 ### 14.3 素材ライブラリ画面(`src/screens/Library.jsx`)
 グローバルナビの「素材」から`#/library/{tab}[/{worldId}]`へ遷移する。World/Character(PC・NPC)/Scenario/Campaign/Rulesetの5タブ(選択中のタブと開いているWorldはURLが持つ)(Campaignタブは2026-07-25追加、02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。ただしCampaignタブは新規作成UIを持たず(Campaignはホームの「次の章へ」から生成される)、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC閲覧・改名・削除に限られる。
 
+World/Character/Scenario/Rulesetの永続化用`id`/`name`はタイトル・ラベルまたは素材種別を基に`makeId()`で自動生成し、新規作成フォームには識別子入力欄を出さない。識別子はURL・保存パス・重複回避のため内部に保持するが、一覧・選択・削除確認には表示タイトル/ラベルを使う。
+
 - Worldタブ: World本文に加え、region/category(地域/カテゴリ)への分割結果を一覧表示し、個別に内容の閲覧・編集ができる(内部実装用語だが、素材管理者向けに公開されている)。World本文・地域詳細・カテゴリ詳細はTiptapのMarkdownエディタで見出し・段落・リスト・強調を構造化表示し、そのままMarkdownとして再保存する。モデル応答に二重エスケープされた`\n`が含まれる場合も実改行へ正規化する。分割結果一覧は英数字ID/ファイル名ではなく、生成・保存された表示タイトルを使い、タイトル自体も個別編集できる。World・Character(PC/NPC)・Scenarioの各タブには「公開」/「公開中(再公開)」/「公開解除」ボタンがあり(`src/screens/library/WorldTab.jsx`・`CharacterTab.jsx`・`ScenarioTab.jsx`)、`shareClient.js`経由で`POST`/`DELETE /api/publish/*`を呼ぶ(Phase 2で追加。公開状態は`GET /api/publish/*`で取得しバッジ表示する)。
 - World・Scenarioの編集フォームには「雰囲気」欄があり(`WorldTab.jsx`・`ScenarioTab.jsx`、Field label「雰囲気」hint「複数選択可。」)、固定8種(`src/constants/moods.js`の`MOODS`)をチップボタンとして横並び表示し、クリックでトグル選択する複数選択UI(`aria-pressed`で選択状態を示す)。一覧側にも雰囲気タグを設定済みの場合のみ`moods.join(' / ')`で表示する。Worldタブは分割結果の再生成(reimport)後に`moods`が引き継がれないため、再分割の保存時に本文とは別に`PUT /api/worlds/:id`へ`moods`を明示的に送り直す実装になっている。編集した雰囲気は保存時に`PUT /api/worlds/:id`・`PUT /api/worlds/:worldId/scenarios/:id`へ含まれ、公開時にそのまま公開メタへコピーされる(公開ギャラリーの雰囲気チップ絞り込みに使われる。[04-persistence.md](04-persistence.md)参照)。
-- Characterタブ: PC/NPCの切り替えタブを持つ。NPCタブのみ`revealed`状態(開示済み/未開示)の一覧表示を含む(GM専用情報の管理を明示化するため)。
+- Characterタブ: PC/NPCの切り替えタブを持つ。新規作成・編集フォームに任意の「名前」欄があり、本文と独立した`characterName`として保存する。空欄なら本文に`PC名`/`NPC名`タグが無い自由記述も`getOrParseCharacter()`で生成AI解析し、`parsed.name`を一覧名としてキャッシュする。表示優先順位はユーザー指定`characterName`、AI抽出名、本文の明示名、最後に「名前未設定のPC/NPC」。内部`name`/ファイル名は出さず、AI抽出結果で手入力名を上書きしない。NPCタブのみ`revealed`状態(開示済み/未開示)の一覧表示を含む(GM専用情報の管理を明示化するため)。
 - Scenarioタブ・Rulesetタブ: それぞれ本文/hint・growthUnit等を編集できる(Rulesetタブに公開機能は無い)。
 
 ### 14.4 公開ギャラリー画面(`src/screens/Gallery.jsx`)
@@ -103,7 +105,7 @@ World/Scenario/PCとも「既存を選ぶ」はWorldを選択している場合�
 Phase 2で追加。グローバルナビの「さがす」から`#/browse/{tab}`へ遷移し、「おすすめ」「小説」「世界観」「キャラクター」「シナリオ」の5タブ(`src/constants/publicContent.js`の`GALLERY_TABS`)でコンテンツを横断的に閲覧できる。タブと開いているアイテムはURLが持つ(`#/browse/{tab}[/{publicId}]`)ため、リロード・共有・ブラウザの戻る/進むがそのまま効く。
 
 - 先頭の「おすすめ」タブのみ他の4タブと構造が異なる: `GET /api/public/:type`が受け付ける`type`(`worlds`/`characters`/`scenarios`/`novels`)に`starters`は含まれず、`PublicItemList`/`PublicItemDetail`を経由しない。14.1節のスターターパックと同じ`StarterPackList`コンポーネントをそのまま描画し、「この冒険を始める」で選んだパックをWorld/Scenario/Ruleset選択済みのSetupへ直接渡す(一覧/詳細の状態機械には乗らない)。ユーザーページ(14.5節)の共有タブ定数`PUBLIC_TABS`には`starters`を含めていない(`GET /api/public/starters?ownerId=...`は未知の`type`として404になるため)。
-- 残り4タブは共通の`PublicItemList`コンポーネント(`src/components/share/PublicItemList.jsx`)が担い、`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼んで公開日時降順のカードを表示する(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。キャラクターのタイトルは内部識別子/ファイル名でなく、シート本文の`PC名:`または`NPC名:`から取得する(該当行が無い場合のみ従来の内部識別子へフォールバック)。旧形式の公開メタも一覧・詳細取得時に公開本文から表示名を補完するため、再公開不要。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
+- 残り4タブは共通の`PublicItemList`コンポーネント(`src/components/share/PublicItemList.jsx`)が担い、`GET /api/public/:type`(`src/api/shareClient.js`の`listPublic`)を呼んで公開日時降順のカードを表示する(タイトル・公開者名・公開日、キャラクターはPC/NPC種別、シナリオは推奨ルールも併記)。キャラクター公開前に生成AI解析済み名をメタの`title`へ保存する。表示名が無い場合は公開本文の`PC名:`/`NPC名:`行、それも無ければ「名前未設定のPC/NPC」へフォールバックし、内部識別子/ファイル名は出さない。旧形式の公開メタも一覧・詳細取得時に公開本文から表示名を補完するため、再公開不要。**未ログインでも閲覧できる**(公開読み取りAPIは認証不要)。
 - 検索・絞り込みUI: 上部にタイトル・作者名の自由文字列検索ボックスがあり、入力から300ms(デバウンス)後に実効クエリへ反映される(連続入力中は再取得しない)。その下にworlds/scenariosタブのみ雰囲気チップ(`MOODS`固定8種)が並び、クリックで複数選択のトグル(選択分はOR条件で絞り込み)。scenariosタブのみさらに推奨ルールの単一選択ドロップダウン(`RULESETS`+「すべて」)がある。worlds/scenarios以外(characters/novels)のタブではチップ・ドロップダウンとも非表示。
 - タブ切り替え・検索語(デバウンス後)・雰囲気チップ・ルールセット・(ユーザーページの場合)`ownerId`のいずれかが変わるたびoffset=0で一覧を取り直し、既存の表示を置き換える。カード末尾に**「もっと見る」**ボタンがあり(APIレスポンスの`hasMore`がtrueの間だけ表示)、クリックで次ページ(`offset + 20`件目以降)を末尾に追記取得する。取得中は「読み込み中…」表示になりボタンは無効化される。取得リクエストには連番ガード(`reqRef`)があり、フィルタ変更等で新しい取得が始まった場合、古い取得の応答が後から返っても無視される(stale response guard)。
 - 空状態は2パターンに分かれる: 検索語・雰囲気・ルールセットのいずれも指定していない状態で0件なら「まだ公開されたものがありません」、何か条件を指定した状態で0件なら「条件に合う公開物がありません」+「条件をクリア」ボタン(検索語・雰囲気・ルールセットを一括リセット)を表示する。

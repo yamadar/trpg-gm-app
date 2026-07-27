@@ -32,14 +32,13 @@ describe('ScenarioTab', () => {
     await waitFor(() => expect(scenarioLibraryClient.listScenarios).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText('+ 新規Scenario'));
-    fireEvent.change(screen.getByPlaceholderText('例: missing-heir'), { target: { value: 'sc1' } });
     fireEvent.change(screen.getByPlaceholderText('シナリオタイトル'), { target: { value: '失踪事件' } });
     fireEvent.change(screen.getByPlaceholderText('シナリオ本文'), { target: { value: '## 概要' } });
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'coc7e' } });
     fireEvent.click(screen.getByText('作成する'));
 
     await waitFor(() =>
-      expect(putSpy).toHaveBeenCalledWith('w1', 'sc1', {
+      expect(putSpy).toHaveBeenCalledWith('w1', expect.stringMatching(/^untitled-[0-9]+-[a-z0-9]{4}$/), {
         title: '失踪事件',
         raw: '## 概要',
         recommendedRuleset: 'coc7e',

@@ -303,6 +303,63 @@ describe('Play', () => {
     expect(box.value).toBe('罠を調べる');
   });
 
+  it('hides a 502 html response and asks the player to resend later', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      text: async () => '<!DOCTYPE html><html><title>502</title></html>',
+    });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '扉を調べる' } });
+    fireEvent.click(screen.getByText('送る'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'GM応答を取得できませんでした。少し時間をおいてから、もう一度メッセージを送ってください。'
+        )
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/<!DOCTYPE html>/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/API error 502/)).not.toBeInTheDocument();
+    expect(box.value).toBe('扉を調べる');
+  });
+
+  it('hides a Gemini 503 response and explains that the AI service is busy', async () => {
+    renderWithAuth(<Harness initialSession={makeSession()} />);
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      text: async () => JSON.stringify({
+        error: 'ai_service_overloaded',
+        upstreamStatus: 503,
+      }),
+    });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
+    const box = screen.getByPlaceholderText('PCの行動を自由に書く…');
+    fireEvent.change(box, { target: { value: '広場へ向かう' } });
+    fireEvent.click(screen.getByText('送る'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'AIサービスへのアクセスが集中しています。少し時間をおいてから、もう一度メッセージを送ってください。'
+        )
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByText(/ai_service_overloaded/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/API error/)).not.toBeInTheDocument();
+    expect(box.value).toBe('広場へ向かう');
+  });
+
   it('persists the session via saveSession after a turn (regression pin)', async () => {
     const saveSpy = vi.spyOn(storage, 'saveSession'); // 既定は本実装を呼ぶ(fake-indexeddb)
     renderWithAuth(<Harness initialSession={makeSession()} />);

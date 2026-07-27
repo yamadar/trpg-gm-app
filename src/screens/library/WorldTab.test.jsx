@@ -38,14 +38,19 @@ describe('WorldTab', () => {
     );
 
     fireEvent.click(screen.getByText('+ 新規World'));
-    fireEvent.change(screen.getByPlaceholderText('例: waterdeep-campaign'), { target: { value: 'w1' } });
     fireEvent.change(screen.getByPlaceholderText('World名'), { target: { value: 'Waterdeep' } });
     fireEvent.change(screen.getByPlaceholderText('世界観の資料を貼る'), { target: { value: '長い原文' } });
     fireEvent.click(screen.getByText('作成する'));
 
-    await waitFor(() => expect(importSpy).toHaveBeenCalledWith('w1', 'Waterdeep', '長い原文'));
+    await waitFor(() =>
+      expect(importSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/^waterdeep-[0-9]+-[a-z0-9]{4}$/),
+        'Waterdeep',
+        '長い原文'
+      )
+    );
     expect(onWorldsChanged).toHaveBeenCalled();
-    expect(onSelectWorld).toHaveBeenCalledWith('w1');
+    expect(onSelectWorld).toHaveBeenCalledWith(expect.stringMatching(/^waterdeep-[0-9]+-[a-z0-9]{4}$/));
   });
 
   it('loads and shows the selected world for editing, with region/category breakdown after a reimport', async () => {
@@ -359,11 +364,11 @@ describe('WorldTab', () => {
       />
     );
 
-    await waitFor(() => expect(screen.getByText('harbor')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('名称未設定の地域')).toBeInTheDocument());
     fireEvent.click(screen.getByText('編集'));
 
     await waitFor(() => expect(getRegionSpy).toHaveBeenCalledWith('w1', 'harbor'));
-    await waitFor(() => expect(screen.getByLabelText('harborの本文')).toHaveTextContent('港の詳細本文'));
+    await waitFor(() => expect(screen.getByLabelText('名称未設定の地域の本文')).toHaveTextContent('港の詳細本文'));
   });
 
   it('saves an edited region title with its Markdown body and updates the list label', async () => {
@@ -423,7 +428,7 @@ describe('WorldTab', () => {
     const { rerender } = render(
       <WorldTab worlds={worlds} selectedWorldId="w1" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
     );
-    await waitFor(() => expect(screen.getByText('harbor')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('名称未設定の地域')).toBeInTheDocument());
     fireEvent.click(screen.getByText('編集'));
     // まだgetRegionは未解決。この間にWorldを切り替える。
     rerender(
@@ -468,7 +473,7 @@ describe('WorldTab', () => {
     const { rerender } = render(
       <WorldTab worlds={worlds} selectedWorldId="w1" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
     );
-    await waitFor(() => expect(screen.getByText('shared')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('名称未設定の地域')).toBeInTheDocument());
 
     // Start editing w1's "shared" region; getRegion('w1', 'shared') stays pending.
     fireEvent.click(screen.getByText('編集'));
@@ -479,12 +484,12 @@ describe('WorldTab', () => {
       <WorldTab worlds={worlds} selectedWorldId="w2" onSelectWorld={vi.fn()} onWorldsChanged={vi.fn().mockResolvedValue()} />
     );
     await waitFor(() => expect(screen.getByDisplayValue('Neverwinter')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText('shared')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('名称未設定の地域')).toBeInTheDocument());
 
     // Re-enter edit mode on w2's "shared" region (same id). getRegion('w2', 'shared')
     // resolves immediately, so the Markdown editor shows w2's content again.
     fireEvent.click(screen.getByText('編集'));
-    await waitFor(() => expect(screen.getByLabelText('sharedの本文')).toHaveTextContent('w2の共有本文'));
+    await waitFor(() => expect(screen.getByLabelText('名称未設定の地域の本文')).toHaveTextContent('w2の共有本文'));
 
     // Now let w1's stale fetch resolve late.
     await act(async () => {
@@ -493,7 +498,7 @@ describe('WorldTab', () => {
     });
 
     // The epoch guard must discard w1's stale resolution; w2's visible edit stays intact.
-    expect(screen.getByLabelText('sharedの本文')).toHaveTextContent('w2の共有本文');
+    expect(screen.getByLabelText('名称未設定の地域の本文')).toHaveTextContent('w2の共有本文');
     expect(screen.queryByText('w1の共有本文(stale)')).not.toBeInTheDocument();
   });
 

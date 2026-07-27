@@ -147,7 +147,7 @@ public/starters                      スターターパックのマニフェス�
                                      公開ツリー`public/...`名前空間の一部(04-persistence.md参照)
 ```
 
-**キャラクターの`name`はASCIIに限られる**: `server/routes/characters.js`が`router.param('name', idParamGuard)`を持ち、`isValidId`が`^[A-Za-z0-9._-]+$`を要求する(`name`がそのままファイルパスになるため)。日本語名を`saveCharacter`で直接保存することは可能だが、その後の`GET /worlds/:worldId/characters/:kind/:name`が400を返す。スターターパックはローマ字スラッグを`name`にし、日本語表記をシート本文の`PC名:`行に持つ(`server/starters/loadPacks.js`はこの`isValidId`を直接importして再利用しており、独自の正規表現は持たない。06-content-generation.md「スターターコンテンツ」節参照)。
+**キャラクターの`name`はASCIIに限られる内部識別子**: `server/routes/characters.js`が`router.param('name', idParamGuard)`を持ち、`isValidId`が`^[A-Za-z0-9._-]+$`を要求する(`name`がそのままファイルパスになるため)。素材ライブラリの新規作成UIはユーザーへ`name`入力を求めず、`makeId('pc'|'npc')`で一意なASCII値を自動生成する。ユーザー向け名前は任意の`characterName`として別に保存し、空欄なら本文から生成AIが`parsed.name`へ抽出する。一覧・選択・公開の表示優先順位は`characterName`、`parsed.name`、本文の`PC名:`/`NPC名:`行、「名前未設定のPC/NPC」で、内部`name`は表示しない。`characterName`未送信の旧クライアントは既存値を維持し、空文字送信は明示解除として`null`へ正規化する。スターターパックはローマ字スラッグを`name`にし、日本語表記をシート本文の`PC名:`行に持つ(`server/starters/loadPacks.js`はこの`isValidId`を直接importして再利用しており、独自の正規表現は持たない。06-content-generation.md「スターターコンテンツ」節参照)。
 
 **`importWorld`の`preferredId`**: `slugify`は`[^a-z0-9-]`を全除去するため、日本語タイトルのWorldをインポートすると id が`untitled`に潰れる。`importWorld(…, publicId, { preferredId })`で id を明示でき、スターターの一括インポート(`POST /api/starters/:packId/import`、`server/routes/imports.js`)は`packId`を渡す。未指定なら従来どおり`slugify(title)`。
 

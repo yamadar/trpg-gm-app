@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { COLORS, F_DISPLAY, F_BODY, F_MONO, inputStyle } from '../../theme.js';
 import Card from '../../components/ui/Card.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -11,6 +11,9 @@ import {
   publishedCharacters as fetchPublishedCharacters,
 } from '../../api/shareClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
+import { getOrParseCharacter } from '../../api/characterSheetCache.js';
+import { makeId } from '../../utils/makeId.js';
+import { characterDisplayName } from '../../utils/characterDisplayName.js';
 
 export default function CharacterTab({ worldId }) {
   const { user } = useAuth();
@@ -18,25 +21,45 @@ export default function CharacterTab({ worldId }) {
   const [kind, setKind] = useState('pc');
   const [characters, setCharacters] = useState([]);
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newCharacterName, setNewCharacterName] = useState('');
   const [newRaw, setNewRaw] = useState('');
   const [newRevealed, setNewRevealed] = useState(false);
 
   const [selectedName, setSelectedName] = useState(null);
+  const [editCharacterName, setEditCharacterName] = useState('');
   const [editRaw, setEditRaw] = useState('');
   const [editRevealed, setEditRevealed] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const listRequestRef = useRef(0);
 
   async function refresh() {
     if (!worldId) return;
+    const request = ++listRequestRef.current;
     try {
       setError('');
-      setCharacters(await listCharacters(worldId, kind));
+      const listed = await listCharacters(worldId, kind);
+      if (request !== listRequestRef.current) return;
+      setCharacters(listed);
+
+      // 一覧メタにAI抽出名がまだ無い旧素材・新規取り込み素材だけ解析する。
+      // 明示タグの有無には依存せず、自由記述からnameを抽出してキャッシュへ保存する。
+      const hydrated = await Promise.all(
+        listed.map(async (character) => {
+          if (character.parsed?.name) return character;
+          try {
+            const parsed = await getOrParseCharacter(worldId, kind, character.name);
+            return { ...character, parsed };
+          } catch {
+            return character;
+          }
+        })
+      );
+      if (request === listRequestRef.current) setCharacters(hydrated);
     } catch (e) {
-      setError('一覧取得に失敗した: ' + e.message);
+      if (request === listRequestRef.current) setError('一覧取得に失敗した: ' + e.message);
     }
   }
 
@@ -54,6 +77,7 @@ export default function CharacterTab({ worldId }) {
       try {
         const c = await getCharacter(worldId, kind, selectedName);
         if (cancelled) return;
+        setEditCharacterName(c.characterName ?? '');
         setEditRaw(c.raw);
         setEditRevealed(!!c.revealed);
       } catch (e) {
@@ -89,6 +113,13 @@ export default function CharacterTab({ worldId }) {
     setBusy(true);
     setError('');
     try {
+      // 公開メタへもAI抽出名を載せる。解析不能でも公開自体は妨げず、
+      // 公開ギャラリー共通の「名前未設定」フォールバックに任せる。
+      try {
+        await getOrParseCharacter(worldId, kind, name);
+      } catch {
+        // no-op
+      }
       const { publicId } = await publishCharacter(worldId, kind, name);
       setPublishedCharacterIds((prev) => ({ ...prev, [name]: publicId }));
     } catch (e) {
@@ -119,11 +150,18 @@ export default function CharacterTab({ worldId }) {
     setBusy(true);
     setError('');
     try {
-      await putCharacter(worldId, kind, newName, {
+      const generatedName = makeId(kind);
+      await putCharacter(worldId, kind, generatedName, {
+        characterName: newCharacterName,
         raw: newRaw,
         revealed: kind === 'npc' ? newRevealed : undefined,
       });
-      setNewName('');
+      try {
+        await getOrParseCharacter(worldId, kind, generatedName);
+      } catch {
+        // 本文保存は完了済み。解析失敗時は一覧の共通フォールバックを使う。
+      }
+      setNewCharacterName('');
       setNewRaw('');
       setNewRevealed(false);
       setCreating(false);
@@ -140,9 +178,15 @@ export default function CharacterTab({ worldId }) {
     setError('');
     try {
       await putCharacter(worldId, kind, selectedName, {
+        characterName: editCharacterName,
         raw: editRaw,
         revealed: kind === 'npc' ? editRevealed : undefined,
       });
+      try {
+        await getOrParseCharacter(worldId, kind, selectedName);
+      } catch {
+        // 本文保存は完了済み。
+      }
       await refresh();
     } catch (e) {
       setError('保存に失敗した: ' + e.message);
@@ -215,7 +259,7 @@ export default function CharacterTab({ worldId }) {
                 }}
                 style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}
               >
-                {c.name}
+                {characterDisplayName(c, kind)}
               </button>
               <div
                 className="card-inline-action"
@@ -257,10 +301,15 @@ export default function CharacterTab({ worldId }) {
 
       {creating && (
         <Card>
-          <Field label="識別子(name)" hint="内部で使う一意なキー(英数字推奨)。本文中の名称とは別。">
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="例: alice" style={inputStyle} />
+          <Field label="名前（任意）" hint="空欄なら本文から生成AIが抽出する。">
+            <input
+              value={newCharacterName}
+              onChange={(e) => setNewCharacterName(e.target.value)}
+              placeholder={kind === 'npc' ? '例: ミラ・ヴェイル' : '例: カイ・アーレンス'}
+              style={inputStyle}
+            />
           </Field>
-          <Field label="本文" hint="自由記述。goal/bondsを書いておくとよい。">
+          <Field label="本文" hint="自由記述。目標や因縁を書いておくとよい。">
             <textarea
               value={newRaw}
               onChange={(e) => setNewRaw(e.target.value)}
@@ -277,7 +326,7 @@ export default function CharacterTab({ worldId }) {
               </label>
             </Field>
           )}
-          <Button variant="brass" onClick={handleCreate} disabled={busy || !newName}>
+          <Button variant="brass" onClick={handleCreate} disabled={busy || !newRaw.trim()}>
             {busy ? '作成中…' : '作成する'}
           </Button>
         </Card>
@@ -285,6 +334,23 @@ export default function CharacterTab({ worldId }) {
 
       {!creating && selectedName && (
         <Card>
+          <Field
+            label="名前（任意）"
+            hint={
+              characters.find((character) => character.name === selectedName)?.parsed?.name
+                ? `空欄なら生成AIの抽出名「${
+                    characters.find((character) => character.name === selectedName).parsed.name
+                  }」を使う。`
+                : '空欄なら本文から生成AIが抽出する。'
+            }
+          >
+            <input
+              value={editCharacterName}
+              onChange={(e) => setEditCharacterName(e.target.value)}
+              placeholder={kind === 'npc' ? '例: ミラ・ヴェイル' : '例: カイ・アーレンス'}
+              style={inputStyle}
+            />
+          </Field>
           <Field label="本文">
             <textarea
               value={editRaw}
@@ -314,7 +380,9 @@ export default function CharacterTab({ worldId }) {
 
       <ConfirmModal
         open={deleteTarget !== null}
-        message={`Character「${deleteTarget}」を削除する。よいか?`}
+        message={`Character「${
+          characterDisplayName(characters.find((character) => character.name === deleteTarget), kind)
+        }」を削除する。よいか?`}
         confirmDisabled={busy}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
