@@ -48,6 +48,25 @@ describe('nameEnding', () => {
     expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
   });
 
+  it('requires the ending summary to stay in plain form even when source prose is polite', async () => {
+    const fetchImpl = okFetch({ ending_title: '霧の向こう', summary: '霧は晴れた。' });
+    await nameEnding({
+      session: {
+        ...SESSION,
+        state: { history_summary: '探索者は廃坑から戻りました。' },
+        log: [{ role: 'gm', text: '朝日が差し込んでいます。' }],
+      },
+      apiKey: 'k',
+      fetchImpl,
+    });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+
+    expect(body.systemInstruction.parts[0].text).toContain('必ず常体');
+    expect(body.systemInstruction.parts[0].text).toContain('入力された物語要約や結末付近の地の文が敬体でも');
+    expect(body.generationConfig.responseJsonSchema.properties.summary.description).toContain('常体');
+    expect(body.generationConfig.responseJsonSchema.properties.summary.description).toContain('です・ます調は使わない');
+  });
+
   it('does not send Gemini 3 thinking levels to older models', async () => {
     const fetchImpl = okFetch({ ending_title: 'a', summary: 'b' });
     await nameEnding({ session: SESSION, apiKey: 'k', model: 'gemini-2.5-flash', fetchImpl });

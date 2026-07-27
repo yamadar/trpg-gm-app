@@ -83,6 +83,26 @@ describe('generateNovel', () => {
     expect(third.find((m) => m.role === 'model').parts[0].text).toBe('一回目二回目');
   });
 
+  it('keeps narration in plain form on both initial and continuation requests', async () => {
+    const fetchImpl = sequenceFetch(
+      { text: '霧が立ち込めた。', stop_reason: 'max_tokens' },
+      { text: '扉が開いた。', stop_reason: 'end_turn' },
+    );
+    await generateNovel({
+      ...BASE,
+      transcript: 'GM: 港には霧が立ち込めています。',
+      fetchImpl,
+    });
+
+    const system = systemOf(fetchImpl);
+    const continuation = bodyOf(fetchImpl, 1).contents.at(-1).parts[0].text;
+    expect(system).toContain('全編を通して必ず常体');
+    expect(system).toContain('進行ログが敬体でも引きずらず');
+    expect(system).toContain('登場人物の台詞はこの制約の対象外');
+    expect(continuation).toContain('常体');
+    expect(continuation).toContain('です・ます調へ変えない');
+  });
+
   it('resends the same transcript on every request', async () => {
     const fetchImpl = sequenceFetch(
       { text: 'a', stop_reason: 'max_tokens' },
