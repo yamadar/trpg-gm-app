@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import Play, { SLOW_RESPONSE_NOTICE_MS } from './Play.jsx';
 import * as sessionSyncClient from '../api/sessionSyncClient.js';
@@ -81,6 +81,10 @@ beforeEach(() => {
   // 挿絵クライアントのモックはテスト間で呼び出し履歴が残るため毎回リセットし、既定を復元する。
   sceneImageClient.getConfig.mockReset().mockResolvedValue({ imageGen: false });
   sceneImageClient.generateSceneImage.mockReset();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('Play', () => {
@@ -258,8 +262,7 @@ describe('Play', () => {
   });
 
   it('shows a save warning when saveSession fails but keeps playing', async () => {
-    // spyOnは既定で元実装を呼ぶが、mockResolvedValueOnceで開始ターンの1回だけfalseを返させ、
-    // 以降は元実装に戻るため後続テストへ副作用が漏れない(このテストファイルにafterEachのリセットは無い)。
+    // spyOnは既定で元実装を呼ぶが、開始ターンの1回だけfalseを返す。
     vi.spyOn(storage, 'saveSession').mockResolvedValueOnce(false);
     renderWithAuth(<Harness initialSession={makeSession()} />);
     await waitFor(() => expect(screen.getByText(/セッションの保存に失敗した/)).toBeInTheDocument());
