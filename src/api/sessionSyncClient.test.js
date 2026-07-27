@@ -57,14 +57,14 @@ describe('getNovel', () => {
 
 describe('getIllustratedNovel', () => {
   it('GETs the illustrated novel endpoint with an encoded id', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ markdown: '![挿絵1](data:...)' }) });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ html: '<!doctype html>' }) });
     vi.stubGlobal('fetch', fetchMock);
     const result = await getIllustratedNovel('s 1');
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/sessions/s%201/novel/illustrated',
       expect.objectContaining({ method: 'GET' })
     );
-    expect(result).toEqual({ markdown: '![挿絵1](data:...)' });
+    expect(result).toEqual({ html: '<!doctype html>' });
   });
 });
 

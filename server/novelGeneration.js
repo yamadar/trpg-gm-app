@@ -23,6 +23,10 @@ function extractText(content) {
     .join('\n');
 }
 
+function supportsThinkingLevel(model) {
+  return /^gemini-3(?:[.-]|$)/i.test(String(model || ''));
+}
+
 // 主人公と他の人物がどちらも「彼」になり、読者が取り違える事故を防ぐための規律。
 // トランスクリプトのGM地の文はPCを二人称で呼ぶため、三人称へ書き直す時点で
 // モデルに使える語が「彼」しか残らない。指示がないと衝突は構造的に必ず起きる。
@@ -97,6 +101,9 @@ export async function generateNovel({
       timeoutMs,
       request: {
         max_tokens: NOVELIZE_MAX_TOKENS,
+        // Gemini 3.xは思考トークンも出力上限を消費する。小説本文へ出力枠を
+        // 残すため、長文の書き直しでは思考を最小化する。
+        ...(supportsThinkingLevel(model) ? { thinking_level: 'minimal' } : {}),
         system,
         messages: buildMessages(transcript, parts.join('')),
       },

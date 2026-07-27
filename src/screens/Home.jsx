@@ -334,8 +334,8 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
     }
   }
 
-  function downloadMarkdown(filename, text) {
-    const blob = new Blob([text], { type: 'text/markdown' });
+  function downloadText(filename, text, type) {
+    const blob = new Blob([text], { type });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -373,7 +373,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
     clearFinished(session.id);
     try {
       const { text } = await getNovel(session.id);
-      downloadMarkdown(`${sanitizeFilename(session.title)}.md`, text);
+      downloadText(`${sanitizeFilename(session.title)}.md`, text, 'text/markdown;charset=utf-8');
     } catch (err) {
       setNovelizeError((prev) => ({ ...prev, [session.id]: '小説の取得に失敗した: ' + err.message }));
     }
@@ -384,8 +384,8 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
     clearFinished(session.id);
     try {
-      const { markdown } = await getIllustratedNovel(session.id);
-      downloadMarkdown(`${sanitizeFilename(session.title)}-挿絵付き.md`, markdown);
+      const { html } = await getIllustratedNovel(session.id);
+      downloadText(`${sanitizeFilename(session.title)}-挿絵付き.html`, html, 'text/html;charset=utf-8');
     } catch (err) {
       setNovelizeError((prev) => ({ ...prev, [session.id]: '挿絵付き小説の取得に失敗した: ' + err.message }));
     }

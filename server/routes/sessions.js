@@ -10,7 +10,7 @@ import {
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { stripImageMarkers } from '../novelMarkers.js';
-import { buildIllustratedMarkdown } from '../illustratedNovel.js';
+import { buildIllustratedHtml } from '../illustratedNovel.js';
 
 // 生成後にセッションが進んでいれば、保存済みの小説は古い。
 function isStale(meta, session) {
@@ -142,13 +142,23 @@ export function createSessionsRouter({ dataStore, textStore, imageStore, apiKey,
       res.status(404).json({ error: 'novel not found' });
       return;
     }
-    const meta = await dataStore.get(sessionNovelMetaKey(req.userId, req.params.id));
+    const [meta, session] = await Promise.all([
+      dataStore.get(sessionNovelMetaKey(req.userId, req.params.id)),
+      dataStore.get(sessionKey(req.userId, req.params.id)),
+    ]);
     const imageIds = Array.isArray(meta?.imageIds) ? meta.imageIds : [];
     const images = new Map();
     for (const imageId of imageIds) {
       images.set(imageId, await imageStore.read(sessionImagePath(req.userId, req.params.id, imageId)));
     }
-    res.json({ markdown: buildIllustratedMarkdown({ novelText: text, imageIds, images }) });
+    res.json({
+      html: buildIllustratedHtml({
+        title: session?.title || '小説',
+        novelText: text,
+        imageIds,
+        images,
+      }),
+    });
   }));
 
   return router;

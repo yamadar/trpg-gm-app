@@ -45,6 +45,22 @@ describe('generateNovel', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('minimizes thinking on Gemini 3 so output tokens remain available for the novel', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, model: 'gemini-3.5-flash', fetchImpl });
+
+    expect(bodyOf(fetchImpl, 0).generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: 'MINIMAL',
+    });
+  });
+
+  it('does not send Gemini 3 thinking levels to older models', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, model: 'gemini-2.5-flash', fetchImpl });
+
+    expect(bodyOf(fetchImpl, 0).generationConfig.thinkingConfig).toBeUndefined();
+  });
+
   it('continues after a truncated response and joins the parts without a separator', async () => {
     const fetchImpl = sequenceFetch(
       { text: '前半のと', stop_reason: 'max_tokens' },

@@ -944,6 +944,31 @@ describe('Home', () => {
     await waitFor(() => expect(createObjectURLSpy).toHaveBeenCalled());
   });
 
+  it('downloads the illustrated novel as HTML', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({
+      s1: { status: 'done', error: null, hasNovel: true, stale: false },
+    });
+    vi.spyOn(sessionSyncClient, 'getIllustratedNovel').mockResolvedValue({ html: '<!doctype html><p>本文</p>' });
+    const createObjectURLSpy = vi.fn().mockReturnValue('blob:mock-url');
+    vi.stubGlobal('URL', { ...URL, createObjectURL: createObjectURLSpy, revokeObjectURL: vi.fn() });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const sessions = [{
+      id: 's1',
+      title: 'A',
+      updatedAt: 1,
+      state: {},
+      log: [{ role: 'gm', text: 'x', image: { imageId: 'img_a' } }],
+    }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('挿絵付きでDL'));
+
+    await waitFor(() => expect(sessionSyncClient.getIllustratedNovel).toHaveBeenCalledWith('s1'));
+    const blob = createObjectURLSpy.mock.calls[0][0];
+    expect(blob.type).toBe('text/html;charset=utf-8');
+    expect(clickSpy.mock.instances[0].download).toBe('A-挿絵付き.html');
+  });
+
   it('marks the session as ended when the campaign advances to the next chapter', async () => {
     vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '更新シート', xp: 7 });
     vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(null);

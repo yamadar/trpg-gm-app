@@ -176,15 +176,17 @@ describe('sessions routes', () => {
     expect(res.body.text).toBe('前\n後');
   });
 
-  it('GET /novel/illustrated は挿絵入りMarkdownを返す', async () => {
-    await request(app).put('/api/sessions/s4').send({ title: 'T', state: {}, log: [] });
+  it('GET /novel/illustrated は自己完結した挿絵入りHTMLを返す', async () => {
+    await request(app).put('/api/sessions/s4').send({ title: '挿絵小説', state: {}, log: [] });
     await textStore.write('users/usr_test/sessions/s4/novel.md', '前\n〈挿絵1〉\n後');
     await dataStore.set('users/usr_test/sessions/s4/novel', { turnCount: 0, updatedAt: 1, imageIds: ['img_a'] });
     await imageStore.write(sessionImagePath('usr_test', 's4', 'img_a'), Buffer.from([1, 2]));
     const res = await request(app).get('/api/sessions/s4/novel/illustrated');
     expect(res.status).toBe(200);
-    expect(res.body.markdown).toContain('![挿絵1](data:image/png;base64,');
-    expect(res.body.markdown).not.toContain('〈挿絵1〉');
+    expect(res.body.html).toContain('<!doctype html>');
+    expect(res.body.html).toContain('<title>挿絵小説</title>');
+    expect(res.body.html).toContain('<img src="data:image/png;base64,');
+    expect(res.body.html).not.toContain('〈挿絵1〉');
   });
 
   it('GET /novel/illustrated は小説未生成なら404', async () => {

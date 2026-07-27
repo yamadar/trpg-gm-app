@@ -23,7 +23,7 @@
 
 **Phase 2 — 以下はすべて実装済み**
 - キャラクター成長・経験値: `ruleset.growthUnit`単位の成長ポイント。GMが毎ターン`state_update.xp_gained`で提示し`state.xp`に加算、Play画面に表示(`src/data/rulesets.js`, `src/api/prompts.js`, `src/screens/Play.jsx`)
-- ログの小説化書き出し: `POST /api/sessions/:id/novelize`でAIがログを小説形式に書き直し保存(2026-07-25に非同期ジョブ化、06-content-generation.md 10.6節参照)、Home画面から「小説化する」ボタンで開始し完了後「小説をDL」でMarkdownダウンロード(`server/routes/sessions.js`, `server/novelJobs.js`, `src/screens/Home.jsx`)
+- ログの小説化書き出し: `POST /api/sessions/:id/novelize`でAIがログを小説形式に書き直し保存(2026-07-25に非同期ジョブ化、06-content-generation.md 10.6節参照)、Home画面から「小説化する」ボタンで開始し完了後「小説をDL」でプレーンMarkdown、挿絵があれば「挿絵付きでDL」で画像内包HTMLをダウンロード(`server/routes/sessions.js`, `server/novelJobs.js`, `src/screens/Home.jsx`)
 - シナリオ複数対応: 素材ライブラリ(ScenarioタブでWorldごとに複数保存)+ Setupのシナリオステップで既存Scenarioから選択可能(選択画面という単独UIではなくSetupフローに統合される形)
 
 **Phase 3**
