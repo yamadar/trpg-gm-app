@@ -17,6 +17,7 @@ describe('normalizeTurnResult', () => {
       xpGain: 5,
       tension_level: null,
       endingReached: false,
+      newlyExplainedTerms: [],
     });
   });
 
@@ -81,6 +82,16 @@ describe('normalizeTurnResult', () => {
   it('never throws on a null or non-object result', () => {
     expect(() => normalizeTurnResult(null)).not.toThrow();
     expect(normalizeTurnResult(null).narrative).toBe('(描写を取得できませんでした)');
+  });
+
+  it('normalizes and deduplicates newly explained terms', () => {
+    const out = normalizeTurnResult({
+      state_update: {
+        newly_explained_terms: [' エーテル大水路 ', '灰鐘区', 'エーテル大水路', '', 42],
+      },
+    });
+    expect(out.stateUpdate.newlyExplainedTerms).toEqual(['エーテル大水路', '灰鐘区']);
+    expect(normalizeTurnResult({ state_update: {} }).stateUpdate.newlyExplainedTerms).toEqual([]);
   });
 });
 

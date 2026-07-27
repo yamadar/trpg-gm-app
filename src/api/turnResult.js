@@ -30,10 +30,28 @@ export function normalizeTurnResult(result) {
 
   // 誤検知を避けるため、真偽値のtrue以外は全てfalseとして扱う。
   const endingReached = su.ending_reached === true;
+  const newlyExplainedTerms = Array.isArray(su.newly_explained_terms)
+    ? [
+        ...new Set(
+          su.newly_explained_terms
+            .filter((term) => typeof term === 'string')
+            .map((term) => term.trim())
+            .filter(Boolean)
+        ),
+      ]
+    : [];
 
   return {
     narrative,
     choices,
-    stateUpdate: { current_scene, flags, history_summary, xpGain, tension_level, endingReached },
+    stateUpdate: {
+      current_scene,
+      flags,
+      history_summary,
+      xpGain,
+      tension_level,
+      endingReached,
+      newlyExplainedTerms,
+    },
   };
 }

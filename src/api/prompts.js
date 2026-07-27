@@ -62,7 +62,15 @@ export const TURN_OUTPUT_FORMAT = {
       state_update: {
         type: 'object',
         additionalProperties: false,
-        required: ['current_scene', 'flags', 'history_summary', 'xp_gained', 'tension_level', 'ending_reached'],
+        required: [
+          'current_scene',
+          'flags',
+          'history_summary',
+          'xp_gained',
+          'tension_level',
+          'ending_reached',
+          'newly_explained_terms',
+        ],
         properties: {
           current_scene: {
             type: 'string',
@@ -96,6 +104,12 @@ export const TURN_OUTPUT_FORMAT = {
           ending_reached: {
             type: 'boolean',
             description: '物語が結末(エンディング)に到達したならtrue。通常はfalse',
+          },
+          newly_explained_terms: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'このターンのプレイヤー向け出力で初登場し、narrative内などで短い説明を添えた一般的でない用語・地名。表記だけを列挙し、該当なしなら空配列',
           },
         },
       },
@@ -160,6 +174,8 @@ ${
 - narrativeの地の文は、セッション開始から終了まで必ず常体(だ・である調。体言止め・用言止め可)で統一すること。直近のログが敬体でも引きずらず、です・ます調へ変えないこと。NPCの台詞はこの制約の対象外とし、各人物の口調設定を優先すること。
 - PC・NPC設定やプレイヤー入力にある固有の語尾・口癖・方言・一人称は、そのキャラクター自身の台詞にだけ適用すること。GMはキャラクターではない。地の文、情景・結果の説明、choices、state_updateには一切混ぜないこと。
 - narrative内にNPCの台詞を書く場合、キャラクター固有の口調を使えるのは鉤括弧内の直接話法だけ。鉤括弧外は直前の台詞やプレイヤー入力の口調を引きずらず、GMの中立的な常体へ戻すこと。
+- 世界観・シナリオ固有の造語、一般的でない用語、地名、組織名、遺構名、制度名などをプレイヤー向け出力(narrative・choices・current_scene)へ初めて出す際、何を指すのか短い説明を同じターンのnarrativeまたはchoicesへ自然に添えること。例: 「エーテル大水路――かつて魔力を都へ運んだ地下水路網」。current_sceneへ新しい固有地名を設定する場合もnarrative内で説明する。説明済み用語は繰り返し説明しない。
+- 初出説明では未開示の秘密を明かさず、PCがその時点で分かる種別・用途・外見だけを示すこと。正体不明であること自体が重要なら「正体不明の遺物」のように最低限の種別だけ示す。文脈だけで分かる一般語や通常の人名には不要。
 - 緊迫した場面は短文を畳み掛け、平穏な場面は五感描写を増やしゆったり進行する。可能な範囲でPCのgoal/bondsや世界観の特徴を絡めること。
 
 # 出力フィールドの書き方
@@ -170,6 +186,7 @@ ${
 - state_update.xp_gained: 物語が進展・成功した節目でのみ${growthUnit}を与える。目安: 小さな進展や成功=1〜2、章の節目や大きな達成=5〜10。通常は0。
 - state_update.tension_level: 現在の場面の緊張度を毎ターン更新する。緊迫した場面(戦闘・危機・追跡)=high、平穏な場面(休息・日常会話)=low、それ以外=medium。文体もこれに合わせること(highは短文を畳み掛け、lowは五感描写でゆったり)。
 - state_update.ending_reached: 物語が結末(エンディング)に到達し、これ以上続ける必要がない場合のみtrue。それ以外は必ずfalse。
+- state_update.newly_explained_terms: このターンのプレイヤー向け出力で初登場し、narrativeまたはchoices内で実際に短い説明を添えた一般的でない用語・地名の表記だけを列挙する。説明しなかった語や既に説明済みの語は含めない。該当なしなら空配列。
 - choices: GMから中立的な文体で提示する、方向性の異なる短い選択肢を2〜4個(慎重・大胆・搦め手など性質を変える)。PC・NPC固有の語尾・口癖・方言を付けないこと。自由記述を促したい場面では空配列でよい。未開示の秘匿情報を含めないこと。`;
 
   return [{ type: 'text', text }];
@@ -188,6 +205,9 @@ export function buildTurnUserContent(session, playerText) {
       .join('\n') || '(まだなし)';
   const adapter = resolveAdapter(session);
   const resources = session.state.resources || {};
+  const explainedTerms = Array.isArray(session.state.explained_terms)
+    ? session.state.explained_terms.filter((term) => typeof term === 'string' && term.trim())
+    : [];
   const resourceLine = Object.keys(resources).length
     ? `\nリソース: ${Object.entries(resources)
         .map(([k, r]) => `${adapter.resourceDefs.find((d) => d.key === k)?.label || k} ${r.value}/${r.max}`)
@@ -199,6 +219,7 @@ export function buildTurnUserContent(session, playerText) {
 テンション: ${session.state.tension_level || 'medium'}${resourceLine}
 既知フラグ: ${flagsText}
 物語要約: ${session.state.history_summary || '(まだなし)'}
+説明済み用語: ${explainedTerms.join('、') || '(なし)'}
 
 # 直近のログ
 ${recentLog}

@@ -174,6 +174,45 @@ describe('Play', () => {
     expect(screen.getByText('経験値: 5')).toBeInTheDocument();
   });
 
+  it('merges newly explained terms into persistent session state', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              narrative: 'エーテル大水路――かつて魔力を都へ運んだ地下水路網が口を開ける。',
+              state_update: {
+                newly_explained_terms: ['旧市街', 'エーテル大水路'],
+              },
+              choices: [],
+            }),
+          },
+        ],
+      }),
+    });
+    const saveSpy = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+    renderWithAuth(
+      <Harness
+        initialSession={makeSession({
+          state: {
+            current_scene: '冒頭',
+            flags: {},
+            history_summary: '',
+            recent_log: [],
+            turn_count: 0,
+            explained_terms: ['旧市街'],
+          },
+        })}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText(/エーテル大水路/)).toBeInTheDocument());
+    const saved = saveSpy.mock.calls.at(-1)[0];
+    expect(saved.state.explained_terms).toEqual(['旧市街', 'エーテル大水路']);
+  });
+
   it('syncs the updated session to the server after a turn, without blocking on failure', async () => {
     const putSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockRejectedValue(new Error('offline'));
     renderWithAuth(<Harness initialSession={makeSession()} />);

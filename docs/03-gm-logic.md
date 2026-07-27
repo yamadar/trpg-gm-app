@@ -7,7 +7,7 @@
    - 世界観(`session.world.summary`。3.2.1節参照)、シナリオ(GM専用情報含む、プレイヤー出力からのフィルタは出力側=AI自身への指示で行う)
    - PC設定(`session.pc.raw`)。goal/bondsが抽出済みなら別枠で明示
    - ルール性向(`ruleset.label`/`hint`)
-   - 直前state(current_scene, flags, history_summary)
+   - 直前state(current_scene, flags, history_summary, explained_terms)
    - 直近ログ(recent_log)
 3. Google Gemini API呼び出し(`src/api/session.js`の`takeTurn`、サーバー変換は`server/textProvider.js`)
    - 判定必要と判断 → tool_use `roll_check({check_label, success_percent, check_kind?})` を返す。`check_kind`はアダプタが副作用kind(coc7eの`sanity`等)を持つ場合のみスキーマに追加される任意フィールド(`src/api/prompts.js`の`buildRollTool`)
@@ -18,19 +18,21 @@
      "narrative": "地の文(150〜250字程度)",
      "state_update": {
        "current_scene": "更新後のシーン名",
-       "flags": {"追加/更新分のみ": true},
+       "flags": [{"key": "追加/更新分のみ", "value": true}],
        "history_summary": "更新後の物語要約(300字程度)",
        "xp_gained": 0,
-       "ending_reached": false
+       "tension_level": "medium",
+       "ending_reached": false,
+       "newly_explained_terms": ["このターンで初出説明した用語"]
      },
      "choices": ["選択肢1", "選択肢2", "選択肢3"]
    }
    ```
-   `xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
+   `flags`は構造化出力制約に合わせた`{key, value}`配列で受け取り、Game Engineがstate保存前にオブジェクトへ変換する。`xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。`newly_explained_terms`はこのターンで初出説明した一般的でない用語・地名だけを返し、`state.explained_terms`へ重複なく蓄積する。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
 5. Game Engineがstate_updateを検証・確定・保存(IndexedDB。加えてサーバーへも自動同期。04章参照)
 6. UIにnarrative・choices反映
 
-**履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。
+**履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。初出説明の判定は短期ログだけに頼らず、セッション全体で保持する`explained_terms`を使う。
 
 ---
 

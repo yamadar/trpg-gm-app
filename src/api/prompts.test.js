@@ -209,6 +209,45 @@ describe('ending_reached', () => {
   });
 });
 
+describe('初出用語の説明', () => {
+  it('requires newly_explained_terms in the turn schema', () => {
+    const su = TURN_OUTPUT_FORMAT.schema.properties.state_update;
+    expect(su.required).toContain('newly_explained_terms');
+    expect(su.properties.newly_explained_terms).toEqual(
+      expect.objectContaining({ type: 'array', items: { type: 'string' } })
+    );
+  });
+
+  it('instructs the GM to explain uncommon setting terms on first appearance without leaking secrets', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('プレイヤー向け出力(narrative・choices・current_scene)へ初めて出す際');
+    expect(text).toContain('current_sceneへ新しい固有地名を設定する場合もnarrative内で説明する');
+    expect(text).toContain('エーテル大水路');
+    expect(text).toContain('説明済み用語は繰り返し説明しない');
+    expect(text).toContain('初出説明では未開示の秘密を明かさず');
+  });
+
+  it('passes already explained terms in per-turn context', () => {
+    const content = buildTurnUserContent(
+      makeSession({
+        state: {
+          current_scene: '波止場',
+          flags: {},
+          history_summary: '',
+          recent_log: [],
+          explained_terms: ['エーテル大水路', '灰鐘区'],
+        },
+      }),
+      '先へ進む'
+    );
+    expect(content).toContain('説明済み用語: エーテル大水路、灰鐘区');
+  });
+
+  it('marks the explained-term context empty for legacy sessions', () => {
+    expect(buildTurnUserContent(makeSession(), '先へ進む')).toContain('説明済み用語: (なし)');
+  });
+});
+
 describe('resolveAdapter', () => {
   it('resolves the adapter from session.ruleset.formula', () => {
     expect(resolveAdapter({ ruleset: { id: 'x', formula: 'coc7e' } }).id).toBe('coc7e');

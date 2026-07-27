@@ -366,6 +366,7 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
           current_scene: '冒頭',
           flags: {},
           history_summary: '',
+          explained_terms: [],
           recent_log: [],
           turn_count: 0,
           xp: campaignContext?.xp || 0,

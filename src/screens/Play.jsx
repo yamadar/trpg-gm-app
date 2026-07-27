@@ -199,6 +199,12 @@ export default function Play({ session, setSession }) {
           ? { ...session.state.flags, ...norm.stateUpdate.flags }
           : session.state.flags;
         const newXp = (Number.isFinite(session.state.xp) ? session.state.xp : 0) + norm.stateUpdate.xpGain;
+        const explainedTerms = [
+          ...new Set([
+            ...(Array.isArray(session.state.explained_terms) ? session.state.explained_terms : []),
+            ...norm.stateUpdate.newlyExplainedTerms,
+          ]),
+        ];
         // SAN等のリソース副作用。takeTurnは非破壊なので、ここでclamp済みの新値を合成する。
         const newResources = resourceChange
           ? {
@@ -233,6 +239,7 @@ export default function Play({ session, setSession }) {
             xp: newXp,
             tension_level: norm.stateUpdate.tension_level ?? session.state.tension_level ?? 'medium',
             ending_reached: norm.stateUpdate.endingReached,
+            explained_terms: explainedTerms,
             ...(newResources ? { resources: newResources } : {}),
           },
           log: newLog,

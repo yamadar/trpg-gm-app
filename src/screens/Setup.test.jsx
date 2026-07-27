@@ -190,6 +190,7 @@ describe('Setup', () => {
     expect(session.ruleset.label).toBe('CoC7e風');
     expect(session.ruleset.growthUnit).toBe('経験値');
     expect(session.state.xp).toBe(0);
+    expect(session.state.explained_terms).toEqual([]);
     expect(session.ruleset.formula).toBe('coc7e');
     expect(session.state.resources).toEqual({ san: { value: 60, max: 99 } });
   });
