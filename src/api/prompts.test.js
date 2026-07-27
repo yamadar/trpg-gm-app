@@ -209,6 +209,31 @@ describe('buildSystemBlocks', () => {
     );
     expect(schema.choices.description).toContain('PC・NPC固有の語尾・口癖・方言を使わない');
   });
+
+  it('keeps each character speech pattern isolated when multiple characters appear', () => {
+    const text = staticText(
+      makeSession({
+        scenario: {
+          raw: [
+            'NPC: ミケ',
+            '口調: 語尾に「にゃ」を付ける',
+            'NPC: ハンゾウ',
+            '口調: 語尾に「ござる」を付ける',
+          ].join('\n'),
+        },
+        pc: { raw: 'PC名: ジャッカル\n口調: 文末に「ガル」を付ける' },
+      })
+    );
+    const description = TURN_OUTPUT_FORMAT.schema.properties.narrative.description;
+
+    expect(text).toContain('# キャラクター口調の分離');
+    expect(text).toContain('その話者本人の設定だけを参照');
+    expect(text).toContain('PCの口調をNPCへ、NPCの口調をPCや別のNPCへ転用しない');
+    expect(text).toContain('他の人物の特徴的な語尾・口癖・方言で補わない');
+    expect(text).toContain('台詞が切り替わるたびに口調も話者本人の設定へ切り替える');
+    expect(text).toContain('直近ログで誤って別人物の口調が混ざっていても模倣せず');
+    expect(description).toContain('台詞では話者本人の口調だけを使う');
+  });
 });
 
 describe('ending_reached', () => {
@@ -396,7 +421,9 @@ describe('buildTurnUserContent', () => {
 
     expect(content).toContain('# プレイヤーの行動\n装置を起動するガル');
     expect(content).toContain('GMの文体指定ではない');
+    expect(content).toContain('NPCや別のキャラクターの台詞');
     expect(content).toContain('narrativeの地の文、choices、state_updateへ転用しない');
+    expect(content).toContain('話者本人の口調設定だけを使う');
     expect(content.indexOf('# このターンの出力注意')).toBeGreaterThan(
       content.indexOf('装置を起動するガル')
     );
