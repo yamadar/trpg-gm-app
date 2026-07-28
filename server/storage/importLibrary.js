@@ -90,6 +90,17 @@ export async function importCharacter(dataStore, textStore, userId, publicId, ta
     const found = findReusable(metas, publicId, pub.name, pub.name, (m) => m.name);
     if (found && onDuplicate === 'reject') return { ok: false, reason: 'already_imported', existing: found };
     if (found) {
+      // 旧実装は公開メタのcharacterName:nullをString(null)で"null"として保存していた。
+      // スターターパック再開時(onDuplicate:'reuse')に、取り込み元も名前未設定で、
+      // 同じ公開素材から取り込んだ既存データだけを修復する。本文・解析キャッシュ・
+      // ユーザー編集は触らない。
+      if (found.sourcePublicId === publicId && found.characterName === 'null' && pub.characterName == null) {
+        await dataStore.set(characterMetaKey(userId, targetWorldId, pub.kind, found.name), {
+          ...found,
+          characterName: null,
+          updatedAt: Date.now(),
+        });
+      }
       return { ok: true, reused: true, meta: await getCharacter(dataStore, textStore, userId, targetWorldId, pub.kind, found.name) };
     }
   }

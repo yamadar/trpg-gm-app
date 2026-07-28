@@ -126,6 +126,18 @@ describe('Character library functions', () => {
     });
     expect((await getCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice')).characterName).toBeNull();
   });
+
+  it('keeps a null character name as null instead of the string "null"', async () => {
+    await saveCharacter(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      kind: 'pc',
+      name: 'alice',
+      characterName: null,
+      raw: 'PC名: アリス',
+    });
+
+    expect((await getCharacter(dataStore, textStore, 'usr_1', 'w1', 'pc', 'alice')).characterName).toBeNull();
+  });
 });
 
 describe('saveCharacterParsed', () => {

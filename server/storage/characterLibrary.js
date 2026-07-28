@@ -11,11 +11,14 @@ export async function saveCharacter(
   await textStore.write(characterDocPath(userId, worldId, kind, name), raw);
   const prev = await dataStore.get(characterMetaKey(userId, worldId, kind, name));
   // characterName未送信の旧クライアント・内部処理は既存値を維持する。
-  // 空文字はユーザーによる明示解除としてnullへ正規化する。
+  // 空文字・nullは名前未設定としてnullへ正規化する。公開素材のメタデータは
+  // 名前未設定をnullで持つため、String(null)で文字列"null"へ変換してはいけない。
   const resolvedCharacterName =
     characterName === undefined
       ? prev?.characterName ?? null
-      : String(characterName).trim() || null;
+      : characterName === null
+        ? null
+        : String(characterName).trim() || null;
   const meta = {
     id: name,
     worldId,

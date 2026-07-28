@@ -304,7 +304,12 @@ describe('imports routes', () => {
       expect(res.body.scenario).toMatchObject({ worldId: 'hyakki-yagyo', title: 'シナリオ', recommendedRuleset: 'coc7e' });
       expect(res.body.pcs).toHaveLength(1);
       expect(res.body.npcs).toHaveLength(1);
-      expect(res.body.pcs[0]).toMatchObject({ kind: 'pc', name: 'pc-one', worldId: 'hyakki-yagyo' });
+      expect(res.body.pcs[0]).toMatchObject({
+        kind: 'pc',
+        name: 'pc-one',
+        worldId: 'hyakki-yagyo',
+        characterName: null,
+      });
       // NPCの秘匿情報はインポート先で未開示に戻る
       expect(res.body.npcs[0]).toMatchObject({ kind: 'npc', revealed: false });
     });
@@ -359,6 +364,24 @@ describe('imports routes', () => {
       ]);
       // 中身は取り込み直しではなく最初のものが返る(取り込み後の書き換えを消さないため)
       expect(second.body.world.raw).toBe(first.body.world.raw);
+    });
+
+    it('repairs the legacy string "null" name when an imported pack is started again', async () => {
+      await seedOnePack();
+      await request(app).post('/api/starters/hyakki-yagyo/import');
+      await saveCharacter(dataStore, textStore, 'usr_test', {
+        worldId: 'hyakki-yagyo',
+        kind: 'pc',
+        name: 'pc-one',
+        characterName: 'null',
+        raw: 'PC名: 編集後の一人目',
+      });
+
+      const second = await request(app).post('/api/starters/hyakki-yagyo/import');
+
+      expect(second.status).toBe(201);
+      expect(second.body.pcs[0].characterName).toBeNull();
+      expect(second.body.pcs[0].raw).toBe('PC名: 編集後の一人目');
     });
 
     // 取り込んだ後に本文を書き換えてからもう一度押しても、書き換えは消えず複製も増えない。
