@@ -202,7 +202,11 @@ export function createSessionsRouter({
       res.status(500).json({ error: 'GEMINI_TEXT_API_KEY is not configured on the server' });
       return;
     }
-    const session = await dataStore.get(sessionKey(req.userId, req.params.id));
+    const key = sessionKey(req.userId, req.params.id);
+    // 別端末の最終ターンPUTと小説化POSTがほぼ同時に届いた場合、PUTの永続化中に
+    // セッションを読むと一つ前のログを生成ジョブへ固定してしまう。PUTと同じロックへ
+    // 読み取りも並べ、先着した保存が完了した後の全ログを小説化対象にする。
+    const session = await withSessionLock(key, () => dataStore.get(key));
     if (!session) {
       res.status(404).json({ error: 'session not found' });
       return;

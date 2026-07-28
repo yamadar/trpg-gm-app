@@ -356,6 +356,10 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
       [session.id]: { ...(prev[session.id] || {}), status: 'running', error: null },
     }));
     try {
+      // カードに表示中の全ログを先にサーバーへ確定する。別端末から取得した直後や、
+      // 直前の保存が遅延している状態でPOSTだけ先着すると、サーバー上の古い
+      // スナップショットから小説化が始まるため。
+      await putSessionToServer(session);
       await novelizeSession(session.id);
     } catch (err) {
       applyNovelJobs((prev) => ({

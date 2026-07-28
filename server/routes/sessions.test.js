@@ -201,6 +201,71 @@ describe('sessions routes', () => {
     expect(getRes.body).toEqual({ text: '小説化された本文。', stale: false });
   });
 
+  it('waits for an in-flight final turn save before snapshotting another device novelization', async () => {
+    let novelizedTranscript = '';
+    buildApp({
+      fetchImpl: async (url, options) => {
+        novelizedTranscript = JSON.parse(options.body).contents[0].parts[0].text;
+        return geminiResponse('全編の小説。');
+      },
+    });
+    await request(app)
+      .put('/api/sessions/s1')
+      .set('X-Device-Id', 'device_pc')
+      .set('If-Match', '"0"')
+      .send({
+        title: 'A',
+        state: { turn_count: 1 },
+        log: [{ role: 'gm', text: 'PCで進めた前半' }],
+      });
+
+    const originalSet = dataStore.set.bind(dataStore);
+    let releaseFinalSave;
+    let finalSaveStarted;
+    const finalSaveEntered = new Promise((resolve) => {
+      finalSaveStarted = resolve;
+    });
+    const finalSaveGate = new Promise((resolve) => {
+      releaseFinalSave = resolve;
+    });
+    dataStore.set = async (key, value) => {
+      if (
+        key === 'users/usr_test/sessions/s1' &&
+        value?.state?.turn_count === 2
+      ) {
+        finalSaveStarted();
+        await finalSaveGate;
+      }
+      return originalSet(key, value);
+    };
+
+    const finalSave = request(app)
+      .put('/api/sessions/s1')
+      .set('X-Device-Id', 'device_phone')
+      .set('If-Match', '"1"')
+      .send({
+        title: 'A',
+        state: { turn_count: 2 },
+        log: [
+          { role: 'gm', text: 'PCで進めた前半' },
+          { role: 'player', text: 'スマホで選んだ最後の行動' },
+          { role: 'gm', text: 'スマホで到達した結末' },
+        ],
+      });
+    const finalSaveResult = finalSave.then((response) => response);
+    await finalSaveEntered;
+
+    const novelizeResult = request(app).post('/api/sessions/s1/novelize');
+    releaseFinalSave();
+    expect((await finalSaveResult).status).toBe(200);
+    expect((await novelizeResult).status).toBe(202);
+    await waitForJob('s1');
+
+    expect(novelizedTranscript).toContain('PCで進めた前半');
+    expect(novelizedTranscript).toContain('スマホで選んだ最後の行動');
+    expect(novelizedTranscript).toContain('スマホで到達した結末');
+  });
+
   it('挿絵付きセッションのnovelizeはマーカー入りnovel.mdとメタimageIdsを保存する', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(geminiResponse('小説本文\n〈挿絵1〉\n続き'));
     buildApp({ fetchImpl });

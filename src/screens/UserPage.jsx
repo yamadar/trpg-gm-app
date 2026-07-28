@@ -7,8 +7,10 @@ import TabStrip from '../components/nav/TabStrip.jsx';
 import { navigate } from '../navigation/useRoute.js';
 import { useBreadcrumbLabel } from '../navigation/BreadcrumbContext.jsx';
 import { PUBLIC_TABS as TABS } from '../constants/publicContent.js';
+import { useAuth } from '../auth/AuthContext.jsx';
 
 export default function UserPage({ route }) {
+  const { user } = useAuth();
   const userId = route.userId;
   const tab = route.userTab;
   const publicId = route.publicId;
@@ -21,12 +23,15 @@ export default function UserPage({ route }) {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
+  // 自分のページでは認証contextを優先する。プロフィール編集APIの成功と同じ
+  // renderで、見出し・頭文字・パンくずまでまとめて新しい値へ切り替わる。
+  const shownProfile = profile && user?.id === profile.id ? { ...profile, ...user } : profile;
 
   // パンくずは「プロフィール段(表示名)」と「末尾(現在地の名前)」を使う。
   // 詳細を開いている間の現在地は公開アイテムなので、末尾はそのタイトルになる。
   // どちらも取得前は登録しない(IDを露出させないため)。
-  useBreadcrumbLabel(profile ? profile.displayName : null, 'user');
-  useBreadcrumbLabel(publicId ? (detail ? detail.title : null) : profile ? profile.displayName : null);
+  useBreadcrumbLabel(shownProfile ? shownProfile.displayName : null, 'user');
+  useBreadcrumbLabel(publicId ? (detail ? detail.title : null) : shownProfile ? shownProfile.displayName : null);
 
   useEffect(() => {
     setLoading(true);
@@ -125,9 +130,9 @@ export default function UserPage({ route }) {
   return (
     <div style={wrapStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        {profile.avatarUrl ? (
+        {shownProfile.avatarUrl ? (
           <img
-            src={profile.avatarUrl}
+            src={shownProfile.avatarUrl}
             alt=""
             style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
           />
@@ -147,12 +152,12 @@ export default function UserPage({ route }) {
               flexShrink: 0,
             }}
           >
-            {(profile.displayName || '?').slice(0, 1)}
+            {(shownProfile.displayName || '?').slice(0, 1)}
           </div>
         )}
         <div>
-          <div style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink }}>{profile.displayName}</div>
-          {profile.bio && (
+          <div style={{ fontFamily: F_DISPLAY, fontSize: 20, color: COLORS.ink }}>{shownProfile.displayName}</div>
+          {shownProfile.bio && (
             <p
               style={{
                 fontFamily: F_BODY,
@@ -162,7 +167,7 @@ export default function UserPage({ route }) {
                 margin: '4px 0 0',
               }}
             >
-              {profile.bio}
+              {shownProfile.bio}
             </p>
           )}
         </div>

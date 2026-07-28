@@ -20,7 +20,7 @@ const menuItemStyle = {
 };
 
 export default function AccountMenu() {
-  const { user, loading, refresh, logout } = useAuth();
+  const { user, loading, updateUser = () => {}, logout } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -153,8 +153,8 @@ export default function AccountMenu() {
         <ProfileEditModal
           user={user}
           onClose={() => setEditOpen(false)}
-          onSaved={async () => {
-            await refresh();
+          onSaved={(updatedUser) => {
+            updateUser(updatedUser);
             setEditOpen(false);
           }}
         />
@@ -176,8 +176,8 @@ function ProfileEditModal({ user, onClose, onSaved }) {
     try {
       const patch = { displayName, bio };
       if (clearAvatar) patch.avatarUrl = null;
-      await patchMe(patch);
-      await onSaved();
+      const { user: updatedUser } = await patchMe(patch);
+      onSaved(updatedUser);
     } catch (e) {
       setError(e.message || '保存に失敗しました');
       setSaving(false);

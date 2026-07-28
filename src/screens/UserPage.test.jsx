@@ -75,6 +75,40 @@ describe('UserPage', () => {
     expect(screen.getByText(new RegExp(EXPECTED_DATE.replace(/\//g, '\\/')))).toBeInTheDocument();
   });
 
+  it('uses the current auth profile across own header, breadcrumb, and published-item author names', async () => {
+    vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
+      id: 'usr_test',
+      displayName: '変更前',
+      avatarUrl: null,
+      bio: '',
+    });
+    vi.spyOn(shareClient, 'listPublic').mockResolvedValue({
+      items: [{
+        publicId: 'n1',
+        title: '冒険記',
+        ownerId: 'usr_test',
+        ownerName: '変更前',
+        publishedAt: PUBLISHED_AT,
+      }],
+      total: 1,
+      hasMore: false,
+    });
+    const route = parseRoute('#/u/usr_test');
+
+    renderWithAuth(
+      <BreadcrumbProvider>
+        <Breadcrumb route={route} />
+        <UserPage route={route} />
+      </BreadcrumbProvider>,
+      { user: { id: 'usr_test', displayName: '変更後', avatarUrl: null, bio: '' } }
+    );
+
+    await screen.findByText('冒険記');
+    expect(screen.getAllByText('変更後').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(new RegExp(`変更後 ・ ${EXPECTED_DATE.replace(/\//g, '\\/')}`))).toBeInTheDocument();
+    expect(screen.queryByText('変更前')).not.toBeInTheDocument();
+  });
+
   it('no longer renders its own back buttons', async () => {
     vi.spyOn(shareClient, 'getUserProfile').mockResolvedValue({
       id: 'usr_1',

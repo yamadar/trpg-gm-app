@@ -91,6 +91,7 @@ function PublicNovelBody({ item }) {
 // ようになったため、シェルのパンくずの1つ手前の段が一覧への行き先そのものになる。
 export default function PublicItemDetail({ type, item, onAuthorClick }) {
   const { user } = useAuth();
+  const ownerName = user && user.id === item.ownerId ? user.displayName : item.ownerName;
 
   const [adding, setAdding] = useState(false);
   const [addMessage, setAddMessage] = useState('');
@@ -153,10 +154,10 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
         <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginBottom: 4 }}>
           {onAuthorClick ? (
             <button type="button" onClick={() => onAuthorClick(item.ownerId)} style={authorButtonStyle}>
-              {item.ownerName}
+              {ownerName}
             </button>
           ) : (
-            <span>{item.ownerName}</span>
+            <span>{ownerName}</span>
           )}
           {` ・ ${formatPublicDate(item)}`}
         </div>

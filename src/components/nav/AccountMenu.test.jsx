@@ -86,14 +86,16 @@ describe('AccountMenu', () => {
     expect(logout).toHaveBeenCalledTimes(1);
   });
 
-  it('edits the display name via the profile modal, saves, and refreshes', async () => {
-    const refresh = vi.fn().mockResolvedValue();
-    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: {} }) });
+  it('edits the display name and publishes the PATCH response to every auth consumer immediately', async () => {
+    const updateUser = vi.fn();
+    const updatedUser = { id: 'usr_test', displayName: '新しい名前', avatarUrl: null, bio: '' };
+    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: updatedUser }) });
     vi.stubGlobal('fetch', f);
     renderWithContext({
       user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null },
       loading: false,
-      refresh,
+      refresh: vi.fn(),
+      updateUser,
       logout: vi.fn(),
     });
     fireEvent.click(screen.getByText('テスト'));
@@ -103,7 +105,7 @@ describe('AccountMenu', () => {
     fireEvent.change(input, { target: { value: '新しい名前' } });
     fireEvent.click(screen.getByText('保存'));
 
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateUser).toHaveBeenCalledWith(updatedUser));
     const [url, options] = f.mock.calls[0];
     expect(url).toBe('/api/me');
     expect(JSON.parse(options.body)).toEqual({ displayName: '新しい名前', bio: '' });
@@ -137,13 +139,17 @@ describe('AccountMenu', () => {
   });
 
   it('includes the edited bio in the patchMe payload on save', async () => {
-    const refresh = vi.fn().mockResolvedValue();
-    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: {} }) });
+    const updateUser = vi.fn();
+    const f = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null, bio: 'よろしくお願いします' } }),
+    });
     vi.stubGlobal('fetch', f);
     const { container } = renderWithContext({
       user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null, bio: '' },
       loading: false,
-      refresh,
+      refresh: vi.fn(),
+      updateUser,
       logout: vi.fn(),
     });
     fireEvent.click(screen.getByText('テスト'));
@@ -152,19 +158,23 @@ describe('AccountMenu', () => {
     fireEvent.change(container.querySelector('textarea'), { target: { value: 'よろしくお願いします' } });
     fireEvent.click(screen.getByText('保存'));
 
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateUser).toHaveBeenCalledTimes(1));
     const [, options] = f.mock.calls[0];
     expect(JSON.parse(options.body)).toEqual({ displayName: 'テスト', bio: 'よろしくお願いします' });
   });
 
   it('clears the avatar when the checkbox is checked before saving', async () => {
-    const refresh = vi.fn().mockResolvedValue();
-    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: {} }) });
+    const updateUser = vi.fn();
+    const f = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ user: { id: 'usr_test', displayName: 'テスト', avatarUrl: null, bio: '' } }),
+    });
     vi.stubGlobal('fetch', f);
     renderWithContext({
       user: { id: 'usr_test', displayName: 'テスト', avatarUrl: 'https://example.com/a.png' },
       loading: false,
-      refresh,
+      refresh: vi.fn(),
+      updateUser,
       logout: vi.fn(),
     });
     fireEvent.click(screen.getByText('テスト'));
@@ -172,7 +182,7 @@ describe('AccountMenu', () => {
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByText('保存'));
 
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateUser).toHaveBeenCalledTimes(1));
     const [, options] = f.mock.calls[0];
     expect(JSON.parse(options.body)).toEqual({ displayName: 'テスト', bio: '', avatarUrl: null });
   });

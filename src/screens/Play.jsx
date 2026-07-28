@@ -261,15 +261,28 @@ export default function Play({ session, setSession }) {
         const spacedEnough = lastAuto === null || updated.state.turn_count - lastAuto >= AUTO_ILLUSTRATE_MIN_TURNS;
         const shouldAutoIllustrate = imageGen && updated.autoIllustrate && sceneChanged && spacedEnough;
 
-        // PUT は1回だけ発行し、自動挿絵が走る場合はそのPromiseをillustrateへ渡して再利用する。
+        // PUT は1回だけ発行する。ターン完了を画面へ返す前に同期完了まで待ち、
+        // 別端末で直後に小説化しても、このターンまでサーバー上に存在する状態にする。
+        // 同期失敗はGM応答失敗として扱わず、生成済みターンをローカルに残して警告する。
         const syncPromise = user ? putSessionToServer(updated) : null;
-        if (syncPromise && !shouldAutoIllustrate) {
-          syncPromise.catch((e) => console.error('session server sync failed', e));
+        let synced = true;
+        if (syncPromise) {
+          try {
+            await syncPromise;
+          } catch (e) {
+            synced = false;
+            console.error('session server sync failed', e);
+            setSaveWarning(
+              'このターンをクラウドへ保存できなかった。別端末で続けたり小説化したりする前に、表示された進捗競合を解決するか通信状態を確認してください。'
+            );
+          }
         }
 
-        if (shouldAutoIllustrate) {
+        if (shouldAutoIllustrate && synced) {
           lastAutoIllustrateTurnRef.current = updated.state.turn_count;
           const gmIndex = updated.log.length - 1;
+          // 同期済みPromiseを渡し、illustrate側の「画像要求前に同期済み」保証と
+          // 同一ペイロードを二重PUTしない性質を維持する。
           illustrate(updated, gmIndex, syncPromise);
         }
         return true;

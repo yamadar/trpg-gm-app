@@ -5,11 +5,12 @@ import { AuthProvider, useAuth } from './AuthContext.jsx';
 afterEach(() => vi.unstubAllGlobals());
 
 function Probe() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, updateUser, logout } = useAuth();
   if (loading) return <div>loading</div>;
   return (
     <div>
       <div>{user ? `hello ${user.displayName}` : 'logged out'}</div>
+      <button onClick={() => updateUser({ ...user, displayName: '花子' })}>rename</button>
       <button onClick={logout}>logout</button>
     </div>
   );
@@ -29,6 +30,21 @@ describe('AuthContext', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')));
     render(<AuthProvider><Probe /></AuthProvider>);
     await waitFor(() => expect(screen.getByText('logged out')).toBeInTheDocument());
+  });
+
+  it('publishes a profile update to consumers without another request', async () => {
+    const f = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ user: { id: 'u1', displayName: '太郎' } }),
+    });
+    vi.stubGlobal('fetch', f);
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await screen.findByText('hello 太郎');
+
+    fireEvent.click(screen.getByText('rename'));
+
+    expect(screen.getByText('hello 花子')).toBeInTheDocument();
+    expect(f).toHaveBeenCalledTimes(1);
   });
 
   it('logout clears the user even when the request fails', async () => {

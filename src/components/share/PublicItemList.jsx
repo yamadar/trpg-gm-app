@@ -7,10 +7,12 @@ import { formatPublicDate, publicMetaLine, authorButtonStyle } from './PublicIte
 import { KIND_LABELS } from '../../constants/publicContent.js';
 import { RULESETS } from '../../data/rulesets.js';
 import MoodChips from '../ui/MoodChips.jsx';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 const LIMIT = 20;
 
 export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorClick, active = true }) {
+  const { user } = useAuth();
   const [q, setQ] = useState('');
   const [debouncedQ, setDebouncedQ] = useState('');
   const [selectedMoods, setSelectedMoods] = useState([]);
@@ -136,53 +138,56 @@ export default function PublicItemList({ type, ownerId, onOpenDetail, onAuthorCl
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {items.map((it) => (
-              <Card key={it.publicId} className="card-actionable" style={{ cursor: 'pointer' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
-                  <button
-                    type="button"
-                    className="card-primary-action"
-                    onClick={() => onOpenDetail(it.publicId)}
-                    style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}
-                  >
-                    {it.title}
-                  </button>
-                  {type === 'characters' && (
-                    <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>
-                      {KIND_LABELS[it.kind] || it.kind}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginTop: 4 }}>
-                  {onAuthorClick ? (
-                    <>
-                      <button
-                        type="button"
-                        className="card-inline-action"
-                        // 作者名だけでは Tab 順に同じ名前が並んで区別できないため、
-                        // どの公開物の作者かをアクセシブル名に含める。
-                        aria-label={`${it.title} の作者 ${it.ownerName} のページ`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAuthorClick(it.ownerId);
-                        }}
-                        style={authorButtonStyle}
-                      >
-                        {it.ownerName}
-                      </button>
-                      {` ・ ${formatPublicDate(it)}`}
-                    </>
-                  ) : (
-                    publicMetaLine(it)
-                  )}
-                </div>
-                {type === 'scenarios' && it.recommendedRuleset && (
-                  <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginTop: 4 }}>
-                    推奨ルール: {it.recommendedRuleset}
+            {items.map((it) => {
+              const ownerName = user && user.id === it.ownerId ? user.displayName : it.ownerName;
+              return (
+                <Card key={it.publicId} className="card-actionable" style={{ cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                    <button
+                      type="button"
+                      className="card-primary-action"
+                      onClick={() => onOpenDetail(it.publicId)}
+                      style={{ fontFamily: F_DISPLAY, fontSize: 15, color: COLORS.ink }}
+                    >
+                      {it.title}
+                    </button>
+                    {type === 'characters' && (
+                      <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark }}>
+                        {KIND_LABELS[it.kind] || it.kind}
+                      </span>
+                    )}
                   </div>
-                )}
-              </Card>
-            ))}
+                  <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginTop: 4 }}>
+                    {onAuthorClick ? (
+                      <>
+                        <button
+                          type="button"
+                          className="card-inline-action"
+                          // 作者名だけでは Tab 順に同じ名前が並んで区別できないため、
+                          // どの公開物の作者かをアクセシブル名に含める。
+                          aria-label={`${it.title} の作者 ${ownerName} のページ`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onAuthorClick(it.ownerId);
+                          }}
+                          style={authorButtonStyle}
+                        >
+                          {ownerName}
+                        </button>
+                        {` ・ ${formatPublicDate(it)}`}
+                      </>
+                    ) : (
+                      publicMetaLine({ ...it, ownerName })
+                    )}
+                  </div>
+                  {type === 'scenarios' && it.recommendedRuleset && (
+                    <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginTop: 4 }}>
+                      推奨ルール: {it.recommendedRuleset}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
             {hasMore && (
               <Button
                 variant="ghost"

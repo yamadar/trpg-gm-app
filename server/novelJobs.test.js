@@ -11,6 +11,7 @@ import {
   makeBootId,
   resolveJobStatus,
   NOVEL_JOB_TIMEOUT_MS,
+  NOVELIZE_MAX_SESSION_REFRESHES,
 } from './novelJobs.js';
 
 let dir;
@@ -58,6 +59,10 @@ afterEach(async () => {
 });
 
 describe('resolveJobStatus', () => {
+  it('allows the worst-case continuation and session-refresh attempts to finish', () => {
+    expect(NOVEL_JOB_TIMEOUT_MS).toBe(80 * 60 * 1000);
+  });
+
   it('reports idle when there is no job', () => {
     expect(resolveJobStatus(null, { bootId: 'b1', now: 100 })).toEqual({
       status: 'idle',
@@ -140,6 +145,66 @@ describe('createNovelJobRunner', () => {
     const meta = await dataStore.get('users/u1/sessions/s1/novel');
     expect(meta.turnCount).toBe(3);
     expect(meta.imageIds).toEqual([]);
+  });
+
+  it('regenerates from latest logs when another device updates the session during generation', async () => {
+    const first = {
+      ...SESSION,
+      _sync: { revision: 1 },
+      state: { turn_count: 3 },
+    };
+    const latest = {
+      ...first,
+      _sync: { revision: 2 },
+      state: { turn_count: 4 },
+      log: [
+        ...first.log,
+        { role: 'player', text: 'スマホで最後の扉を開く' },
+        { role: 'gm', text: '物語は結末へ到達した。' },
+      ],
+    };
+    await dataStore.set('users/u1/sessions/s1', first);
+    let call = 0;
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      call += 1;
+      if (call === 1) await dataStore.set('users/u1/sessions/s1', latest);
+      return geminiResponse(call === 1 ? '途中までの小説' : '最後までの小説');
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+
+    await runner.start('u1', 's1', first, 'third');
+    await runner.pending.get('u1/s1');
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const retriedTranscript = JSON.parse(fetchImpl.mock.calls[1][1].body).contents[0].parts[0].text;
+    expect(retriedTranscript).toContain('スマホで最後の扉を開く');
+    expect(retriedTranscript).toContain('物語は結末へ到達した。');
+    expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBe('最後までの小説');
+    expect((await dataStore.get('users/u1/sessions/s1/novel')).turnCount).toBe(4);
+    expect((await runner.read('u1', 's1')).status).toBe('done');
+  });
+
+  it('fails instead of saving stale text when logs keep changing beyond refresh limit', async () => {
+    const initial = { ...SESSION, state: { turn_count: 0 }, log: [] };
+    await dataStore.set('users/u1/sessions/s1', initial);
+    let call = 0;
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      call += 1;
+      await dataStore.set('users/u1/sessions/s1', {
+        ...initial,
+        state: { turn_count: call },
+        log: [{ role: 'gm', text: `更新${call}` }],
+      });
+      return geminiResponse(`旧本文${call}`);
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+
+    await runner.start('u1', 's1', initial, 'third');
+    await runner.pending.get('u1/s1');
+
+    expect(fetchImpl).toHaveBeenCalledTimes(NOVELIZE_MAX_SESSION_REFRESHES + 1);
+    expect((await runner.read('u1', 's1')).status).toBe('error');
+    expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBeNull();
   });
 
   it('passes the session PC name into the generated system prompt', async () => {

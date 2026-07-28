@@ -21,6 +21,7 @@ function rerenderWithAuth(rerender, ui, user) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
 });
 
 describe('Home', () => {
@@ -116,6 +117,47 @@ describe('Home', () => {
     fireEvent.click(await screen.findByText('小説化する'));
 
     await waitFor(() => expect(screen.getByText(/小説化に失敗した/)).toBeInTheDocument());
+  });
+
+  it('syncs the complete visible session before starting novelization', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
+    let releaseSync;
+    const syncSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockReturnValue(
+      new Promise((resolve) => {
+        releaseSync = resolve;
+      })
+    );
+    const novelizeSpy = vi.spyOn(sessionSyncClient, 'novelizeSession').mockResolvedValue({ status: 'running' });
+    const session = {
+      id: 's1',
+      title: '端末を跨いだ物語',
+      updatedAt: 2,
+      state: { turn_count: 12 },
+      log: [{ role: 'gm', text: '最後まで表示されているログ' }],
+    };
+    renderWithAuth(<Home sessions={[session]} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('小説化する'));
+    await waitFor(() => expect(syncSpy).toHaveBeenCalledWith(session));
+    expect(novelizeSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseSync({});
+    });
+    await waitFor(() => expect(novelizeSpy).toHaveBeenCalledWith('s1'));
+  });
+
+  it('does not start novelization when the visible session cannot be synchronized', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
+    vi.spyOn(sessionSyncClient, 'putSessionToServer').mockRejectedValue(new Error('sync failed'));
+    const novelizeSpy = vi.spyOn(sessionSyncClient, 'novelizeSession');
+    const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
+
+    fireEvent.click(await screen.findByText('小説化する'));
+
+    expect(await screen.findByText(/sync failed/)).toBeInTheDocument();
+    expect(novelizeSpy).not.toHaveBeenCalled();
   });
 
   it('sanitizes filesystem-unsafe and dot-only titles', () => {

@@ -19,6 +19,7 @@ import {
 } from './worldContentLibrary.js';
 import { MOODS } from './moods.js';
 import { characterTitle, unnamedCharacterTitle } from './characterSummary.js';
+import { getUser } from '../auth/users.js';
 
 const IMAGE_ID_RE = /^img_[A-Za-z0-9-]+$/;
 
@@ -202,7 +203,23 @@ export async function unpublishWorldCascade(dataStore, textStore, userId, worldI
 export async function listPublic(dataStore, type) {
   const keys = await dataStore.list(publicListPrefix(type));
   const metas = (await Promise.all(keys.map((k) => dataStore.get(k)))).filter(Boolean);
-  return metas.sort((a, b) => b.publishedAt - a.publishedAt);
+  const ownerIds = [...new Set(metas.map((meta) => meta.ownerId).filter(Boolean))];
+  const owners = new Map(
+    await Promise.all(ownerIds.map(async (ownerId) => [ownerId, await getUser(dataStore, ownerId)]))
+  );
+  const withCurrentOwnerNames = metas.map((meta) => withOwnerName(meta, owners.get(meta.ownerId)));
+  return withCurrentOwnerNames.sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
+async function withCurrentOwnerName(dataStore, meta) {
+  const owner = await getUser(dataStore, meta.ownerId);
+  return withOwnerName(meta, owner);
+}
+
+function withOwnerName(meta, owner) {
+  return owner?.displayName && owner.displayName !== meta.ownerName
+    ? { ...meta, ownerName: owner.displayName }
+    : meta;
 }
 
 async function withCharacterDisplayName(textStore, meta) {
@@ -256,8 +273,9 @@ export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId,
 }
 
 export async function getPublicWorld(dataStore, textStore, publicId) {
-  const meta = await dataStore.get(publicMetaKey('worlds', publicId));
-  if (!meta) return null;
+  const storedMeta = await dataStore.get(publicMetaKey('worlds', publicId));
+  if (!storedMeta) return null;
+  const meta = await withCurrentOwnerName(dataStore, storedMeta);
   const raw = (await textStore.read(publicWorldDocPath(publicId))) ?? '';
   const regions = await Promise.all(
     (meta.regions ?? []).map(async (entry) => {
@@ -297,8 +315,9 @@ const ITEM_DOC_PATH = {
 };
 
 export async function getPublicItem(dataStore, textStore, type, publicId) {
-  const meta = await dataStore.get(publicMetaKey(type, publicId));
-  if (!meta) return null;
+  const storedMeta = await dataStore.get(publicMetaKey(type, publicId));
+  if (!storedMeta) return null;
+  const meta = await withCurrentOwnerName(dataStore, storedMeta);
   const raw = (await textStore.read(ITEM_DOC_PATH[type](publicId))) ?? '';
   if (type === 'characters') {
     const extractedTitle = characterTitle({

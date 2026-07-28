@@ -217,13 +217,33 @@ describe('Play', () => {
     expect(saved.state.explained_terms).toEqual(['旧市街', 'エーテル大水路']);
   });
 
-  it('syncs the updated session to the server after a turn, without blocking on failure', async () => {
+  it('shows a cloud-save warning when turn sync fails, without misreporting the GM response', async () => {
     const putSpy = vi.spyOn(sessionSyncClient, 'putSessionToServer').mockRejectedValue(new Error('offline'));
     renderWithAuth(<Harness initialSession={makeSession()} />);
     await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
     await waitFor(() => expect(putSpy).toHaveBeenCalled());
-    // 同期失敗してもUIはエラー表示しない(ゲーム進行は止めない)
+    expect(await screen.findByText(/このターンをクラウドへ保存できなかった/)).toBeInTheDocument();
     expect(screen.queryByText(/GM応答の取得に失敗した/)).not.toBeInTheDocument();
+  });
+
+  it('keeps turn controls disabled until cloud sync finishes', async () => {
+    let resolvePut;
+    vi.spyOn(sessionSyncClient, 'putSessionToServer').mockReturnValue(
+      new Promise((resolve) => {
+        resolvePut = resolve;
+      })
+    );
+    renderWithAuth(<Harness initialSession={makeSession()} />);
+
+    await waitFor(() => expect(screen.getByText('物語が始まった。')).toBeInTheDocument());
+    expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).toBeDisabled();
+
+    await act(async () => {
+      resolvePut({});
+    });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).not.toBeDisabled()
+    );
   });
 
   it('does not corrupt state.xp when the model returns a string xp_gained', async () => {

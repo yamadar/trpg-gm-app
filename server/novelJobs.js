@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+  sessionKey,
   sessionNovelDocPath,
   sessionNovelMetaKey,
   sessionNovelJobKey,
@@ -10,9 +11,28 @@ import { generateNovel, NOVELIZE_UPSTREAM_TIMEOUT_MS, NOVELIZE_MAX_CONTINUATIONS
 
 // runningのまま放置されたジョブを失敗とみなすまでの時間。
 // 生成は打ち切り時に継続リクエストを重ねるため、最悪ケース
-// (初回+継続の全リクエストがそれぞれ上流タイムアウトぎりぎりまでかかる)を
-// 包含していないと、正常に進行中のジョブを失敗扱いにしてしまう。
-export const NOVEL_JOB_TIMEOUT_MS = NOVELIZE_UPSTREAM_TIMEOUT_MS * (NOVELIZE_MAX_CONTINUATIONS + 1) + 300000;
+// (初回+継続の全リクエストがそれぞれ上流タイムアウトぎりぎりまでかかり、
+// さらにセッション更新による再生成が上限まで走る)を包含していないと、
+// 正常に進行中のジョブを失敗扱いにしてしまう。
+// 小説生成中に別端末からログが増えた場合、最新スナップショットで自動生成し直す上限。
+// プレイ継続中に無制限で再生成されるのを防ぎつつ、端末切替直後の遅延同期を吸収する。
+export const NOVELIZE_MAX_SESSION_REFRESHES = 2;
+export const NOVEL_JOB_TIMEOUT_MS =
+  NOVELIZE_UPSTREAM_TIMEOUT_MS *
+    (NOVELIZE_MAX_CONTINUATIONS + 1) *
+    (NOVELIZE_MAX_SESSION_REFRESHES + 1) +
+  300000;
+
+function novelSourceHash(session) {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      pcName: session?.pc?.name || '',
+      turnCount: session?.state?.turn_count ?? null,
+      log: session?.log || [],
+    }))
+    .digest('hex');
+}
 
 export function makeBootId() {
   return `boot_${crypto.randomBytes(8).toString('hex')}`;
@@ -66,27 +86,57 @@ export function createNovelJobRunner({
       // ログの破損などによる同期的な例外もここでcatchし、error記録に倒す。
       // tryの外に置くとrun()のPromiseがrejectし、start()側で誰も待たないため
       // プロセス全体を落とす未処理rejectionになってしまう。
-      const { transcript, imageIds } = buildTranscriptWithMarkers(session.log);
-      const { text, truncated } = await generateNovel({
-        transcript,
-        hasImages: imageIds.length > 0,
-        // 旧セッションは pc.name を持たない。空文字で渡し、呼称の決定はモデルに委ねる。
-        pcName: session.pc?.name || '',
-        pov,
-        apiKey,
-        model,
-        fetchImpl,
-      });
+      let sourceSession = session;
+      let generated = false;
+      for (let refresh = 0; refresh <= NOVELIZE_MAX_SESSION_REFRESHES; refresh += 1) {
+        const sourceHash = novelSourceHash(sourceSession);
+        const { transcript, imageIds } = buildTranscriptWithMarkers(sourceSession.log);
+        const { text, truncated } = await generateNovel({
+          transcript,
+          hasImages: imageIds.length > 0,
+          // 旧セッションは pc.name を持たない。空文字で渡し、呼称の決定はモデルに委ねる。
+          pcName: sourceSession.pc?.name || '',
+          pov,
+          apiKey,
+          model,
+          fetchImpl,
+        });
 
-      // truncatedでも保存する。継続の上限に達しただけで本文自体は使えるので、
-      // 複数リクエスト分のコストを払った生成を捨てない(欠落はUIで警告する)。
-      await textStore.write(sessionNovelDocPath(userId, sessionId), text);
-      await dataStore.set(sessionNovelMetaKey(userId, sessionId), {
-        turnCount: session.state?.turn_count ?? null,
-        updatedAt: now(),
-        imageIds,
-        truncated,
-      });
+        // 生成中にスマホ等からログが増えていたら、旧本文を完成扱いで保存せず、
+        // 最新セッションを入力に自動生成し直す。
+        const latest = await dataStore.get(sessionKey(userId, sessionId));
+        if (latest && novelSourceHash(latest) !== sourceHash) {
+          if (refresh === NOVELIZE_MAX_SESSION_REFRESHES) {
+            throw new Error('小説化中もセッションが更新され続けたため完了できませんでした。プレイ終了後に再試行してください。');
+          }
+          sourceSession = latest;
+          continue;
+        }
+        // truncatedでも保存する。継続の上限に達しただけで本文自体は使えるので、
+        // 複数リクエスト分のコストを払った生成を捨てない(欠落はUIで警告する)。
+        await textStore.write(sessionNovelDocPath(userId, sessionId), text);
+        await dataStore.set(sessionNovelMetaKey(userId, sessionId), {
+          turnCount: sourceSession.state?.turn_count ?? null,
+          updatedAt: now(),
+          imageIds,
+          truncated,
+        });
+
+        // 本文・メタ保存中にも更新が届き得る。完了通知を出す直前に再確認し、
+        // 更新済みなら保存した旧本文を成功扱いにせず、最新ログで再生成する。
+        const afterSave = await dataStore.get(sessionKey(userId, sessionId));
+        if (afterSave && novelSourceHash(afterSave) !== sourceHash) {
+          if (refresh === NOVELIZE_MAX_SESSION_REFRESHES) {
+            throw new Error('小説化中もセッションが更新され続けたため完了できませんでした。プレイ終了後に再試行してください。');
+          }
+          sourceSession = afterSave;
+          continue;
+        }
+        generated = true;
+        break;
+      }
+
+      if (!generated) throw new Error('小説化する最新ログを確定できませんでした。');
       // 生成できたことをユーザーがまだ受け取っていない、という印。
       // 「既読の記録が無い=未読」と定義すると、この機能の投入時に過去の小説が
       // 一斉に未読になってしまう。成功時に立てて受け取り時に降ろす形にする。

@@ -47,6 +47,7 @@ import {
   getPublishedScenarios,
   getPublishedNovels,
 } from './shareLibrary.js';
+import { updateUserProfile, userProfileKey } from '../auth/users.js';
 
 const OWNER = { id: 'usr_1', displayName: '太郎' };
 
@@ -463,6 +464,26 @@ describe('listPublic', () => {
 
   it('returns an empty array when nothing is published', async () => {
     expect(await listPublic(dataStore, 'worlds')).toEqual([]);
+  });
+
+  it('resolves ownerName from the current user profile after a rename', async () => {
+    await dataStore.set(userProfileKey('usr_1'), {
+      id: 'usr_1',
+      displayName: '太郎',
+      avatarUrl: null,
+      bio: '',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await seedWorld('usr_1');
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+
+    await updateUserProfile(dataStore, 'usr_1', { displayName: '次郎' });
+
+    expect((await listPublic(dataStore, 'worlds'))[0].ownerName).toBe('次郎');
+    expect((await getPublicWorld(dataStore, textStore, meta.publicId)).ownerName).toBe('次郎');
+    expect((await queryPublic(dataStore, 'worlds', { q: '次郎' })).items).toHaveLength(1);
+    expect((await queryPublic(dataStore, 'worlds', { q: '太郎' })).items).toHaveLength(0);
   });
 });
 

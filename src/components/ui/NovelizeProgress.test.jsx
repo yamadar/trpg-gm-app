@@ -32,7 +32,7 @@ describe('NovelizeProgress', () => {
     expect(screen.queryByText(/目安/)).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        '長い記録のため時間がかかっています。最大30分ほどかかることがあります。中断はされていません。'
+        '長い記録、または生成中に追加ログを同期したため時間がかかっています。中断はされていません。'
       )
     ).toBeInTheDocument();
   });
