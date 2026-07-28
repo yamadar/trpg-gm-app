@@ -37,6 +37,22 @@ describe('apiFetch', () => {
     expect(err.status).toBe(429);
   });
 
+  it('does not map an unrelated 429 to the user daily-limit message', async () => {
+    stubFetch(429, '{"error":"upstream rate limited"}');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.message).toContain('AIサービス側の利用枠');
+    expect(err.message).not.toContain('本日のAI利用上限');
+    expect(err.status).toBe(429);
+  });
+
+  it('maps a structured upstream rate-limit error to an AI service message', async () => {
+    stubFetch(502, '{"error":"ai_service_rate_limited","upstreamStatus":429}');
+    const err = await apiFetch('/api/x').catch((e) => e);
+    expect(err.message).toContain('AIサービス側の利用枠');
+    expect(err.message).not.toContain('本日のAI利用上限');
+    expect(err.status).toBe(502);
+  });
+
   it('maps 502 to a retry message without exposing an html response', async () => {
     stubFetch(502, '<!DOCTYPE html><html><title>502</title></html>');
     const err = await apiFetch('/api/x').catch((e) => e);

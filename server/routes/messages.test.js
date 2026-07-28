@@ -112,6 +112,28 @@ describe('POST /messages', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it('does not report Gemini rate limiting as a user daily limit', async () => {
+    const upstreamBody = JSON.stringify({
+      error: {
+        code: 429,
+        message: 'Resource has been exhausted.',
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => upstreamBody,
+    });
+    buildApp({ fetchImpl });
+
+    const res = await request(app).post('/api/messages').send({ messages: [] });
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'ai_service_rate_limited', upstreamStatus: 429 });
+    expect(JSON.stringify(res.body)).not.toContain('Resource has been exhausted');
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
   it('returns 502 with the block reason when Gemini rejects the prompt', async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

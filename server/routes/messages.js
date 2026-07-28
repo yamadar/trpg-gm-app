@@ -63,8 +63,9 @@ export function createMessagesRouter({
         }
       }
     } catch (e) {
-      if (e instanceof GeminiTextApiError && e.status === 503) {
-        res.status(502).json({ error: 'ai_service_overloaded', upstreamStatus: 503 });
+      if (e instanceof GeminiTextApiError && (e.status === 429 || e.status === 503)) {
+        const error = e.status === 429 ? 'ai_service_rate_limited' : 'ai_service_overloaded';
+        res.status(502).json({ error, upstreamStatus: e.status });
         return;
       }
       const status = e instanceof GeminiTextApiError && e.status >= 400 && e.status < 500 ? e.status : 502;
