@@ -162,6 +162,9 @@ profile-image/
 
 public/starters                      スターターパックのマニフェスト({ packs[], seededAt })。
                                      シード(server/starters/seed.js)が書き、GET /api/startersが返す。
+                                     各packは開始話のscenarioId/scenarioPublicIdに加え、全話の
+                                     scenarios:[{ id, title, publicId }]とscenarioCountを持つ。
+                                     単話パックもscenariosを1件持ち、旧マニフェストは開始話のみでも読める。
                                      唯一この行だけは`users/{userId}/`配下ではなくグローバルなキーであり、
                                      公開ツリー`public/...`名前空間の一部(04-persistence.md参照)
 ```

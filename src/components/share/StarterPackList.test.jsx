@@ -35,6 +35,7 @@ const PACKS = [
     moods: ['ファンタジー', '冒険'],
     recommendedRuleset: 'dnd5e',
     scenarioTitle: '涸れた井戸の底',
+    scenarioCount: 5,
   },
 ];
 
@@ -54,6 +55,7 @@ describe('StarterPackList', () => {
     expect(screen.getByText(/ラヴクラフト作品に基づく/)).toBeInTheDocument();
     expect(screen.getByText('アルデン辺境領')).toBeInTheDocument();
     expect(screen.getByText('丘の上の写真館')).toBeInTheDocument();
+    expect(screen.getByText('全5話 / 涸れた井戸の底')).toBeInTheDocument();
   });
 
   // 未シードの環境でもHome/Galleryが壊れないよう、「無い」は親ではなくここで吸収する

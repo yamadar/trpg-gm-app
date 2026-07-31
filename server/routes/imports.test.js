@@ -296,6 +296,29 @@ describe('imports routes', () => {
       });
     }
 
+    async function seedCampaignPack({ missingSecond = false } = {}) {
+      await seedOnePack({ scenarioId: 'episode-one' });
+      await saveScenario(dataStore, textStore, OWNER.id, {
+        worldId: 'src-world', id: 'sc-two', title: '第二話', raw: '# 第二話', recommendedRuleset: 'coc7e', moods: ['ホラー'],
+      });
+      const second = missingSecond
+        ? { publicId: 'pub_missing' }
+        : (await publishScenario(dataStore, textStore, OWNER.id, 'src-world', 'sc-two', OWNER)).meta;
+      const manifest = await dataStore.get('public/starters');
+      const [pack] = manifest.packs;
+      await dataStore.set('public/starters', {
+        ...manifest,
+        packs: [{
+          ...pack,
+          scenarioCount: 2,
+          scenarios: [
+            { id: 'episode-one', title: '第一話', publicId: pack.scenarioPublicId },
+            { id: 'episode-two', title: '第二話', publicId: second.publicId },
+          ],
+        }],
+      });
+    }
+
     it('imports the whole pack in one call', async () => {
       await seedOnePack();
       const res = await request(app).post('/api/starters/hyakki-yagyo/import');
@@ -312,6 +335,20 @@ describe('imports routes', () => {
       });
       // NPCの秘匿情報はインポート先で未開示に戻る
       expect(res.body.npcs[0]).toMatchObject({ kind: 'npc', revealed: false });
+    });
+
+    it('imports every scenario in a campaign pack and starts with the first', async () => {
+      await seedCampaignPack();
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+
+      expect(res.status).toBe(201);
+      expect(res.body.scenario).toMatchObject({ id: 'episode-one', title: 'シナリオ' });
+      expect(res.body.scenarios).toHaveLength(2);
+      expect(res.body.scenarios.map((scenario) => scenario.id)).toEqual(['episode-one', 'episode-two']);
+      expect((await listScenarios(dataStore, 'usr_test', 'hyakki-yagyo')).map((scenario) => scenario.id).sort()).toEqual([
+        'episode-one',
+        'episode-two',
+      ]);
     });
 
     // slugify は非ASCIIを全除去するので、preferredId 無しだと 'untitled' になる
@@ -455,6 +492,16 @@ describe('imports routes', () => {
       // World自体は先に保存済みなので、インポート先ライブラリに残っている
       const world = await getWorld(dataStore, textStore, 'usr_test', 'hyakki-yagyo');
       expect(world).not.toBeNull();
+    });
+
+    it('500s when a later campaign scenario is missing without returning a partial success body', async () => {
+      await seedCampaignPack({ missingSecond: true });
+      const res = await request(app).post('/api/starters/hyakki-yagyo/import');
+
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'starter scenario is missing; re-run the seed' });
+      expect(await getScenario(dataStore, textStore, 'usr_test', 'hyakki-yagyo', 'episode-one')).not.toBeNull();
+      expect(await getScenario(dataStore, textStore, 'usr_test', 'hyakki-yagyo', 'episode-two')).toBeNull();
     });
 
     it('500s when a pack PC is missing, after the world and scenario were already created', async () => {

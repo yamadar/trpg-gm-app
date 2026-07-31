@@ -32,21 +32,28 @@ function publicIdOf(result, what) {
   return result.meta.publicId;
 }
 
+function scenariosOf(pack) {
+  return Array.isArray(pack.scenarios) && pack.scenarios.length > 0 ? pack.scenarios : [pack.scenario];
+}
+
 async function seedPack(dataStore, textStore, owner, pack, imageStore) {
+  const scenarios = scenariosOf(pack);
   await saveWorld(dataStore, textStore, OFFICIAL_USER_ID, {
     id: pack.id,
     title: pack.title,
     raw: pack.worldRaw,
     moods: pack.moods,
   });
-  await saveScenario(dataStore, textStore, OFFICIAL_USER_ID, {
-    worldId: pack.id,
-    id: pack.scenario.id,
-    title: pack.scenario.title,
-    raw: pack.scenario.raw,
-    recommendedRuleset: pack.recommendedRuleset,
-    moods: pack.moods,
-  });
+  for (const scenario of scenarios) {
+    await saveScenario(dataStore, textStore, OFFICIAL_USER_ID, {
+      worldId: pack.id,
+      id: scenario.id,
+      title: scenario.title,
+      raw: scenario.raw,
+      recommendedRuleset: pack.recommendedRuleset,
+      moods: pack.moods,
+    });
+  }
   for (const kind of ['pc', 'npc']) {
     for (const c of pack[kind]) {
       await saveCharacter(dataStore, textStore, OFFICIAL_USER_ID, {
@@ -63,10 +70,17 @@ async function seedPack(dataStore, textStore, owner, pack, imageStore) {
     await publishWorld(dataStore, textStore, OFFICIAL_USER_ID, pack.id, owner, imageStore),
     `world ${pack.id}`,
   );
-  const scenarioPublicId = publicIdOf(
-    await publishScenario(dataStore, textStore, OFFICIAL_USER_ID, pack.id, pack.scenario.id, owner, imageStore),
-    `scenario ${pack.scenario.id}`
-  );
+  const publishedScenarios = [];
+  for (const scenario of scenarios) {
+    publishedScenarios.push({
+      id: scenario.id,
+      title: scenario.title,
+      publicId: publicIdOf(
+        await publishScenario(dataStore, textStore, OFFICIAL_USER_ID, pack.id, scenario.id, owner, imageStore),
+        `scenario ${scenario.id}`
+      ),
+    });
+  }
   const characterIds = {};
   for (const kind of ['pc', 'npc']) {
     characterIds[kind] = [];
@@ -87,12 +101,14 @@ async function seedPack(dataStore, textStore, owner, pack, imageStore) {
     source: pack.source,
     moods: pack.moods,
     recommendedRuleset: pack.recommendedRuleset,
-    scenarioTitle: pack.scenario.title,
+    scenarioTitle: scenarios[0].title,
+    scenarioCount: publishedScenarios.length,
     // インポート時にimportScenarioへpreferredIdとして渡す。無いとslugify(title)頼りになり
     // 日本語タイトルは'untitled'に潰れる(importWorldがpack.idを使うのと同じ理由)
-    scenarioId: pack.scenario.id,
+    scenarioId: scenarios[0].id,
     worldPublicId,
-    scenarioPublicId,
+    scenarioPublicId: publishedScenarios[0].publicId,
+    scenarios: publishedScenarios,
     pcPublicIds: characterIds.pc,
     npcPublicIds: characterIds.npc,
   };

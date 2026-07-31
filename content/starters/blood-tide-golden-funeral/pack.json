@@ -1,0 +1,17 @@
+{
+  "id": "blood-tide-golden-funeral",
+  "title": "血潮海域 — 黄金葬",
+  "tagline": "十三年に一度浮かぶ海獣の死骸。その腹に眠る王金十二箱を巡る、海賊と王国の全5話キャンペーン。",
+  "source": null,
+  "moods": ["ファンタジー", "冒険", "シリアス"],
+  "recommendedRuleset": "simple",
+  "scenarios": [
+    { "id": "blood-smells-stronger-than-gold", "title": "第1話 金の匂いは血より濃い" },
+    { "id": "grey-mercy", "title": "第2話 灰色の慈悲" },
+    { "id": "labyrinth-of-flesh", "title": "第3話 肉の迷宮" },
+    { "id": "price-of-twelve-chests", "title": "第4話 十二箱の値段" },
+    { "id": "golden-funeral", "title": "第5話 黄金葬" }
+  ],
+  "pc": ["brakka-morn", "sera-vane"],
+  "npc": ["iska-redjaw", "cyrus-bale"]
+}

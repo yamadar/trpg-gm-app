@@ -17,6 +17,20 @@ describe('loadStarterPacks', () => {
     expect(packs.map((p) => p.id)).toContain('kanemori-island');
   });
 
+  it('loads the Blood Tide campaign as five ordered scenarios with the first as the entry scenario', async () => {
+    const packs = await loadStarterPacks();
+    const pack = packs.find((p) => p.id === 'blood-tide-golden-funeral');
+    expect(pack.scenarios).toHaveLength(5);
+    expect(pack.scenario).toBe(pack.scenarios[0]);
+    expect(pack.scenarios.map((scenario) => scenario.id)).toEqual([
+      'blood-smells-stronger-than-gold',
+      'grey-mercy',
+      'labyrinth-of-flesh',
+      'price-of-twelve-chests',
+      'golden-funeral',
+    ]);
+  });
+
   it('keeps the Kanemori mystery understandable and resistant to waiting for outside police', async () => {
     const packs = await loadStarterPacks();
     const pack = packs.find((p) => p.id === 'kanemori-island');
@@ -46,7 +60,7 @@ describe('loadStarterPacks', () => {
   // 日本語名を入れると保存は通るのに以後のGETが400になるため、ここで止める。
   it('uses ASCII-safe ids for scenario and characters', async () => {
     for (const pack of await loadStarterPacks()) {
-      expect(pack.scenario.id, pack.id).toMatch(ID_RE);
+      for (const scenario of pack.scenarios) expect(scenario.id, pack.id).toMatch(ID_RE);
       for (const c of [...pack.pc, ...pack.npc]) expect(c.name, pack.id).toMatch(ID_RE);
     }
   });
@@ -56,7 +70,9 @@ describe('loadStarterPacks', () => {
       expect(pack.pc.length, pack.id).toBe(2);
       expect(pack.npc.length, pack.id).toBe(2);
       expect(pack.worldRaw.trim().length, pack.id).toBeGreaterThan(0);
-      expect(pack.scenario.raw.trim().length, pack.id).toBeGreaterThan(0);
+      for (const scenario of pack.scenarios) {
+        expect(scenario.raw.trim().length, `${pack.id}/${scenario.id}`).toBeGreaterThan(0);
+      }
       for (const c of [...pack.pc, ...pack.npc]) expect(c.raw.trim().length, `${pack.id}/${c.name}`).toBeGreaterThan(0);
     }
   });
@@ -64,8 +80,10 @@ describe('loadStarterPacks', () => {
   // サンプルは初回ユーザーが読む「お手本」でもあるので、プレイヤー可視/GM専用の分割を必須にする
   it('splits every scenario into player-visible and GM-only sections', async () => {
     for (const pack of await loadStarterPacks()) {
-      expect(pack.scenario.raw, pack.id).toContain('## シナリオ概要');
-      expect(pack.scenario.raw, pack.id).toContain('## GM専用情報');
+      for (const scenario of pack.scenarios) {
+        expect(scenario.raw, `${pack.id}/${scenario.id}`).toContain('## シナリオ概要');
+        expect(scenario.raw, `${pack.id}/${scenario.id}`).toContain('## GM専用情報');
+      }
     }
   });
 
@@ -129,7 +147,14 @@ describe('loadStarterPacks validation (malformed fixtures)', () => {
     if (overrides.world !== null) {
       await fs.writeFile(path.join(dir, 'world.md'), overrides.world ?? VALID_WORLD, 'utf-8');
     }
-    if (overrides.scenarioDoc !== null) {
+    if (Array.isArray(meta.scenarios)) {
+      await fs.mkdir(path.join(dir, 'scenarios'), { recursive: true });
+      for (const scenario of meta.scenarios) {
+        const scenarioDoc = overrides.scenarioDocs?.[scenario.id];
+        if (scenarioDoc === null) continue;
+        await fs.writeFile(path.join(dir, 'scenarios', `${scenario.id}.md`), scenarioDoc ?? VALID_SCENARIO, 'utf-8');
+      }
+    } else if (overrides.scenarioDoc !== null) {
       await fs.writeFile(path.join(dir, 'scenario.md'), overrides.scenarioDoc ?? VALID_SCENARIO, 'utf-8');
     }
 
@@ -308,6 +333,42 @@ describe('loadStarterPacks validation (malformed fixtures)', () => {
     });
     await expect(loadStarterPacks(dir)).rejects.toThrow(
       /starter pack "sample": scenario\.id is not a valid id/
+    );
+  });
+
+  it('loads a valid multi-scenario fixture in declared order', async () => {
+    const scenarios = [
+      { id: 'episode-one', title: '第一話' },
+      { id: 'episode-two', title: '第二話' },
+    ];
+    const dir = await buildInvalidRoot('sample', { meta: { scenario: undefined, scenarios } });
+    const [pack] = await loadStarterPacks(dir);
+    expect(pack.scenarios.map((scenario) => scenario.id)).toEqual(['episode-one', 'episode-two']);
+    expect(pack.scenario.id).toBe('episode-one');
+  });
+
+  it('rejects duplicate ids in a multi-scenario pack', async () => {
+    const scenarios = [
+      { id: 'episode-one', title: '第一話' },
+      { id: 'episode-one', title: '第二話' },
+    ];
+    const dir = await buildInvalidRoot('sample', { meta: { scenario: undefined, scenarios } });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenarios has a duplicate id "episode-one"/
+    );
+  });
+
+  it('rejects a multi-scenario document missing the required sections', async () => {
+    const scenarios = [
+      { id: 'episode-one', title: '第一話' },
+      { id: 'episode-two', title: '第二話' },
+    ];
+    const dir = await buildInvalidRoot('sample', {
+      meta: { scenario: undefined, scenarios },
+      scenarioDocs: { 'episode-two': '# 第二話\n\n## シナリオ概要\n\n本文だけ' },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenarios\/episode-two\.md must contain both/
     );
   });
 });

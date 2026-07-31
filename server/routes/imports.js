@@ -91,17 +91,25 @@ export function createImportsRouter({ dataStore, textStore, imageStore }) {
     }
     const worldId = world.meta.id;
 
-    // preferredId には manifest 側の scenarioId を渡す(worldと同じ理由)。
-    // scenarioId を持たない旧マニフェストも有り得るので、その場合は従来の
-    // slugify(title)フォールバックにそのまま任せる
-    const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId, {
-      preferredId: pack.scenarioId,
-      onDuplicate: 'reuse',
-      imageStore,
-    });
-    if (!scenario.ok) {
-      res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
-      return;
+    // 新マニフェストは複数話を `scenarios` に持つ。旧マニフェストは singular の
+    // scenarioId/scenarioPublicId だけなので、同じ配列形へ正規化して処理する。
+    const scenarioEntries = Array.isArray(pack.scenarios) && pack.scenarios.length > 0
+      ? pack.scenarios
+      : [{ id: pack.scenarioId, publicId: pack.scenarioPublicId }];
+    const scenarios = [];
+    for (const entry of scenarioEntries) {
+      // preferredId には manifest 側の id を渡す(worldと同じ理由)。id を持たない
+      // 旧マニフェストは従来のslugify(title)フォールバックへ任せる。
+      const result = await importScenario(dataStore, textStore, req.userId, entry.publicId, worldId, {
+        preferredId: entry.id,
+        onDuplicate: 'reuse',
+        imageStore,
+      });
+      if (!result.ok) {
+        res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
+        return;
+      }
+      scenarios.push(result.meta);
     }
 
     const imported = { pcs: [], npcs: [] };
@@ -119,7 +127,9 @@ export function createImportsRouter({ dataStore, textStore, imageStore }) {
       }
     }
 
-    res.status(201).json({ world: world.meta, scenario: scenario.meta, ...imported });
+    // `scenario` はSetupへ渡す開始話。全話は素材ライブラリへ取り込み済みで、
+    // API利用者は `scenarios` から続話も確認できる。
+    res.status(201).json({ world: world.meta, scenario: scenarios[0], scenarios, ...imported });
   }));
 
   return router;

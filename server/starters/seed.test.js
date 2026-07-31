@@ -31,6 +31,16 @@ const PACKS = [
   },
 ];
 
+const MULTI_PACK = {
+  ...PACKS[0],
+  id: 'campaign-pack',
+  scenarios: [
+    { id: 'episode-one', title: '第一話', raw: '## シナリオ概要\n第一話\n## GM専用情報\n秘密1' },
+    { id: 'episode-two', title: '第二話', raw: '## シナリオ概要\n第二話\n## GM専用情報\n秘密2' },
+  ],
+  scenario: undefined,
+};
+
 let dir;
 let dataStore;
 let textStore;
@@ -75,6 +85,7 @@ describe('seedStarters', () => {
       // pack.jsonが宣言したscenario.idをそのままマニフェストに残す。無いと
       // 取り込み側がslugify(title)頼りになり、日本語タイトルは'untitled'に潰れる
       scenarioId: 'test-scenario',
+      scenarioCount: 1,
     });
     expect(entry.worldPublicId).toMatch(/^pub_/);
     expect(entry.scenarioPublicId).toMatch(/^pub_/);
@@ -108,5 +119,24 @@ describe('seedStarters', () => {
     await seedStarters(dataStore, textStore, { packs: edited });
     const pub = await getPublicWorld(dataStore, textStore, first.packs[0].worldPublicId);
     expect(pub.raw).toBe('# 書き直した本文');
+  });
+
+  it('publishes every scenario in a campaign pack and keeps the first as the entry scenario', async () => {
+    const manifest = await seedStarters(dataStore, textStore, { packs: [MULTI_PACK] });
+    const [entry] = manifest.packs;
+
+    expect(entry).toMatchObject({
+      scenarioTitle: '第一話',
+      scenarioId: 'episode-one',
+      scenarioCount: 2,
+    });
+    expect(entry.scenarios.map((scenario) => ({ id: scenario.id, title: scenario.title }))).toEqual([
+      { id: 'episode-one', title: '第一話' },
+      { id: 'episode-two', title: '第二話' },
+    ]);
+    expect(entry.scenarioPublicId).toBe(entry.scenarios[0].publicId);
+
+    const second = await getPublicItem(dataStore, textStore, 'scenarios', entry.scenarios[1].publicId);
+    expect(second).toMatchObject({ title: '第二話', raw: expect.stringContaining('第二話') });
   });
 });

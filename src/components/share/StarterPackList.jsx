@@ -95,7 +95,9 @@ export default function StarterPackList({ onImported }) {
             {(pack.moods ?? []).map((m, i) => (
               <Badge key={`${m}-${i}`}>{m}</Badge>
             ))}
-            <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>{pack.scenarioTitle}</span>
+            <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
+              {pack.scenarioCount > 1 ? `全${pack.scenarioCount}話 / ${pack.scenarioTitle}` : pack.scenarioTitle}
+            </span>
           </div>
 
           {pack.source && (

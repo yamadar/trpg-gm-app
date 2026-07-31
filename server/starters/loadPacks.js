@@ -47,6 +47,47 @@ async function loadCharacters(packId, dir, kind, names) {
   return out;
 }
 
+function validateScenarioMeta(packId, scenario, field) {
+  if (!scenario || !isValidId(scenario.id)) fail(packId, `${field}.id is not a valid id`);
+  requireNonEmptyString(packId, scenario.title, `${field}.title`);
+}
+
+async function loadScenarios(packId, dir, meta) {
+  // 既存パックの singular `scenario` はそのまま受け付ける。キャンペーンパックだけ
+  // `scenarios` を使い、各本文を scenarios/{id}.md に分ける。
+  if (meta.scenarios === undefined) {
+    validateScenarioMeta(packId, meta.scenario, 'scenario');
+    const raw = await readDoc(packId, path.join(dir, 'scenario.md'));
+    if (!raw.includes('## シナリオ概要') || !raw.includes('## GM専用情報')) {
+      fail(packId, 'scenario.md must contain both "## シナリオ概要" and "## GM専用情報"');
+    }
+    return [{ id: meta.scenario.id, title: meta.scenario.title, raw }];
+  }
+
+  if (meta.scenario !== undefined) fail(packId, 'declare either scenario or scenarios, not both');
+  if (!Array.isArray(meta.scenarios) || meta.scenarios.length < 2) {
+    fail(packId, 'scenarios must list at least 2 scenarios');
+  }
+
+  const seen = new Set();
+  const scenarios = [];
+  for (let i = 0; i < meta.scenarios.length; i += 1) {
+    const scenario = meta.scenarios[i];
+    const field = `scenarios[${i}]`;
+    validateScenarioMeta(packId, scenario, field);
+    if (seen.has(scenario.id)) fail(packId, `scenarios has a duplicate id "${scenario.id}"`);
+    seen.add(scenario.id);
+
+    const file = path.join(dir, 'scenarios', `${scenario.id}.md`);
+    const raw = await readDoc(packId, file);
+    if (!raw.includes('## シナリオ概要') || !raw.includes('## GM専用情報')) {
+      fail(packId, `scenarios/${scenario.id}.md must contain both "## シナリオ概要" and "## GM専用情報"`);
+    }
+    scenarios.push({ id: scenario.id, title: scenario.title, raw });
+  }
+  return scenarios;
+}
+
 async function loadPack(rootDir, packId) {
   const dir = path.join(rootDir, packId);
   const metaRaw = await fs.readFile(path.join(dir, 'pack.json'), 'utf-8').catch(() => null);
@@ -72,14 +113,8 @@ async function loadPack(rootDir, packId) {
   if (!Array.isArray(meta.moods) || meta.moods.length === 0) fail(packId, 'moods must be a non-empty array');
   for (const m of meta.moods) if (!MOODS.includes(m)) fail(packId, `unknown mood "${m}"`);
   if (!RULESET_IDS.has(meta.recommendedRuleset)) fail(packId, `unknown recommendedRuleset "${meta.recommendedRuleset}"`);
-  if (!meta.scenario || !isValidId(meta.scenario.id)) fail(packId, 'scenario.id is not a valid id');
-  requireNonEmptyString(packId, meta.scenario.title, 'scenario.title');
-
   const worldRaw = await readDoc(packId, path.join(dir, 'world.md'));
-  const scenarioRaw = await readDoc(packId, path.join(dir, 'scenario.md'));
-  if (!scenarioRaw.includes('## シナリオ概要') || !scenarioRaw.includes('## GM専用情報')) {
-    fail(packId, 'scenario.md must contain both "## シナリオ概要" and "## GM専用情報"');
-  }
+  const scenarios = await loadScenarios(packId, dir, meta);
 
   return {
     id: packId,
@@ -89,7 +124,10 @@ async function loadPack(rootDir, packId) {
     moods: meta.moods,
     recommendedRuleset: meta.recommendedRuleset,
     worldRaw,
-    scenario: { id: meta.scenario.id, title: meta.scenario.title, raw: scenarioRaw },
+    // `scenario` は開始シナリオを指す互換エイリアス。既存シード処理や呼び出し元を
+    // 壊さず、複数話対応側は `scenarios` を使える。
+    scenario: scenarios[0],
+    scenarios,
     pc: await loadCharacters(packId, dir, 'pc', meta.pc),
     npc: await loadCharacters(packId, dir, 'npc', meta.npc),
   };
