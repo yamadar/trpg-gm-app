@@ -32,7 +32,7 @@
 5. Game Engineがstate_updateを検証・確定・保存(IndexedDB。加えてサーバーへも自動同期。04章参照)
 6. UIにnarrative・choices反映
 
-**選択肢のネタバレ防止**: `choices`はPCがその時点で知覚・把握している材料(同ターンのnarrativeで実際に描写した内容、`recent_log`、`history_summary`、既知フラグ、PC設定、`explained_terms`)だけで組み立てるよう指示している。そのどこにも出ていない人物・場所・物・出来事・事実を選択肢で初出させない、まだ確かめていない結果や隠された真相・PCが抱いていない推理を先取りしない、というのが要点。情報開示はnarrative側の役割で、開示したい手掛かりは先にnarrativeでPCが見聞きする形にしてから選択肢にする(同ターン内でよい)。指示は`src/api/prompts.js`の「選択肢の作り方」節・`choices`スキーマのdescription・`buildTurnUserContent`の毎ターン注意書きの3箇所に置いている。
+**選択肢のネタバレ防止**: `choices`はPCがその時点で知覚・把握している材料(同ターンのnarrativeで実際に描写した内容、`recent_log`、`history_summary`、既知フラグ、PC設定、`explained_terms`)だけで組み立てるよう指示している。そのどこにも出ていない人物・場所・物・出来事・事実を選択肢で初出させない、まだ確かめていない結果や隠された真相・PCが抱いていない推理を先取りしない、というのが要点。情報開示はnarrative側の役割で、開示したい手掛かりは先にnarrativeでPCが見聞きする形にしてから選択肢にする(同ターン内でよい)。指示は`src/api/prompts.js`の「選択肢の作り方」節・`choices`スキーマのdescription・`buildTurnUserContent`の毎ターン注意書きの3箇所に置いている。開示をnarrativeへ寄せる分、narrativeの150〜250字を圧迫するため、同節で紙幅の配分も指定している(新要素は1ターン1〜2個まで、優先順位は「行動の結果 > 新要素の導入 > 情景の装飾」、収まらない手掛かりは出さず次ターンへ回す)。字数指示自体はソフトな目安で、切り詰めや検証は行っていない(ハード上限は`src/api/session.js`の`max_tokens`のみ)。
 
 **履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。初出説明の判定は短期ログだけに頼らず、セッション全体で保持する`explained_terms`を使う。
 

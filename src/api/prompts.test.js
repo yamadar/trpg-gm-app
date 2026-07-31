@@ -320,6 +320,16 @@ describe('選択肢のネタバレ防止', () => {
     expect(text).toContain('PCがまだ知らない事実・固有名詞を含めないこと');
   });
 
+  it('budgets the 150-250 char narrative so new elements do not overflow it', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('1ターンで新しく導入する要素は原則1つ、多くても2つに絞る');
+    expect(text).toContain(
+      '紙幅の優先順位は「プレイヤーの行動の結果 > 次の判断材料となる新要素の導入 > 情景の装飾」'
+    );
+    expect(text).toContain('その手掛かりは今ターン出さず、既知の材料だけで選択肢を作って次のターンで開示する');
+    expect(text).toContain('字数を超えてまで詰め込まないこと');
+  });
+
   it('states the grounding rule in the choices schema description', () => {
     expect(TURN_OUTPUT_FORMAT.schema.properties.choices.description).toContain(
       '新事実・固有名詞を選択肢で初出させない'
