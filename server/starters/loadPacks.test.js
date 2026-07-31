@@ -14,6 +14,16 @@ describe('loadStarterPacks', () => {
     const packs = await loadStarterPacks();
     expect(packs.length).toBeGreaterThan(0);
     expect(packs.map((p) => p.id)).toContain('arkham-1920s');
+    expect(packs.map((p) => p.id)).toContain('kanemori-island');
+  });
+
+  it('keeps the Kanemori mystery understandable and resistant to waiting for outside police', async () => {
+    const packs = await loadStarterPacks();
+    const pack = packs.find((p) => p.id === 'kanemori-island');
+    expect(pack.scenario.raw).toContain('カセット');
+    expect(pack.scenario.raw).not.toContain('蝋管');
+    expect(pack.scenario.raw).toContain('午前四時十三分');
+    expect(pack.scenario.raw).toContain('外部警察が通信越しに推理や犯人特定を行ってはならない');
   });
 
   it('gives each pack a title, tagline and a nullable source', async () => {

@@ -1,0 +1,11 @@
+{
+  "id": "kanemori-island",
+  "title": "鐘守島 — 昭和五十年代",
+  "tagline": "午前零時、元判事の告白が館内放送に響く。その直後、内側から封鎖された時計室で死体が見つかる。",
+  "source": null,
+  "moods": ["ミステリー", "シリアス"],
+  "recommendedRuleset": "simple",
+  "scenario": { "id": "thirteen-minute-locked-room", "title": "十三分後に閉じる部屋" },
+  "pc": ["reiji-kirishima", "rei-aiba"],
+  "npc": ["ritsu-takamine", "ryogo-kanzaki"]
+}
