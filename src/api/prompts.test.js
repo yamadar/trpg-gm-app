@@ -267,7 +267,10 @@ describe('初出用語の説明', () => {
   it('instructs the GM to explain uncommon setting terms on first appearance without leaking secrets', () => {
     const text = staticText(makeSession());
     expect(text).toContain('プレイヤー向け出力(narrative・choices・current_scene)へ初めて出す際');
-    expect(text).toContain('current_sceneへ新しい固有地名を設定する場合もnarrative内で説明する');
+    expect(text).toContain('同じターンのnarrative内へ自然に添える');
+    expect(text).toContain(
+      'choicesやcurrent_sceneへ新しい用語・固有地名を出す場合も、必ず同じターンのnarrativeで先に登場させて説明する'
+    );
     expect(text).toContain('エーテル大水路');
     expect(text).toContain('説明済み用語は繰り返し説明しない');
     expect(text).toContain('初出説明では未開示の秘密を明かさず');
@@ -291,6 +294,44 @@ describe('初出用語の説明', () => {
 
   it('marks the explained-term context empty for legacy sessions', () => {
     expect(buildTurnUserContent(makeSession(), '先へ進む')).toContain('説明済み用語: (なし)');
+  });
+});
+
+describe('選択肢のネタバレ防止', () => {
+  it('restricts choices to what the PC already perceives', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('# 選択肢の作り方(未知の事実を先出ししない)');
+    expect(text).toContain('PCがその時点で知覚・把握している情報だけで組み立てる');
+    expect(text).toContain('選択肢で初めて登場させないこと');
+    expect(text).toContain('特定の人物・物を名指しして問い詰める');
+  });
+
+  it('routes new information through the narrative before it can appear in a choice', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('物語を進めるための情報開示はnarrativeで行う');
+    expect(text).toContain('narrativeで描写したものは同じターンの選択肢で使ってよい');
+    expect(text).toContain('narrativeで描写してから次のターン以降の選択肢にする');
+  });
+
+  it('forbids choices that pre-empt unrevealed outcomes or deductions', () => {
+    const text = staticText(makeSession());
+    expect(text).toContain('PCの意図・行動の宣言として書き');
+    expect(text).toContain('PCがまだ抱いていない推理を先取りして書かない');
+    expect(text).toContain('PCがまだ知らない事実・固有名詞を含めないこと');
+  });
+
+  it('states the grounding rule in the choices schema description', () => {
+    expect(TURN_OUTPUT_FORMAT.schema.properties.choices.description).toContain(
+      '新事実・固有名詞を選択肢で初出させない'
+    );
+  });
+
+  it('reminds the GM per turn to ground choices in the supplied context', () => {
+    const content = buildTurnUserContent(makeSession(), '波止場を調べる');
+    expect(content).toContain(
+      'choicesは、上記の直近ログ・物語要約・既知フラグ・説明済み用語と、このターンのnarrativeで実際に描写した内容だけを材料に書くこと'
+    );
+    expect(content).toContain('選択肢で初出させない');
   });
 });
 

@@ -28,9 +28,11 @@
      "choices": ["選択肢1", "選択肢2", "選択肢3"]
    }
    ```
-   `flags`は構造化出力制約に合わせた`{key, value}`配列で受け取り、Game Engineがstate保存前にオブジェクトへ変換する。`xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。`newly_explained_terms`はこのターンで初出説明した一般的でない用語・地名だけを返し、`state.explained_terms`へ重複なく蓄積する。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
+   `flags`は構造化出力制約に合わせた`{key, value}`配列で受け取り、Game Engineがstate保存前にオブジェクトへ変換する。`xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。`newly_explained_terms`はこのターンで初出説明した一般的でない用語・地名だけを返し、`state.explained_terms`へ重複なく蓄積する。初出説明はnarrative内で行う(choices・current_sceneへ新語を出す場合も、同ターンのnarrativeで先に登場させて説明させる)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
 5. Game Engineがstate_updateを検証・確定・保存(IndexedDB。加えてサーバーへも自動同期。04章参照)
 6. UIにnarrative・choices反映
+
+**選択肢のネタバレ防止**: `choices`はPCがその時点で知覚・把握している材料(同ターンのnarrativeで実際に描写した内容、`recent_log`、`history_summary`、既知フラグ、PC設定、`explained_terms`)だけで組み立てるよう指示している。そのどこにも出ていない人物・場所・物・出来事・事実を選択肢で初出させない、まだ確かめていない結果や隠された真相・PCが抱いていない推理を先取りしない、というのが要点。情報開示はnarrative側の役割で、開示したい手掛かりは先にnarrativeでPCが見聞きする形にしてから選択肢にする(同ターン内でよい)。指示は`src/api/prompts.js`の「選択肢の作り方」節・`choices`スキーマのdescription・`buildTurnUserContent`の毎ターン注意書きの3箇所に置いている。
 
 **履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。初出説明の判定は短期ログだけに頼らず、セッション全体で保持する`explained_terms`を使う。
 
