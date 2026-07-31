@@ -4,12 +4,25 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './dataStore.js';
-import { saveCampaign, getCampaign, listCampaigns, deleteCampaign } from './campaignLibrary.js';
+import { createFsTextStore } from './textStore.js';
+import {
+  saveCampaign,
+  getCampaign,
+  listCampaigns,
+  deleteCampaign,
+  saveCampaignSource,
+  getCampaignSource,
+  saveCampaignDraft,
+  getCampaignDraft,
+  saveCampaignPitches,
+  getCampaignPitches,
+} from './campaignLibrary.js';
 
-let dir, dataStore;
+let dir, dataStore, textStore;
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'campaign-test-'));
   dataStore = createFsDataStore(dir);
+  textStore = createFsTextStore(dir);
 });
 afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
@@ -38,10 +51,22 @@ describe('campaignLibrary', () => {
     expect(second.title).toBe('B');
   });
   it('lists campaigns for a world', async () => {
-    await saveCampaign(dataStore, 'u', { id: 'cp1', worldId: 'w1', title: 'A', carriedPc: { raw: 'x', xp: 0 }, chapters: [] });
+    await saveCampaign(dataStore, 'u', {
+      id: 'cp1',
+      worldId: 'w1',
+      title: 'A',
+      carriedPc: { raw: 'x', xp: 0 },
+      chapters: [{ sessionId: 's1', outcome: { summary: '秘密の結末' } }],
+      currentState: { canonFacts: [{ id: 'fact', title: '秘密' }] },
+      directorGuide: { premise: '非公開' },
+    });
     await saveCampaign(dataStore, 'u', { id: 'cp2', worldId: 'w1', title: 'B', carriedPc: { raw: 'y', xp: 0 }, chapters: [] });
     const list = await listCampaigns(dataStore, 'u', 'w1');
     expect(list.map((c) => c.id).sort()).toEqual(['cp1', 'cp2']);
+    const first = list.find((campaign) => campaign.id === 'cp1');
+    expect(first).not.toHaveProperty('currentState');
+    expect(first).not.toHaveProperty('directorGuide');
+    expect(first.chapters[0]).not.toHaveProperty('outcome');
   });
   it('returns null for a missing campaign', async () => {
     expect(await getCampaign(dataStore, 'u', 'w1', 'nope')).toBeNull();
@@ -53,5 +78,34 @@ describe('campaignLibrary', () => {
   });
   it('does not throw when deleting a missing campaign', async () => {
     await expect(deleteCampaign(dataStore, 'u', 'w1', 'nope')).resolves.toBeUndefined();
+  });
+
+  it('stores source documents, reconciliation drafts, and next pitches separately', async () => {
+    await saveCampaignSource(textStore, 'u', 'w1', 'cp1', 'bible', '# 固定事項');
+    await saveCampaignDraft(dataStore, 'u', 'w1', 'cp1', 's1', { status: 'ready' });
+    await saveCampaignPitches(dataStore, 'u', 'w1', 'cp1', { basedOnCanonRevision: 2, pitches: [] });
+
+    expect(await getCampaignSource(textStore, 'u', 'w1', 'cp1', 'bible')).toBe('# 固定事項');
+    expect(await getCampaignDraft(dataStore, 'u', 'w1', 'cp1', 's1')).toEqual({ status: 'ready' });
+    expect(await getCampaignPitches(dataStore, 'u', 'w1', 'cp1')).toEqual({
+      basedOnCanonRevision: 2,
+      pitches: [],
+    });
+  });
+
+  it('deletes source documents, drafts, and pitches with the campaign', async () => {
+    await saveCampaign(dataStore, 'u', {
+      id: 'cp1', worldId: 'w1', title: 'A', carriedPc: { raw: 'x', xp: 0 }, chapters: [],
+    });
+    await saveCampaignSource(textStore, 'u', 'w1', 'cp1', 'cast', '# 人物');
+    await saveCampaignDraft(dataStore, 'u', 'w1', 'cp1', 's1', { status: 'ready' });
+    await saveCampaignPitches(dataStore, 'u', 'w1', 'cp1', { pitches: [{ id: 'p1' }] });
+
+    await deleteCampaign(dataStore, textStore, 'u', 'w1', 'cp1');
+
+    expect(await getCampaign(dataStore, 'u', 'w1', 'cp1')).toBeNull();
+    expect(await getCampaignSource(textStore, 'u', 'w1', 'cp1', 'cast')).toBe('');
+    expect(await getCampaignDraft(dataStore, 'u', 'w1', 'cp1', 's1')).toBeNull();
+    expect(await getCampaignPitches(dataStore, 'u', 'w1', 'cp1')).toBeNull();
   });
 });

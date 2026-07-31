@@ -25,15 +25,29 @@ describe('getScenario', () => {
 });
 
 describe('putScenario', () => {
-  it('PUTs title, raw, and recommendedRuleset', async () => {
+  it('PUTs title, raw, ruleset, and Campaign generation provenance', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'sc1' }) });
     vi.stubGlobal('fetch', fetchMock);
-    await putScenario('w1', 'sc1', { title: '失踪事件', raw: '## シナリオ概要', recommendedRuleset: 'coc7e' });
+    await putScenario('w1', 'sc1', {
+      title: '失踪事件',
+      raw: '## シナリオ概要',
+      recommendedRuleset: 'coc7e',
+      sourceCampaignId: 'cp1',
+      sourceCampaignRevision: 3,
+      generatedFromPitchId: 'p1',
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/worlds/w1/scenarios/sc1',
       expect.objectContaining({
         method: 'PUT',
-        body: JSON.stringify({ title: '失踪事件', raw: '## シナリオ概要', recommendedRuleset: 'coc7e' }),
+        body: JSON.stringify({
+          title: '失踪事件',
+          raw: '## シナリオ概要',
+          recommendedRuleset: 'coc7e',
+          sourceCampaignId: 'cp1',
+          sourceCampaignRevision: 3,
+          generatedFromPitchId: 'p1',
+        }),
       })
     );
   });

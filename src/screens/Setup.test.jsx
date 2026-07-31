@@ -309,7 +309,7 @@ describe('Setup', () => {
     fireEvent.change(screen.getByPlaceholderText('World名'), { target: { value: 'Test World' } });
     fireEvent.change(screen.getByPlaceholderText(/世界観の資料を貼る/), { target: { value: '世界観の原文' } });
 
-    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // World -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
     fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
@@ -339,7 +339,7 @@ describe('Setup', () => {
     fireEvent.change(screen.getByPlaceholderText('World名'), { target: { value: 'テスト世界' } });
     fireEvent.change(screen.getByPlaceholderText(/世界観の資料を貼る/), { target: { value: '世界観の原文' } });
 
-    fireEvent.click(screen.getByText('次へ')); // -> Scenario
+    fireEvent.click(screen.getByText('次へ')); // World -> Scenario
     fireEvent.click(screen.getByText('次へ')); // -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
     fireEvent.change(screen.getByPlaceholderText('例: カイ・アーレンス'), { target: { value: 'テスト太郎' } });
@@ -700,8 +700,7 @@ describe('Setup', () => {
         }}
       />
     );
-    fireEvent.click(screen.getByText('次へ')); // -> Scenario
-    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // Scenario -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
 
     expect(screen.getByPlaceholderText('例: カイ・アーレンス')).toHaveValue('カイ(熟練)');
@@ -904,8 +903,7 @@ describe('Setup', () => {
     };
     render(<Setup onStart={onStart} campaignContext={campaignContext} />);
     // シナリオ→ルール→PC→確認→開始(Worldは前埋め済み)
-    fireEvent.click(screen.getByText('次へ')); // -> Scenario
-    fireEvent.click(screen.getByText('次へ')); // -> Ruleset
+    fireEvent.click(screen.getByText('次へ')); // Scenario -> Ruleset
     fireEvent.click(screen.getByText('次へ')); // -> PC
     fireEvent.click(screen.getByText('次へ')); // -> 確認
     fireEvent.click(screen.getByText('ゲーム開始'));
@@ -915,6 +913,46 @@ describe('Setup', () => {
     expect(session.campaignId).toBe('cp1');
     expect(session.state.xp).toBe(12);
     expect(session.pc.raw).toContain('PC名: カイ(熟練)');
+  });
+
+  it('生成済みCampaign Scenarioを渡すと確認画面から開始し、Scenario id/titleをセッションへ残す', async () => {
+    vi.spyOn(scenarioLibraryClient, 'listScenarios').mockResolvedValue([]);
+    const onStart = vi.fn();
+    render(
+      <Setup
+        onStart={onStart}
+        campaignContext={{
+          worldId: 'w1',
+          world: { raw: 'World原文', summary: 'World要約' },
+          pcRaw: 'PC名: カイ',
+          xp: 14,
+          rulesetId: 'simple',
+          campaignId: 'cp1',
+          scenario: {
+            id: 'gray-envoy',
+            title: '灰の密使',
+            raw: '## シナリオ概要\n密使を救う。',
+            recommendedRuleset: 'simple',
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('確認')).toHaveAttribute('aria-current', 'step');
+    expect(screen.getByPlaceholderText('任意(未入力なら日付から自動生成)')).toHaveValue('灰の密使');
+    fireEvent.click(screen.getByText('ゲーム開始'));
+
+    await waitFor(() => expect(onStart).toHaveBeenCalled());
+    expect(onStart.mock.calls[0][0]).toMatchObject({
+      title: '灰の密使',
+      campaignId: 'cp1',
+      scenario: {
+        id: 'gray-envoy',
+        title: '灰の密使',
+        raw: '## シナリオ概要\n密使を救う。',
+      },
+      state: { xp: 14 },
+    });
   });
 
   it('surfaces a fatal error and does not start the session when scenario generation fails', async () => {

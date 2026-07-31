@@ -400,12 +400,8 @@ describe('App', () => {
     expect(await screen.findByText('世界観を指定しない。AIが自由に構築する。')).toBeInTheDocument();
   });
 
-  it('does not carry a previously imported starter pack into a later 次の章へ wizard', async () => {
-    // ウィザードの入口はそれぞれ「自分が使う文脈」を確定させなければならない。
-    // スターター取り込み後にウィザードを離れ、別セッションの「次の章へ」から入り直すと、
-    // starterContext と campaignContext が同居してしまう。同居するとウィザードは
-    // starterContext を見てPCステップから開き、シナリオはスターターのものが選ばれたまま、
-    // ユーザーはシナリオステップを一度も通らずに無関係なシナリオで遊ぶことになる。
+  it('routes a later 次話作成 into the Campaign workspace instead of the old starter wizard', async () => {
+    // スターター取り込み文脈が残っていても、次話作成は章精算用Campaign画面へ入る。
     vi.stubGlobal(
       'fetch',
       vi.fn((url) => {
@@ -430,7 +426,6 @@ describe('App', () => {
       },
     ]);
     vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
-    vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '成長版シート', xp: 7 });
     vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(null);
     vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({});
     vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]);
@@ -479,21 +474,12 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: '破棄して離れる' }));
     await findHome();
 
-    // 別セッションの「次の章へ」からウィザードへ入り直す。
-    fireEvent.click(await screen.findByText('次の章へ'));
-    await waitFor(() => expect(window.location.hash).toBe('#/setup'));
-
-    // キャンペーンの続きは世界観ステップ(0段目)から始まる。PCステップから開くのは
-    // starterContext が残っている証拠で、その場合シナリオはスターターのものになる。
-    expect(await screen.findByText('Worldの用意方法')).toBeInTheDocument();
+    // 別セッションの「次話を作る」は旧Setupへ直行せず、章精算を行うCampaign制作画面へ入る。
+    fireEvent.click(await screen.findByText('次話を作る'));
+    await waitFor(() => expect(window.location.hash).toBe('#/library/campaign/w1'));
+    expect(await screen.findByText('Campaign一覧')).toBeInTheDocument();
     expect(screen.queryByText('PCの用意方法')).not.toBeInTheDocument();
     expect(screen.queryByText('丘の上の写真館')).not.toBeInTheDocument();
-
-    // ここまでの3つは「両方の文脈が空の素のウィザード」でも成立してしまうので、
-    // campaignContext まで巻き添えで消していないことを別に確かめる。
-    // campaignContext があれば worldMode は 'existing' で開き、無ければ 'skip' になる。
-    expect(screen.getByText('既存Worldを選ぶ')).toBeInTheDocument();
-    expect(screen.queryByText('世界観を指定しない。AIが自由に構築する。')).not.toBeInTheDocument();
   });
 
   it('clears the session-not-found banner once another route is opened', async () => {

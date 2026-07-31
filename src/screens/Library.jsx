@@ -17,7 +17,7 @@ import TabStrip from '../components/nav/TabStrip.jsx';
 // 描画するため、ここでピッカーを重ねると同じ選択肢が二重に表示されてしまう。
 const WORLD_PICKER_TABS = WORLD_SCOPED_LIBRARY_TABS.filter((t) => t !== 'world');
 
-export default function Library({ route }) {
+export default function Library({ route, campaignFocus = null, onStartCampaignChapter }) {
   const { user, loading: authLoading } = useAuth();
   const tab = route.libraryTab;
   const selectedWorldId = route.worldId;
@@ -113,7 +113,14 @@ export default function Library({ route }) {
           )}
           {tab === 'character' && <CharacterTab worldId={selectedWorldId} />}
           {tab === 'scenario' && <ScenarioTab worldId={selectedWorldId} />}
-          {tab === 'campaign' && <CampaignTab worldId={selectedWorldId} />}
+          {tab === 'campaign' && (
+            <CampaignTab
+              worldId={selectedWorldId}
+              focusCampaignId={campaignFocus?.worldId === selectedWorldId ? campaignFocus.campaignId : null}
+              focusSessionId={campaignFocus?.worldId === selectedWorldId ? campaignFocus.sessionId : null}
+              onStartChapter={onStartCampaignChapter}
+            />
+          )}
           {tab === 'ruleset' && <RulesetTab />}
         </>
       )}

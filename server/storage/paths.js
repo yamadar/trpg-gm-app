@@ -110,6 +110,18 @@ export function campaignListPrefix(userId, worldId) {
   return `users/${userId}/worlds/${worldId}/campaigns`;
 }
 
+export function campaignSourceDocPath(userId, worldId, campaignId, kind) {
+  return `users/${userId}/worlds/${worldId}/campaigns/${campaignId}/${kind}.md`;
+}
+
+export function campaignDraftKey(userId, worldId, campaignId, sessionId) {
+  return `users/${userId}/worlds/${worldId}/campaigns/${campaignId}/drafts/${sessionId}`;
+}
+
+export function campaignPitchesKey(userId, worldId, campaignId) {
+  return `users/${userId}/worlds/${worldId}/campaigns/${campaignId}/nextPitches`;
+}
+
 export function rulesetListPrefix(userId) {
   return `users/${userId}/rulesets`;
 }

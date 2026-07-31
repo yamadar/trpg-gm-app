@@ -15,7 +15,6 @@ import {
   markNovelSeen,
 } from '../api/sessionSyncClient.js';
 import { publishNovel, unpublishNovel, publishedNovels } from '../api/shareClient.js';
-import { advanceCampaignPc } from '../api/session.js';
 import { getCampaign, putCampaign, listCampaigns } from '../api/campaignClient.js';
 import { listEndings, recordEnding } from '../api/endingClient.js';
 import { saveSession } from '../storage/index.js';
@@ -82,7 +81,15 @@ export function collectUnreadIds(jobs, announced, knownIds) {
     .map(([id]) => id);
 }
 
-export default function Home({ sessions, storageOk, onNew, onContinue, onNextChapter, onStartStarter }) {
+export default function Home({
+  sessions,
+  storageOk,
+  onNew,
+  onNewCampaign,
+  onContinue,
+  onNextChapter,
+  onStartStarter,
+}) {
   const { user } = useAuth();
   const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated, unread }
   // ポーリングが失敗した際、直前まで実行中のジョブがあったかどうかを再試行判定に使う。
@@ -404,24 +411,44 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
     setAdvancing((prev) => ({ ...prev, [session.id]: true }));
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
     try {
-      const { pcRaw, xp } = await advanceCampaignPc(session);
       let campaignId = session.campaignId;
       let campaign = campaignId ? await getCampaign(session.worldId, campaignId).catch(() => null) : null;
-      const chapter = { sessionId: session.id, title: session.title, endedAt: Date.now() };
+      const chapter = {
+        chapterId: `chapter_${session.id}`,
+        sessionId: session.id,
+        scenarioId: session.scenario?.id,
+        title: session.title,
+        status: 'ended',
+        endedAt: session.endedAt || Date.now(),
+      };
       if (campaign) {
+        const chapters = [...(campaign.chapters || [])];
+        const index = chapters.findIndex((item) => item.sessionId === session.id);
+        if (index === -1) chapters.push(chapter);
+        else chapters[index] = { ...chapter, ...chapters[index] };
         campaign = {
           ...campaign,
-          carriedPc: { raw: pcRaw, xp },
-          chapters: [...(campaign.chapters || []), chapter],
+          chapters,
+          rulesetId: session.rulesetId || campaign.rulesetId,
         };
       } else {
         campaignId = makeId('cp');
-        campaign = { id: campaignId, worldId: session.worldId, title: session.title, carriedPc: { raw: pcRaw, xp }, chapters: [chapter] };
+        campaign = {
+          id: campaignId,
+          worldId: session.worldId,
+          title: session.title,
+          carriedPc: { raw: session.pc?.raw || '', xp: session.state?.xp || 0 },
+          chapters: [chapter],
+          rulesetId: session.rulesetId || 'simple',
+        };
       }
       await putCampaign(session.worldId, campaignId, {
         title: campaign.title,
         carriedPc: campaign.carriedPc,
         chapters: campaign.chapters,
+        currentState: campaign.currentState,
+        canonRevision: campaign.canonRevision,
+        rulesetId: campaign.rulesetId,
       });
       // 次章へ進む＝この章は終わり。キャンペーン側のchapters[].endedAtと足並みを揃える。
       const ended = {
@@ -431,15 +458,11 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
         updatedAt: Date.now(),
       };
       await saveSession(ended);
-      putSessionToServer(ended).catch((err) => console.error('session server sync failed', err));
+      await putSessionToServer(ended);
       onNextChapter?.({
         worldId: session.worldId,
-        world: session.world,
-        moods: session.moods || [],
-        pcRaw,
-        xp,
-        rulesetId: session.rulesetId,
         campaignId,
+        sessionId: session.id,
       });
     } catch (err) {
       setNovelizeError((prev) => ({ ...prev, [session.id]: '次章の準備に失敗した: ' + err.message }));
@@ -630,7 +653,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
               disabled={!!advancing[s.id] || !user}
               style={ACTION_BTN}
             >
-              {advancing[s.id] ? '準備中…' : '次の章へ'}
+              {advancing[s.id] ? '準備中…' : '次話を作る'}
             </Button>
           )}
           {s.endedAt && endingsLoaded && !ending && (
@@ -766,6 +789,9 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
       <div style={{ display: 'flex', gap: 10, marginBottom: user ? 32 : 8 }}>
         <Button variant="brass" onClick={onNew} disabled={!user}>
           + 新規プレイ
+        </Button>
+        <Button variant="ghost" onClick={onNewCampaign} disabled={!user || !onNewCampaign}>
+          + 新規キャンペーン
         </Button>
       </div>
 

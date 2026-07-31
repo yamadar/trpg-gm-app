@@ -150,6 +150,24 @@ describe('scenarios routes', () => {
     expect(res.body.recommendedRuleset).toBe('coc7e');
   });
 
+  it('saves Campaign generation provenance on a generated scenario', async () => {
+    const put = await request(app)
+      .put('/api/worlds/w1/scenarios/sc1')
+      .send({
+        title: '灰の密使',
+        raw: '# 本文',
+        sourceCampaignId: 'cp1',
+        sourceCampaignRevision: 3,
+        generatedFromPitchId: 'pitch_1',
+      });
+    expect(put.status).toBe(200);
+    expect(put.body).toMatchObject({
+      sourceCampaignId: 'cp1',
+      sourceCampaignRevision: 3,
+      generatedFromPitchId: 'pitch_1',
+    });
+  });
+
   it('rejects unknown moods on PUT with 400 and accepts valid ones', async () => {
     const bad = await request(app)
       .put('/api/worlds/w1/scenarios/sc1')

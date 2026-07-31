@@ -25,7 +25,9 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   // starterContext はスターターパックを一括インポートした直後の状態。World/Scenario/Ruleset を
   // 選択済みにして PC 選択(step 3)から開く。PCまで自動選択しないのは、どちらを演じるかが
   // 初回ユーザーの最初の選択であり、「PCはWorldに属していて選ぶもの」を最短で伝えるため。
-  const [step, setStep] = useState(starterContext ? 3 : 0);
+  const [step, setStep] = useState(
+    starterContext ? 3 : campaignContext?.scenario ? 4 : campaignContext ? 1 : 0,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [libraryWarning, setLibraryWarning] = useState('');
@@ -47,13 +49,15 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   ); // { id, title, raw } | null
 
   // Scenario
-  const [scenarioMode, setScenarioMode] = useState(starterContext ? 'existing' : 'paste'); // existing | paste | generate
+  const [scenarioMode, setScenarioMode] = useState(campaignContext?.scenario || starterContext ? 'existing' : 'paste'); // existing | paste | generate
   const [scenarioTitle, setScenarioTitle] = useState('');
   const [scenarioRaw, setScenarioRaw] = useState('');
   const [scenarioFiles, setScenarioFiles] = useState([]);
   const [genre, setGenre] = useState('');
   const [existingScenarios, setExistingScenarios] = useState([]);
-  const [selectedScenario, setSelectedScenario] = useState(starterContext ? starterContext.scenario : null); // { id, title, raw, recommendedRuleset } | null
+  const [selectedScenario, setSelectedScenario] = useState(
+    campaignContext?.scenario || (starterContext ? starterContext.scenario : null),
+  ); // { id, title, raw, recommendedRuleset } | null
 
   const [rulesetId, setRulesetId] = useState(
     campaignContext ? campaignContext.rulesetId || 'simple' : starterContext ? starterContext.rulesetId : 'simple'
@@ -68,7 +72,9 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
   const [existingPCs, setExistingPCs] = useState([]);
   const [selectedPC, setSelectedPC] = useState(null); // { name, raw } | null
 
-  const [title, setTitle] = useState(starterContext ? starterContext.scenario.title : '');
+  const [title, setTitle] = useState(
+    campaignContext?.scenario?.title || (starterContext ? starterContext.scenario.title : ''),
+  );
 
   const worldTokenRef = useRef(0);
   const scenarioTokenRef = useRef(0);
@@ -252,17 +258,22 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
 
       const pcForGen = pcMode === 'existing' && selectedPC ? selectedPC.raw : pcRaw;
       let scenario;
+      let scenarioId = null;
+      let resolvedScenarioTitle = '';
       let scenarioDirectorGuide = null;
       if (scenarioMode === 'existing' && selectedScenario) {
+        scenarioId = selectedScenario.id || null;
+        resolvedScenarioTitle = selectedScenario.title || '';
         scenario = selectedScenario.raw;
         scenarioDirectorGuide = selectedScenario.directorGuide ?? null;
       } else if (scenarioMode === 'generate') {
         scenario = await generateScenario(genre, pcForGen, worldSummary);
+        resolvedScenarioTitle = scenarioTitle || genre || '無題のシナリオ';
         if (resolvedWorldId) {
-          const scenarioId = makeId(scenarioTitle || genre);
+          scenarioId = makeId(scenarioTitle || genre);
           const savedScenario = await trySaveToLibrary(() =>
             putScenario(resolvedWorldId, scenarioId, {
-              title: scenarioTitle || genre || '無題のシナリオ',
+              title: resolvedScenarioTitle,
               raw: scenario,
               recommendedRuleset: null,
             })
@@ -271,13 +282,14 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
         }
       } else {
         scenario = scenarioRaw;
+        resolvedScenarioTitle = scenarioTitle || '無題のシナリオ';
         if (!scenario) {
           scenario = await generateScenario('自由なジャンルで', pcForGen, worldSummary);
         } else if (resolvedWorldId) {
-          const scenarioId = makeId(scenarioTitle);
+          scenarioId = makeId(scenarioTitle);
           const savedScenario = await trySaveToLibrary(() =>
             putScenario(resolvedWorldId, scenarioId, {
-              title: scenarioTitle || '無題のシナリオ',
+              title: resolvedScenarioTitle,
               raw: scenario,
               recommendedRuleset: null,
             })
@@ -350,6 +362,8 @@ export default function Setup({ onStart, campaignContext = null, starterContext 
         campaignId: campaignContext?.campaignId,
         world: { raw: worldRawForSession, summary: worldSummary },
         scenario: {
+          ...(scenarioId ? { id: scenarioId } : {}),
+          ...(resolvedScenarioTitle ? { title: resolvedScenarioTitle } : {}),
           raw: scenario,
           ...(scenarioDirectorGuide ? { directorGuide: scenarioDirectorGuide } : {}),
         },

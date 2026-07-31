@@ -53,7 +53,7 @@
 セッション一覧カードは**情報層/状態バッジ層/操作層の3層構造(実装済み2026-07-25、UI改善)**に分かれる。
 ```
 ┌─────────────────────────────────────┐
-│  [+ 新規プレイ]                          │  ← 他画面への導線はグローバルナビ(14.0節)
+│  [+ 新規プレイ] [+ 新規キャンペーン]       │  ← 他画面への導線はグローバルナビ(14.0節)
 │                                        │
 │  続きから再開                          │
 │   ・セッションタイトル          続ける→│  ← 情報層
@@ -73,7 +73,7 @@
 
 小説生成済みカードには「画像を管理」を表示し、展開すると共通`ImageAttachmentEditor`が出る。トップ画像はホームカード左側のサムネイルへ即時反映する。小説未生成セッションには添付先が無いため管理UIを出さない。
 
-ライブラリWorld由来のセッション(`worldId`あり)のカードにはさらに「次の章へ」ボタンが表示され(2026-07-24追加、02-data-model.md 3.5節参照)、押下で`advanceCampaignPc`が引き継ぎPCシートを生成→Campaignメタを作成/更新(`PUT /api/worlds/:worldId/campaigns/:id`)→World/PC/Rulesetを前埋めした次章のSetupへ遷移し、xp・worldId・campaignIdを引き継いだ新セッションを作る。このとき現在のセッションにも`endedAt`(未設定なら現在時刻)を書き込み、その章を終了扱いにする(2026-07-25追加、`chapters[].endedAt`と整合させる。02-data-model.md 3.5節参照)。さらにSP2(2026-07-25追加)で、`campaignId`を持つセッションはキャンペーンのタイトル見出し(全N章)配下にグループ表示される(タイトルは登場`worldId`ごとに`listCampaigns`で解決。解決できない`campaignId`は「続きから再開」の非グループ一覧にフォールバック)。章一覧・改名・削除は素材ライブラリのCampaignタブで行う(14.3節)。
+ライブラリWorld由来のセッション(`worldId`あり)のカードには「次話を作る」ボタンが表示される(プレイ結果適応型へ2026-08-01更新、02-data-model.md 3.5節参照)。押下すると現在Sessionをサーバーへ同期し、`endedAt`とCampaignの`chapters[].status='ended'`を保存してから、対象Campaign/Sessionを選択した素材ライブラリのCampaignタブへ遷移する。Campaign未所属の単発Sessionなら原典未設定Campaignをこの時点で互換作成する。Campaignタブで全ログから章精算案を生成し、GMが変更と引き継ぎPCを確定して正史へ反映した後、2〜3件の次話候補生成→一案のScenario化→編集・保存→World/PC/Ruleset/xp/Scenarioを前入力したSetup確認画面→次章開始、という順序。`campaignId`を持つSessionのキャンペーン見出し(全N章)によるグルーピングと、解決できない`campaignId`を非グループ一覧へフォールバックする挙動は維持する。
 
 **スターターパック(実装済み2026-07-25、複数話パック対応2026-08-01)**: ログイン済みでセッションが0件のとき、Homeの「+ 新規プレイ」の上に「はじめての冒険を選ぶ」セクションが出る(`src/components/share/StarterPackList.jsx`)。カードは公式サンプル9パックで、「この冒険を始める」で World / 全Scenario / PC2体 / NPC2体 を一括インポートし、World・開始Scenario・Rulesetが選択済みのSetup(PC選択のstep 3、14.2節)へ遷移する。複数話パックはカードへ「全N話 / 開始話」を表示し、残る話も同じWorldの素材ライブラリへ保存する。PCまで自動選択しないのは、どちらを演じるかが初回ユーザーの最初の選択であり、「PCはWorldに属していて選ぶもの」という構造を最短で伝えるため。マニフェスト(`GET /api/starters`)が取得できない/空のときはセクションごと描画しない。公開ギャラリー(14.4節)の先頭タブ「おすすめ」からも同じ`StarterPackList`に到達でき、2周目以降のユーザーが別の世界観を取りに行ける。パックの内訳・権利方針は06-content-generation.md「スターターコンテンツ」節参照。
 
@@ -95,7 +95,7 @@
 World/Scenario/PCとも「既存を選ぶ」はWorldを選択している場合のみ有効(Worldが空欄・新規の間は無効化される)。新規作成した世界観・シナリオ・PCはWorldが確定していればゲーム開始時に素材ライブラリへ自動保存される(保存に失敗してもセッション開始自体は続行し、警告のみ表示)。
 
 ### 14.3 素材ライブラリ画面(`src/screens/Library.jsx`)
-グローバルナビの「素材」から`#/library/{tab}[/{worldId}]`へ遷移する。World/Character(PC・NPC)/Scenario/Campaign/Rulesetの5タブ(選択中のタブと開いているWorldはURLが持つ)(Campaignタブは2026-07-25追加、02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。ただしCampaignタブは新規作成UIを持たず(Campaignはホームの「次の章へ」から生成される)、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC閲覧・改名・削除に限られる。
+グローバルナビの「素材」から`#/library/{tab}[/{worldId}]`へ遷移する。World/Character(PC・NPC)/Scenario/Campaign/Rulesetの5タブ(選択中のタブと開いているWorldはURLが持つ)(Campaignタブは2026-07-25追加、プレイ結果適応型へ2026-08-01拡張。02-data-model.md 3.5節参照)。各タブで閲覧・編集・削除・新規作成が可能。CampaignはWorld選択必須で、Homeの「+ 新規キャンペーン」とCampaignタブ内の「+ 新規キャンペーン」の両方から作成画面へ入る。Home側の入口はCampaignタブへ遷移し、先にWorldを選ぶ。
 
 World/Character/Scenario/Rulesetの永続化用`id`/`name`はタイトル・ラベルまたは素材種別を基に`makeId()`で自動生成し、新規作成フォームには識別子入力欄を出さない。識別子はURL・保存パス・重複回避のため内部に保持するが、一覧・選択・削除確認には表示タイトル/ラベルを使う。
 
@@ -103,6 +103,7 @@ World/Character/Scenario/Rulesetの永続化用`id`/`name`はタイトル・ラ�
 - World・Scenarioの編集フォームには「雰囲気」欄があり(`WorldTab.jsx`・`ScenarioTab.jsx`、Field label「雰囲気」hint「複数選択可。」)、固定8種(`src/constants/moods.js`の`MOODS`)をチップボタンとして横並び表示し、クリックでトグル選択する複数選択UI(`aria-pressed`で選択状態を示す)。一覧側にも雰囲気タグを設定済みの場合のみ`moods.join(' / ')`で表示する。Worldタブは分割結果の再生成(reimport)後に`moods`が引き継がれないため、再分割の保存時に本文とは別に`PUT /api/worlds/:id`へ`moods`を明示的に送り直す実装になっている。編集した雰囲気は保存時に`PUT /api/worlds/:id`・`PUT /api/worlds/:worldId/scenarios/:id`へ含まれ、公開時にそのまま公開メタへコピーされる(公開ギャラリーの雰囲気チップ絞り込みに使われる。[04-persistence.md](04-persistence.md)参照)。
 - Characterタブ: PC/NPCの切り替えタブを持つ。新規作成・編集フォームに任意の「名前」欄があり、本文と独立した`characterName`として保存する。空欄なら本文に`PC名`/`NPC名`タグが無い自由記述も`getOrParseCharacter()`で生成AI解析し、`parsed.name`を一覧名としてキャッシュする。表示優先順位はユーザー指定`characterName`、AI抽出名、本文の明示名、最後に「名前未設定のPC/NPC」。内部`name`/ファイル名は出さず、AI抽出結果で手入力名を上書きしない。NPCタブのみ`revealed`状態(開示済み/未開示)の一覧表示を含む(GM専用情報の管理を明示化するため)。
 - Scenarioタブ・Rulesetタブ: それぞれ本文/hint・growthUnit等を編集できる(Rulesetタブに公開機能は無い)。
+- Campaignタブ: 一覧選択後の詳細は「現在」「人物・勢力」「世界の動き」「章」「原典」「引き継ぎPC」「次話を作る」の7タブ。新規作成時にタイトルと原典3文書を登録し、第一話は既存Setupで用意する。章タブは未精算章からAI章精算案を作り、要約・PCシート・変更項目を編集できる。変更項目は既定で未選択で、GMがチェックした項目だけ正史へ反映する。「次話を作る」は未精算章がある間は無効。GM要望から2〜3候補を生成し、一案をScenario全文へ展開、Markdownエディタで修正して通常Scenarioとして保存する。候補の生成revisionが現在正史と違う場合はstale表示となりScenario生成不可。
 - World・Character・Scenarioの詳細カード末尾に共通`ImageAttachmentEditor`を置く。複数ファイル選択、画像ごとの説明保存、トップ設定/解除、削除を扱う。JPEG/PNG/WebP、1枚10MB、最大20枚、説明500字を画面上にも表示する。各タブの一覧カードはトップ画像がある場合だけサムネイルを表示する。
 
 ### 14.4 公開ギャラリー画面(`src/screens/Gallery.jsx`)

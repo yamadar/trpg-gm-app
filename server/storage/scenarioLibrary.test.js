@@ -103,6 +103,25 @@ describe('Scenario library functions', () => {
     expect(scenario.recommendedRuleset).toBeNull();
   });
 
+  it('stores Campaign generation provenance without mixing it into raw text', async () => {
+    await saveScenario(dataStore, textStore, 'usr_1', {
+      worldId: 'w1',
+      id: 'sc1',
+      title: '灰の密使',
+      raw: '# 本文',
+      sourceCampaignId: 'cp1',
+      sourceCampaignRevision: 4,
+      generatedFromPitchId: 'pitch_1',
+    });
+    const scenario = await getScenario(dataStore, textStore, 'usr_1', 'w1', 'sc1');
+    expect(scenario).toMatchObject({
+      raw: '# 本文',
+      sourceCampaignId: 'cp1',
+      sourceCampaignRevision: 4,
+      generatedFromPitchId: 'pitch_1',
+    });
+  });
+
   it('round-trips moods and backfills [] for legacy records', async () => {
     await saveScenario(dataStore, textStore, 'usr_1', {
       worldId: 'w1',

@@ -17,6 +17,9 @@ import {
   scenarioMetaKey,
   campaignMetaKey,
   campaignListPrefix,
+  campaignSourceDocPath,
+  campaignDraftKey,
+  campaignPitchesKey,
   rulesetListPrefix,
   rulesetMetaKey,
   publicListPrefix,
@@ -122,6 +125,15 @@ describe('storage paths', () => {
     );
     expect(campaignListPrefix('usr_1', 'waterdeep')).toBe(
       'users/usr_1/worlds/waterdeep/campaigns',
+    );
+    expect(campaignSourceDocPath('usr_1', 'waterdeep', 'cp1', 'bible')).toBe(
+      'users/usr_1/worlds/waterdeep/campaigns/cp1/bible.md',
+    );
+    expect(campaignDraftKey('usr_1', 'waterdeep', 'cp1', 's1')).toBe(
+      'users/usr_1/worlds/waterdeep/campaigns/cp1/drafts/s1',
+    );
+    expect(campaignPitchesKey('usr_1', 'waterdeep', 'cp1')).toBe(
+      'users/usr_1/worlds/waterdeep/campaigns/cp1/nextPitches',
     );
   });
 

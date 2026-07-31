@@ -1,6 +1,8 @@
 # プレイ結果適応型キャンペーン継続・次話生成 設計
 
-2026-08-01 草案。既存の[キャンペーンSP1 コアループ](2026-07-24-campaign-design.md)と、`Campaign`管理タブを追加したSP2を拡張する設計。
+2026-08-01 設計、同日コア実装済み。既存の[キャンペーンSP1 コアループ](2026-07-24-campaign-design.md)と、`Campaign`管理タブを追加したSP2を拡張する。
+
+実装範囲はAC1〜AC4。原典3文書、GM承認式章精算、正史revision、次話候補2〜3案、Scenario全文生成、通常Scenario保存、Setup前入力まで接続済み。AC5のパーティCampaign統合は未実装。設計時点からの差分として、AI生成は永続非同期ジョブではなく最大120秒の同期HTTPで実装し、利用枠は既存`messages`へ相乗りする。超長期ログのチャンク分割、Campaign進行ガイド抽出、候補単体の差し替え・編集は後続。
 
 関連設計:
 
@@ -153,11 +155,11 @@ Campaign専用Play分岐を作らず、生成までをCampaign機能、進行を
 6. **PC・ルール・確認**
    - 既存Setupの処理を再利用
 
-Campaignを保存してから第一話セッションを作成し、セッションに`campaignId`を最初から設定する。現行の「単発セッション終了後、次の章へ押した時点でCampaignを新規作成」経路も互換用に残す。この経路で作られたCampaignは原典未設定として扱い、後からCampaign詳細画面で入力できる。
+Campaignを保存してから第一話セッションを作成し、セッションに`campaignId`を最初から設定する。現行の「単発セッション終了後、『次話を作る』を押した時点でCampaignを新規作成」経路も互換用に残す。この経路で作られたCampaignは原典未設定として扱い、後からCampaign詳細画面で入力できる。
 
 ### 6.2 第一話以降の終了
 
-「この物語を終える」または「次の章へ」から次の処理へ進む。
+「この物語を終える」または「次話を作る」から次の処理へ進む。
 
 1. セッションへ`endedAt`を保存
 2. 最新セッションログをサーバーへ同期
@@ -528,14 +530,15 @@ GET  /api/worlds/:worldId/campaigns/:campaignId/chapters/:sessionId/reconcile
 POST /api/worlds/:worldId/campaigns/:campaignId/chapters/:sessionId/accept
 
 POST /api/worlds/:worldId/campaigns/:campaignId/next-pitches
+GET  /api/worlds/:worldId/campaigns/:campaignId/next-pitches
 POST /api/worlds/:worldId/campaigns/:campaignId/next-scenario
 ```
 
-章精算とScenario生成は長時間化しうるため、POSTは`202`を返す非同期ジョブとする。小説化ジョブと同様、ジョブ状態を永続化し、プロセス再起動やタイムアウトで`running`表示が残り続けないようにする。
+現行実装は生成POSTを同期実行し、生成結果を`201`で返す。UIはリクエスト中のbusy表示を行い、タイムアウトは120秒。章精算案は生成成功後に`ready`として保存し、次話候補も生成基準revisionとともに保存する。小説化と同じ永続非同期ジョブ、`running`/`error`状態、再起動復旧は後続。
 
-Campaign削除時はメタだけでなく原典文書、章精算案、生成ジョブを削除する。既存仕様と同様、所属Session自体は削除せず、参照先CampaignがないSessionとしてホームへ表示する。
+Campaign削除時はメタだけでなく原典文書、章精算案、次話候補を削除する。既存仕様と同様、所属Session自体は削除せず、参照先CampaignがないSessionとしてホームへ表示する。
 
-AI利用枠は既存`messages`と分け、将来`campaignGeneration`種別として計測可能な境界に置く。初期実装で同じ日次枠を使う場合も、内部操作名は分離する。
+AI利用枠は現行実装では既存`messages`日次枠を使う。生成処理は`server/campaignGeneration.js`へ分離してあり、将来`campaignGeneration`種別と非同期ジョブへ移行できる境界を維持する。
 
 ## 12. 既存機能との関係
 
@@ -544,7 +547,7 @@ AI利用枠は既存`messages`と分け、将来`campaignGeneration`種別とし
 - 既存`session.pc`を維持
 - 既存`carriedPc`を維持
 - `mode`未指定の旧Sessionはソロ扱い
-- 既存「次の章へ」は、原典未設定Campaignでも章精算へ進める
+- 既存互換の「次話を作る」は、原典未設定Campaignでも章精算へ進める
 
 ### 12.2 パーティSession
 
@@ -572,7 +575,7 @@ AI同行で生成された行動は正史上の出来事には含めるが、「
 |---|---|
 | 章精算中にログが増えた | 精算案をstaleにし、再生成 |
 | 精算案確認中に別端末が正史更新 | `canonRevision`競合。最新Campaignを再取得 |
-| 原典解析失敗 | 原典は保存。`directorGuide=null`。再解析導線表示 |
+| 原典解析失敗 | 原典は保存。`directorGuide=null`。再解析導線表示(進行ガイド抽出の導入後) |
 | 章精算AI失敗 | Session完結は維持。Campaign詳細から再試行 |
 | 候補生成後に正史更新 | 候補stale。Scenario生成禁止 |
 | Scenario生成失敗 | 候補を保持して再試行 |
@@ -598,7 +601,7 @@ AI同行で生成された行動は正史上の出来事には含めるが、「
 - 章精算案の保存・取得・stale判定
 - 同一精算案の冪等accept
 - revision不一致時409
-- SessionがCampaignに属さない場合403/404
+- SessionがCampaignに属さない場合409、対象が存在しない場合404
 - World・Campaign所有者以外からのアクセス拒否
 
 ### 15.2 章精算
@@ -608,7 +611,7 @@ AI同行で生成された行動は正史上の出来事には含めるが、「
 - 採用項目だけが反映される
 - 却下項目が`currentState`へ入らない
 - PCシート引き継ぎが同じacceptで確定する
-- 長いログのチャンク抽出と最終統合
+- 長いログのチャンク抽出と最終統合(後続)
 - stale Session・stale canonの採用拒否
 
 ### 15.3 次話生成
@@ -625,38 +628,38 @@ AI同行で生成された行動は正史上の出来事には含めるが、「
 - 旧Campaignの原典未設定表示
 - 章精算案の採用・編集・却下
 - 未承認精算案がある場合の主操作切り替え
-- 次話候補の再生成・編集・選択
-- 非同期ジョブの実行中・失敗・再試行・完了
+- 次話候補の再生成・選択(候補自体の編集は後続)
+- 同期生成の実行中・失敗・再試行(永続非同期ジョブは後続)
 - revision競合時の再読み込み案内
 
 ## 16. 段階導入
 
-### AC1: Campaign原典と現在状態
+### AC1: Campaign原典と現在状態 — 実装済み
 
 - 原典3文書
 - Campaign詳細タブ拡張
 - `currentState`と`canonRevision`
 - 既存Campaign互換
 
-### AC2: 章精算
+### AC2: 章精算 — 実装済み
 
 - 全ログから章精算案生成
 - レビューUI
 - 採用時の正史・PC一括更新
 
-### AC3: 次話候補
+### AC3: 次話候補 — 実装済み
 
 - 2〜3案生成
 - GM条件入力
 - stale管理
 
-### AC4: Scenario生成
+### AC4: Scenario生成 — 実装済み
 
 - 候補からScenario全文生成
 - 通常Scenario保存
 - Setup前入力と次章開始
 
-### AC5: パーティCampaign統合
+### AC5: パーティCampaign統合 — 未実装
 
 - `carriedPcs`
 - PC別既知情報

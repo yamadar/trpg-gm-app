@@ -311,15 +311,14 @@ describe('Home', () => {
     });
   });
 
-  describe('次の章へ(キャンペーン)', () => {
-    it('worldIdの無いセッションには「次の章へ」を出さない', () => {
+  describe('次話を作る(キャンペーン)', () => {
+    it('worldIdの無いセッションには「次話を作る」を出さない', () => {
       const sessions = [{ id: 's1', title: 'A', updatedAt: 1, state: {}, log: [{ role: 'gm', text: 'x' }] }];
       renderWithAuth(<Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} />);
-      expect(screen.queryByText('次の章へ')).not.toBeInTheDocument();
+      expect(screen.queryByText('次話を作る')).not.toBeInTheDocument();
     });
 
-    it('worldIdありで「次の章へ」を押すと引き継ぎPCを生成しCampaignを保存してonNextChapterを呼ぶ', async () => {
-      vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '成長版シート', xp: 7 });
+    it('worldIdありで「次話を作る」を押すと未精算章をCampaignへ保存して制作画面の文脈を返す', async () => {
       const putCampaignSpy = vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({ id: 'cp_x' });
       vi.spyOn(sessionSyncClient, 'putSessionToServer').mockResolvedValue({});
       const onNextChapter = vi.fn();
@@ -340,18 +339,18 @@ describe('Home', () => {
       renderWithAuth(
         <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onNextChapter={onNextChapter} />
       );
-      fireEvent.click(screen.getByText('次の章へ'));
+      fireEvent.click(screen.getByText('次話を作る'));
       await waitFor(() => expect(putCampaignSpy).toHaveBeenCalled());
       await waitFor(() => expect(onNextChapter).toHaveBeenCalled());
       const ctx = onNextChapter.mock.calls[0][0];
-      expect(ctx.worldId).toBe('w1');
-      expect(ctx.pcRaw).toBe('成長版シート');
-      expect(ctx.xp).toBe(7);
-      expect(ctx.campaignId).toBeTruthy();
+      expect(ctx).toEqual({ worldId: 'w1', campaignId: expect.any(String), sessionId: 's1' });
+      expect(putCampaignSpy.mock.calls[0][2].chapters[0]).toMatchObject({
+        sessionId: 's1',
+        status: 'ended',
+      });
     });
 
-    it('既にcampaignIdを持つセッションで「次の章へ」を押しても、そのcampaignIdを保ったままendedAtを刻んで保存する', async () => {
-      vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '更新シート', xp: 9 });
+    it('既にcampaignIdを持つセッションで「次話を作る」を押しても、そのcampaignIdを保ったままendedAtを刻んで保存する', async () => {
       vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue({
         id: 'cp1',
         worldId: 'w1',
@@ -382,7 +381,7 @@ describe('Home', () => {
       renderWithAuth(
         <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onNextChapter={onNextChapter} />
       );
-      fireEvent.click(screen.getByText('次の章へ'));
+      fireEvent.click(screen.getByText('次話を作る'));
 
       await waitFor(() => expect(putCampaignSpy).toHaveBeenCalled());
       await waitFor(() => expect(saveSpy).toHaveBeenCalled());
@@ -1017,7 +1016,6 @@ describe('Home', () => {
   });
 
   it('marks the session as ended when the campaign advances to the next chapter', async () => {
-    vi.spyOn(sessionApi, 'advanceCampaignPc').mockResolvedValue({ pcRaw: '更新シート', xp: 7 });
     vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(null);
     vi.spyOn(campaignClient, 'putCampaign').mockResolvedValue({});
     vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([]);
@@ -1028,7 +1026,7 @@ describe('Home', () => {
       <Home sessions={sessions} storageOk onNew={vi.fn()} onContinue={vi.fn()} onNextChapter={vi.fn()} />
     );
 
-    fireEvent.click(await screen.findByText('次の章へ'));
+    fireEvent.click(await screen.findByText('次話を作る'));
 
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
     expect(typeof saveSpy.mock.calls.at(-1)[0].endedAt).toBe('number');

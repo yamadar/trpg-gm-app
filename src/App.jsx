@@ -69,6 +69,9 @@ function AppInner() {
   // 順序が普通に起きる。そのとき navigate は hash が既に #/setup なので何もせず、
   // ウィザードは0段目(Worldの用意方法/空欄のまま進める)のまま取り残されていた。
   const [wizard, setWizard] = useState({ seq: 0, campaignContext: null, starterContext: null });
+  // Homeの「次話を作る」からCampaign制作画面へ渡す選択状態。
+  // reconciliation対象sessionIdもURLへ載せず、CampaignTabが章精算を開くために使う。
+  const [campaignFocus, setCampaignFocus] = useState(null);
   const takeover = useSessionTakeover();
 
   useEffect(() => {
@@ -88,6 +91,7 @@ function AppInner() {
   // Setupがstarter基準でPCステップから開き、シナリオだけ無関係なものが
   // 選ばれたまま気づかれずに進んでしまう。
   function openWizard(context) {
+    setCampaignFocus(null);
     setWizard((prev) => ({ seq: prev.seq + 1, campaignContext: null, starterContext: null, ...context }));
     navigate({ name: 'setup' });
   }
@@ -335,8 +339,15 @@ function AppInner() {
               sessions={sessions}
               storageOk={storageOk}
               onNew={() => openWizard({})}
+              onNewCampaign={() => {
+                setCampaignFocus(null);
+                navigate({ name: 'library', libraryTab: 'campaign', worldId: null });
+              }}
               onContinue={(id) => navigate({ name: 'play', sessionId: id })}
-              onNextChapter={(ctx) => openWizard({ campaignContext: ctx })}
+              onNextChapter={(focus) => {
+                setCampaignFocus(focus);
+                navigate({ name: 'library', libraryTab: 'campaign', worldId: focus.worldId });
+              }}
               onStartStarter={(ctx) => openWizard({ starterContext: ctx })}
             />
           ))}
@@ -349,7 +360,13 @@ function AppInner() {
             starterContext={wizard.starterContext}
           />
         )}
-        {route.name === 'library' && <Library route={route} />}
+        {route.name === 'library' && (
+          <Library
+            route={route}
+            campaignFocus={campaignFocus}
+            onStartCampaignChapter={(ctx) => openWizard({ campaignContext: ctx })}
+          />
+        )}
         {route.name === 'browse' && (
           <Gallery route={route} onStartStarter={(ctx) => openWizard({ starterContext: ctx })} />
         )}

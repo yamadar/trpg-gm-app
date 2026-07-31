@@ -103,11 +103,13 @@ Ruleset(ルール)  … World/Scenarioとは独立したライブラリ。Sessio
 Session(プレイ単位) = World + Scenario + Ruleset(埋め込みスナップショット) + PC + state
                       ↑ 実際に保存・再開される単位
 ```
-**Campaign(連作シナリオ)SP1コアループ実装済み(2026-07-24)**。「育てたPCで次の冒険へ」を**オープンな連鎖**で繋ぐ。事前に全章を組まず、あるセッションを終えたら逐次次章へ接続する。引き継ぎは**テキスト方式**:章末に`advanceCampaignPc`(`/api/messages`経由のLLM)が既存PCシート(`pc.raw`)へ獲得物・成長・関係の変化を織り込んだ更新版を生成し、xpは数値で持ち越す。Campaignメタは World配下のライブラリ実体で、`campaignMetaKey`は`users/{userId}/worlds/{worldId}/campaigns/{campaignId}`へ**フラット化**(一覧可能)。形は`{ id, worldId, title, carriedPc: { raw, xp }, chapters: [{ sessionId, title, endedAt }], createdAt, updatedAt }`で、`carriedPc`はメタJSONに内包する(別ドキュメント不要)。セッションには任意`worldId?`/`campaignId?`が加わり、ライブラリWorld由来のセッション(`worldId`あり)のホームカードに「次の章へ」ボタンが出る。CRUDは`server/routes/campaigns.js`(`GET/PUT/DELETE /api/worlds/:worldId/campaigns[/:id]`)。
+**Campaign(連作シナリオ)実装済み(2026-07-24、プレイ結果適応型へ2026-08-01拡張)**。事前に全章を固定せず、終了したSessionの結果をGM承認済み正史へ変換してから次話を生成するオープンな連鎖。CampaignメタはWorld配下のライブラリ実体で、`campaignMetaKey`は`users/{userId}/worlds/{worldId}/campaigns/{campaignId}`へフラット化して一覧可能。既存の`carriedPc: { raw, xp }`と`chapters[]`を維持しつつ、`currentState: { canonFacts, characters, factions, timeline, openThreads }`、`canonRevision`、`rulesetId`をadditiveに持つ。章は`status: 'playing' | 'ended' | 'reconciled'`と、精算済みなら`outcome: { summary, changes }`を持つ。`carriedPc`、`currentState`、章outcome、`canonRevision + 1`は章精算案の採用時にCampaign単位ロック内で一括更新する。旧`advanceCampaignPc`は互換関数として残るが、Homeの現行フローからは呼ばれない。
 
-**SP2(管理タブ+Homeグルーピング)実装済み(2026-07-25)**。素材ライブラリにCampaignタブ(`src/screens/library/CampaignTab.jsx`)が加わり、選択WorldのCampaign一覧・章の閲覧(読み取り専用)・引き継ぎPC(`carriedPc`)閲覧・改名・削除ができる(`DELETE`は`campaignMetaKey`のみ削除する冪等操作で、メンバーセッションの`campaignId`は不変。dangling`campaignId`はHomeで非グループ表示にフォールバックする)。新規作成UIはタブに無く、Campaignはホームの「次の章へ」からのみ生成される。ホーム画面は`campaignId`付きセッションを、登場`worldId`ごとに`listCampaigns`でタイトル解決してキャンペーン見出し(全N章)配下にグループ表示する。**章からのセッション再開・クロスWorld・構造化インベントリ・NPC記憶連携・次章シナリオ自動提案はSP3以降として未実装**。
+人間が編集する不変寄りの原典はCampaignメタと分離し、`bible.md`(前提・固定事項)、`cast.md`(主要人物・勢力と思惑)、`timeline.md`(PCが介入しない場合の予定事件)として保存する。AIが全Sessionログから作る章精算案も正史と分離し、GMが変更ごとに採用・編集・却下するまで`drafts/{sessionId}.json`へ置く。採用時は`sourceTurnCount`、`sourceSessionUpdatedAt`、`basedOnCanonRevision`を再検証し、ログまたは正史が変わった古い案を409で拒否する。次話候補は生成基準revision付きで保存し、未精算章がある場合、またはrevisionが変わった場合はScenario生成不可。生成Scenarioは通常のScenarioへ保存し、`sourceCampaignId`、`sourceCampaignRevision`、`generatedFromPitchId`をメタへ残す。
 
-**セッション終了(`endedAt`)は実装済み(2026-07-25)**。セッションは任意`endedAt?: number`を持つ。Play画面で「この物語を終える」を押したとき、またはキャンペーンで「次の章へ」を実行したとき(その章を終わったとみなし、`chapters[].endedAt`と同じタイミングで設定する)に現在時刻が入る。未設定なら未完結。`endedAt`があってもセッションは継続可能(入力欄は塞がれない。エピローグの書き足しや誤操作の救済のため)で、取り消しUIは無い。Home一覧・Play画面ではこのフィールドの有無で「完結」バッジを表示する(05-ui-ux.md参照)。
+素材ライブラリのCampaignタブ(`src/screens/library/CampaignTab.jsx`)は、一覧・新規作成・原典編集・現在状態・章精算レビュー・次話候補生成・Scenario生成・引き継ぎPC・改名・削除を担う。Homeの`worldId`付きSessionには「次話を作る」が出て、Sessionと章を終了状態へ同期した後、対象Campaign/Sessionを選択したCampaignタブへ遷移する。既存Campaignが無い単発Sessionから押した場合は原典未設定Campaignを互換作成する。`campaignId`付きSessionのHomeグルーピングと、削除後のdangling `campaignId`を非グループ表示へ戻す挙動は維持する。クロスWorld、構造化インベントリ、複数PCの`carriedPcs`、PC別既知情報は未実装。
+
+**セッション終了(`endedAt`)は実装済み(2026-07-25)**。セッションは任意`endedAt?: number`を持つ。Play画面で「この物語を終える」を押したとき、またはキャンペーンで「次話を作る」を実行したとき(その章を終わったとみなし、`chapters[].endedAt`と同じタイミングで設定する)に現在時刻が入る。未設定なら未完結。`endedAt`があってもセッションは継続可能(入力欄は塞がれない。エピローグの書き足しや誤操作の救済のため)で、取り消しUIは無い。Home一覧・Play画面ではこのフィールドの有無で「完結」バッジを表示する(05-ui-ux.md参照)。
 
 **SAN(正気度)の章またぎの扱いは意図的な仕様**: `carriedPc`が持ち越すのはPCシート本文(`raw`)とxpのみで、`state.resources`(SAN等)は含まれない。そのため次章のSetupではRulesetアダプタの`resourceDefs`から通常のセッション開始と同じ初期値(coc7eなら60/99)でSANが再初期化される。前章終盤で正気度が減っていても引き継がれない設計であり、不具合ではない(POWからのSAN算出・SAN回復ルールと同様、YAGNIとして対象外。07-risks-and-roadmap.md 10.1節参照)。
 
@@ -132,11 +134,17 @@ worlds/{world_id}/
   pc/{name}.md                      PC原本
   pc/{name}.parsed.json             PCメタレコード。parsed: {goal, bonds}をキャッシュ
   pc/{name}/attachments/...         PC添付画像
-  scenarios/{scenario_id}.json      Scenarioメタ(title/recommendedRuleset/updatedAt)
+  scenarios/{scenario_id}.json      Scenarioメタ(title/recommendedRuleset/updatedAt、Campaign生成由来メタを含みうる)
   scenarios/{scenario_id}/
     scenario.md                    本文
     attachments/...                Scenario添付画像
-  campaigns/{campaign_id}.json      Campaignメタ({id,worldId,title,carriedPc:{raw,xp},chapters[],createdAt,updatedAt})
+  campaigns/{campaign_id}.json      Campaignメタ(carriedPc/chapters/currentState/canonRevision等)
+  campaigns/{campaign_id}/
+    bible.md                        Campaign原典
+    cast.md                         主要人物・勢力の初期設定と思惑
+    timeline.md                     PCが介入しない場合の予定事件
+    drafts/{session_id}.json        未承認/採用済み章精算案
+    nextPitches.json                正史revision付き次話候補
 
 rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。{id,label,desc,hint,growthUnit,formula}
 

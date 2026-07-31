@@ -27,6 +27,11 @@ import { createAuthRouter } from './auth/routes.js';
 import { createRequireAuth, createOriginCheck } from './auth/middleware.js';
 import { createUsage } from './auth/usage.js';
 import { analyzeScenarioForPlay } from './scenarioAnalysis.js';
+import {
+  reconcileCampaignChapter,
+  generateCampaignPitches,
+  generateCampaignScenario,
+} from './campaignGeneration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -172,7 +177,34 @@ export function createApp({
         })
       : null,
   }));
-  app.use('/api', createCampaignsRouter({ dataStore }));
+  const campaignGenerator = apiKey
+    ? {
+        reconcile: (args) => reconcileCampaignChapter({
+          ...args,
+          apiKey,
+          model: textModel,
+          fetchImpl,
+        }),
+        pitches: (args) => generateCampaignPitches({
+          ...args,
+          apiKey,
+          model: textModel,
+          fetchImpl,
+        }),
+        scenario: (args) => generateCampaignScenario({
+          ...args,
+          apiKey,
+          model: textModel,
+          fetchImpl,
+        }),
+      }
+    : null;
+  app.use('/api', createCampaignsRouter({
+    dataStore,
+    textStore,
+    generator: campaignGenerator,
+    usage,
+  }));
   app.use('/api', createWorldContentRouter({ dataStore, textStore }));
   app.use('/api', createRulesetsRouter({ dataStore }));
   app.use('/api', createPublishRouter({ dataStore, textStore, imageStore }));

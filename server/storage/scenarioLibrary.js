@@ -8,7 +8,19 @@ export async function saveScenario(
   dataStore,
   textStore,
   userId,
-  { worldId, id, title, raw, recommendedRuleset, moods, sourcePublicId, directorGuide },
+  {
+    worldId,
+    id,
+    title,
+    raw,
+    recommendedRuleset,
+    moods,
+    sourcePublicId,
+    sourceCampaignId,
+    sourceCampaignRevision,
+    generatedFromPitchId,
+    directorGuide,
+  },
 ) {
   await textStore.write(scenarioDocPath(userId, worldId, id), raw);
   const prev = await dataStore.get(scenarioMetaKey(userId, worldId, id));
@@ -19,6 +31,9 @@ export async function saveScenario(
     recommendedRuleset: recommendedRuleset ?? null,
     moods: Array.isArray(moods) ? moods : [],
     sourcePublicId: sourcePublicId ?? prev?.sourcePublicId ?? null,
+    sourceCampaignId: sourceCampaignId ?? prev?.sourceCampaignId ?? null,
+    sourceCampaignRevision: sourceCampaignRevision ?? prev?.sourceCampaignRevision ?? null,
+    generatedFromPitchId: generatedFromPitchId ?? prev?.generatedFromPitchId ?? null,
     // rawの更新と古いガイドの組み合わせを残さない。解析結果を同時に渡さない
     // 内部保存経路ではnullへ戻し、誤った進行判断より原文単独を優先する。
     directorGuide: directorGuide ?? null,
