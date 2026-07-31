@@ -29,3 +29,8 @@ AI-GMがシナリオに沿って進行、プレイヤーはPCの行動・選択�
 - [07-risks-and-roadmap.md](07-risks-and-roadmap.md) — 留意点・リスク一覧・実装フェーズ計画・設計決定事項
 - [08-feature-ideas.md](08-feature-ideas.md) — 機能アイデア集(楽しさ向上・未着手候補の整理)
 - [09-deployment.md](09-deployment.md) — デプロイ手順(Render)・本番運用メモ
+
+## 設計草案
+
+- [プレイ結果適応型キャンペーン継続・次話生成](superpowers/specs/2026-08-01-adaptive-campaign-continuation-design.md) — 章終了時の正史更新、次話候補、Scenario生成
+- [同時参加型パーティセッション](superpowers/specs/2026-08-01-party-session-design.md) — 複数PC同時入力、PC別視点、離席・再接続、行動衝突
