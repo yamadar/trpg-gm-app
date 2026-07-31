@@ -4,7 +4,7 @@ import { idParamGuard, isValidId } from './validateId.js';
 import { importWorld, importCharacter, importScenario } from '../storage/importLibrary.js';
 import { starterManifestKey } from '../storage/paths.js';
 
-export function createImportsRouter({ dataStore, textStore }) {
+export function createImportsRouter({ dataStore, textStore, imageStore }) {
   const router = Router();
   router.param('publicId', idParamGuard);
   router.param('packId', idParamGuard);
@@ -32,6 +32,7 @@ export function createImportsRouter({ dataStore, textStore }) {
   router.post('/import/worlds/:publicId', asyncHandler(async (req, res) => {
     sendImport(res, await importWorld(dataStore, textStore, req.userId, req.params.publicId, {
       onDuplicate: onDuplicateOf(req),
+      imageStore,
     }));
   }));
 
@@ -49,6 +50,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     if (target === null) return;
     sendImport(res, await importCharacter(dataStore, textStore, req.userId, req.params.publicId, target, {
       onDuplicate: onDuplicateOf(req),
+      imageStore,
     }));
   }));
 
@@ -57,6 +59,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     if (target === null) return;
     sendImport(res, await importScenario(dataStore, textStore, req.userId, req.params.publicId, target, {
       onDuplicate: onDuplicateOf(req),
+      imageStore,
     }));
   }));
 
@@ -80,6 +83,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     const world = await importWorld(dataStore, textStore, req.userId, pack.worldPublicId, {
       preferredId: pack.packId,
       onDuplicate: 'reuse',
+      imageStore,
     });
     if (!world.ok) {
       res.status(500).json({ error: 'starter world is missing; re-run the seed' });
@@ -93,6 +97,7 @@ export function createImportsRouter({ dataStore, textStore }) {
     const scenario = await importScenario(dataStore, textStore, req.userId, pack.scenarioPublicId, worldId, {
       preferredId: pack.scenarioId,
       onDuplicate: 'reuse',
+      imageStore,
     });
     if (!scenario.ok) {
       res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
@@ -104,6 +109,7 @@ export function createImportsRouter({ dataStore, textStore }) {
       for (const publicId of ids) {
         const result = await importCharacter(dataStore, textStore, req.userId, publicId, worldId, {
           onDuplicate: 'reuse',
+          imageStore,
         });
         if (!result.ok) {
           res.status(500).json({ error: 'starter character is missing; re-run the seed' });

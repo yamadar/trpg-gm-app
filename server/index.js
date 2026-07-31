@@ -16,6 +16,7 @@ import { createPublishRouter } from './routes/publish.js';
 import { createImportsRouter } from './routes/imports.js';
 import { createConfigRouter } from './routes/config.js';
 import { createSceneImagesRouter } from './routes/sceneImages.js';
+import { createAttachmentsRouter } from './routes/attachments.js';
 import { createNovelJobRunner } from './novelJobs.js';
 import { seedStarters } from './starters/seed.js';
 import { createFsDataStore } from './storage/dataStore.js';
@@ -153,11 +154,13 @@ export function createApp({
     fetchImpl,
     usage,
   }));
-  app.use('/api', createWorldsRouter({ dataStore, textStore }));
-  app.use('/api', createCharactersRouter({ dataStore, textStore }));
+  app.use('/api', createAttachmentsRouter({ dataStore, textStore, imageStore }));
+  app.use('/api', createWorldsRouter({ dataStore, textStore, imageStore }));
+  app.use('/api', createCharactersRouter({ dataStore, textStore, imageStore }));
   app.use('/api', createScenariosRouter({
     dataStore,
     textStore,
+    imageStore,
     usage,
     scenarioAnalyzer: apiKey
       ? ({ title, raw }) => analyzeScenarioForPlay({
@@ -173,7 +176,7 @@ export function createApp({
   app.use('/api', createWorldContentRouter({ dataStore, textStore }));
   app.use('/api', createRulesetsRouter({ dataStore }));
   app.use('/api', createPublishRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createImportsRouter({ dataStore, textStore }));
+  app.use('/api', createImportsRouter({ dataStore, textStore, imageStore }));
 
   // 静的配信はAPIルーターより後にマウントする。先に置くと dist/ 側の
   // ファイル名と衝突したパスがAPIより優先されてしまうため。
@@ -206,7 +209,9 @@ if (process.env.NODE_ENV !== 'test') {
   const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
   // server/data/ はgitignore対象でデプロイ先では空から始まりうる。冪等なので毎回走らせて復元する。
   // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
-  seedStarters(createFsDataStore(dataDir), createFsTextStore(dataDir))
+  seedStarters(createFsDataStore(dataDir), createFsTextStore(dataDir), {
+    imageStore: createFsImageStore(dataDir),
+  })
     .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
     .catch((e) => console.error('starter seed failed', e))
     .finally(() => {

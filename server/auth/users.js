@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { attachmentManifestKey, profileImageDir } from '../storage/paths.js';
 
 const PROVIDER_USER_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -39,7 +40,15 @@ export async function findOrCreateUser(dataStore, { provider, providerUserId, di
 export async function getUser(dataStore, userId) {
   const user = await dataStore.get(userProfileKey(userId));
   if (!user) return null;
-  return { ...user, bio: user.bio ?? '' };
+  const manifest = await dataStore.get(attachmentManifestKey(profileImageDir(userId)));
+  const profileImage = manifest?.items?.find((item) => item.id === manifest.topImageId);
+  return {
+    ...user,
+    bio: user.bio ?? '',
+    avatarUrl: profileImage
+      ? `/api/users/${encodeURIComponent(userId)}/profile-image/${encodeURIComponent(profileImage.id)}/display`
+      : user.avatarUrl,
+  };
 }
 
 export async function updateUserProfile(dataStore, userId, patch) {

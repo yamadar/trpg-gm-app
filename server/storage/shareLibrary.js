@@ -3,9 +3,11 @@ import {
   publicListPrefix, publicMetaKey, publicWorldDocsPrefix, publicWorldDocPath, publicRegionDocPath, publicCategoryDocPath,
   publicCharacterDocsPrefix, publicCharacterDocPath, publicScenarioDocsPrefix, publicScenarioDocPath,
   publicNovelDocsPrefix, publicNovelDocPath, publicNovelImageDir, publicNovelImagePath,
+  publicAttachmentDir,
   publishWorldMapKey, publishWorldListPrefix, publishCharacterMapKey, publishCharacterListPrefix,
   publishScenarioMapKey, publishScenarioListPrefix, publishNovelMapKey, publishNovelListPrefix,
-  sessionKey, sessionNovelDocPath, sessionNovelMetaKey, sessionImagePath, worldMetaKey,
+  characterAttachmentDir, novelAttachmentDir, scenarioAttachmentDir, sessionKey, sessionNovelDocPath,
+  sessionNovelMetaKey, sessionImagePath, worldAttachmentDir, worldMetaKey,
 } from './paths.js';
 import { getWorld } from './worldLibrary.js';
 import { getCharacter } from './characterLibrary.js';
@@ -20,6 +22,12 @@ import {
 import { MOODS } from './moods.js';
 import { characterTitle, unnamedCharacterTitle } from './characterSummary.js';
 import { getUser } from '../auth/users.js';
+import {
+  copyAttachmentCollection,
+  deleteAttachmentCollection,
+  getAttachmentCollection,
+  topAttachmentOf,
+} from './attachmentLibrary.js';
 
 const IMAGE_ID_RE = /^img_[A-Za-z0-9-]+$/;
 
@@ -53,7 +61,30 @@ async function finishPublish(dataStore, type, mapKey, meta) {
   return { ok: true, meta };
 }
 
-export async function publishWorld(dataStore, textStore, userId, worldId, owner) {
+async function snapshotAttachments(dataStore, imageStore, sourceDir, type, publicId) {
+  const collection = await getAttachmentCollection(dataStore, sourceDir);
+  if (imageStore) {
+    await copyAttachmentCollection({
+      dataStore,
+      imageStore,
+      sourceDir,
+      targetDir: publicAttachmentDir(type, publicId),
+      sourceCollection: collection,
+    });
+  } else if (collection.items.length > 0) {
+    throw new Error('imageStore is required to publish attachments');
+  }
+  return collection;
+}
+
+function attachmentFields(collection) {
+  return {
+    attachments: collection.items.map((item) => ({ ...item })),
+    topImageId: collection.topImageId,
+  };
+}
+
+export async function publishWorld(dataStore, textStore, userId, worldId, owner, imageStore) {
   const world = await getWorld(dataStore, textStore, userId, worldId);
   if (!world) return { ok: false, reason: 'not_found' };
   const mapKey = publishWorldMapKey(userId, worldId);
@@ -71,21 +102,36 @@ export async function publishWorld(dataStore, textStore, userId, worldId, owner)
     const content = await getCategory(dataStore, textStore, userId, worldId, category.id);
     await textStore.write(publicCategoryDocPath(publicId, category.id), content?.raw ?? '');
   }
+  const attachments = await snapshotAttachments(
+    dataStore,
+    imageStore,
+    worldAttachmentDir(userId, worldId),
+    'worlds',
+    publicId,
+  );
   const meta = await buildMeta(dataStore, 'worlds', publicId, owner, {
     title: world.title,
     regions,
     categories,
     moods: world.moods ?? [],
+    ...attachmentFields(attachments),
   });
   return finishPublish(dataStore, 'worlds', mapKey, meta);
 }
 
-export async function publishCharacter(dataStore, textStore, userId, worldId, kind, name, owner) {
+export async function publishCharacter(dataStore, textStore, userId, worldId, kind, name, owner, imageStore) {
   const character = await getCharacter(dataStore, textStore, userId, worldId, kind, name);
   if (!character) return { ok: false, reason: 'not_found' };
   const mapKey = publishCharacterMapKey(userId, worldId, kind, name);
   const publicId = await resolvePublicId(dataStore, mapKey);
   await textStore.write(publicCharacterDocPath(publicId), character.raw);
+  const attachments = await snapshotAttachments(
+    dataStore,
+    imageStore,
+    characterAttachmentDir(userId, worldId, kind, name),
+    'characters',
+    publicId,
+  );
   const worldMeta = await dataStore.get(worldMetaKey(userId, worldId));
   const meta = await buildMeta(dataStore, 'characters', publicId, owner, {
     title: characterTitle(character),
@@ -94,16 +140,24 @@ export async function publishCharacter(dataStore, textStore, userId, worldId, ki
     characterName: character.characterName ?? null,
     worldId,
     worldTitle: worldMeta?.title ?? null,
+    ...attachmentFields(attachments),
   });
   return finishPublish(dataStore, 'characters', mapKey, meta);
 }
 
-export async function publishScenario(dataStore, textStore, userId, worldId, scenarioId, owner) {
+export async function publishScenario(dataStore, textStore, userId, worldId, scenarioId, owner, imageStore) {
   const scenario = await getScenario(dataStore, textStore, userId, worldId, scenarioId);
   if (!scenario) return { ok: false, reason: 'not_found' };
   const mapKey = publishScenarioMapKey(userId, worldId, scenarioId);
   const publicId = await resolvePublicId(dataStore, mapKey);
   await textStore.write(publicScenarioDocPath(publicId), scenario.raw);
+  const attachments = await snapshotAttachments(
+    dataStore,
+    imageStore,
+    scenarioAttachmentDir(userId, worldId, scenarioId),
+    'scenarios',
+    publicId,
+  );
   const worldMeta = await dataStore.get(worldMetaKey(userId, worldId));
   const meta = await buildMeta(dataStore, 'scenarios', publicId, owner, {
     title: scenario.title,
@@ -112,6 +166,7 @@ export async function publishScenario(dataStore, textStore, userId, worldId, sce
     directorGuide: scenario.directorGuide ?? null,
     worldId,
     worldTitle: worldMeta?.title ?? null,
+    ...attachmentFields(attachments),
   });
   return finishPublish(dataStore, 'scenarios', mapKey, meta);
 }
@@ -126,6 +181,13 @@ export async function publishNovel(dataStore, textStore, userId, sessionId, owne
   const novelMeta = await dataStore.get(sessionNovelMetaKey(userId, sessionId));
   const sourceImageIds = Array.isArray(novelMeta?.imageIds) ? novelMeta.imageIds : [];
   const imageIds = [];
+  const attachments = await snapshotAttachments(
+    dataStore,
+    imageStore,
+    novelAttachmentDir(userId, sessionId),
+    'novels',
+    publicId,
+  );
 
   // 公開物をセッションから独立したスナップショットにする。再公開時に消えた画像も
   // 残さない。欠損画像はnullで位置を保ち、〈挿絵N〉と別画像がずれないようにする。
@@ -151,6 +213,7 @@ export async function publishNovel(dataStore, textStore, userId, sessionId, owne
   const meta = await buildMeta(dataStore, 'novels', publicId, owner, {
     title: session.title ?? 'セッション',
     imageIds,
+    ...attachmentFields(attachments),
   });
   return finishPublish(dataStore, 'novels', mapKey, meta);
 }
@@ -159,21 +222,47 @@ async function unpublishByMap(dataStore, textStore, type, mapKey, docsPrefixFn, 
   const map = await dataStore.get(mapKey);
   if (!map) return;
   await textStore.deleteDir(docsPrefixFn(map.publicId));
+  await deleteAttachmentCollection(
+    dataStore,
+    binaryStore,
+    publicAttachmentDir(type, map.publicId),
+  );
   if (binaryStore) await binaryStore.deleteDir(docsPrefixFn(map.publicId));
   await dataStore.delete(publicMetaKey(type, map.publicId));
   await dataStore.delete(mapKey);
 }
 
-export async function unpublishWorld(dataStore, textStore, userId, worldId) {
-  await unpublishByMap(dataStore, textStore, 'worlds', publishWorldMapKey(userId, worldId), publicWorldDocsPrefix);
+export async function unpublishWorld(dataStore, textStore, userId, worldId, imageStore) {
+  await unpublishByMap(
+    dataStore,
+    textStore,
+    'worlds',
+    publishWorldMapKey(userId, worldId),
+    publicWorldDocsPrefix,
+    imageStore,
+  );
 }
 
-export async function unpublishCharacter(dataStore, textStore, userId, worldId, kind, name) {
-  await unpublishByMap(dataStore, textStore, 'characters', publishCharacterMapKey(userId, worldId, kind, name), publicCharacterDocsPrefix);
+export async function unpublishCharacter(dataStore, textStore, userId, worldId, kind, name, imageStore) {
+  await unpublishByMap(
+    dataStore,
+    textStore,
+    'characters',
+    publishCharacterMapKey(userId, worldId, kind, name),
+    publicCharacterDocsPrefix,
+    imageStore,
+  );
 }
 
-export async function unpublishScenario(dataStore, textStore, userId, worldId, scenarioId) {
-  await unpublishByMap(dataStore, textStore, 'scenarios', publishScenarioMapKey(userId, worldId, scenarioId), publicScenarioDocsPrefix);
+export async function unpublishScenario(dataStore, textStore, userId, worldId, scenarioId, imageStore) {
+  await unpublishByMap(
+    dataStore,
+    textStore,
+    'scenarios',
+    publishScenarioMapKey(userId, worldId, scenarioId),
+    publicScenarioDocsPrefix,
+    imageStore,
+  );
 }
 
 export async function unpublishNovel(dataStore, textStore, userId, sessionId, imageStore) {
@@ -188,16 +277,16 @@ export async function unpublishNovel(dataStore, textStore, userId, sessionId, im
 }
 
 // deleteWorld用: 配下の公開キャラ/シナリオ→世界本体の順に解除
-export async function unpublishWorldCascade(dataStore, textStore, userId, worldId) {
+export async function unpublishWorldCascade(dataStore, textStore, userId, worldId, imageStore) {
   for (const kind of ['pc', 'npc']) {
     for (const key of await dataStore.list(publishCharacterListPrefix(userId, worldId, kind))) {
-      await unpublishCharacter(dataStore, textStore, userId, worldId, kind, key.split('/').pop());
+      await unpublishCharacter(dataStore, textStore, userId, worldId, kind, key.split('/').pop(), imageStore);
     }
   }
   for (const key of await dataStore.list(publishScenarioListPrefix(userId, worldId))) {
-    await unpublishScenario(dataStore, textStore, userId, worldId, key.split('/').pop());
+    await unpublishScenario(dataStore, textStore, userId, worldId, key.split('/').pop(), imageStore);
   }
-  await unpublishWorld(dataStore, textStore, userId, worldId);
+  await unpublishWorld(dataStore, textStore, userId, worldId, imageStore);
 }
 
 export async function listPublic(dataStore, type) {
@@ -264,10 +353,12 @@ export async function queryPublic(dataStore, type, { q, moods, ruleset, ownerId,
   const lim = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Math.min(Number(limit), 100) : 20;
   const off = Number.isFinite(Number(offset)) && Number(offset) > 0 ? Number(offset) : 0;
   const items = filtered.slice(off, off + lim).map((meta) => {
-    if (type !== 'scenarios') return meta;
+    const { attachments = [], topImageId = null, ...listMeta } = meta;
+    const topImage = topAttachmentOf({ items: attachments, topImageId });
+    if (type !== 'scenarios') return { ...listMeta, ...(topImage ? { topImage } : {}) };
     // 進行ガイドは公開一覧・検索には不要。詳細取得とインポート時だけ返す。
-    const { directorGuide: _directorGuide, ...listedMeta } = meta;
-    return listedMeta;
+    const { directorGuide: _directorGuide, ...listedMeta } = listMeta;
+    return { ...listedMeta, ...(topImage ? { topImage } : {}) };
   });
   return { items, total: filtered.length, hasMore: off + items.length < filtered.length };
 }

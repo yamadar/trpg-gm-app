@@ -4,8 +4,10 @@ import { unpublishScenario } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { isValidMoods } from '../storage/moods.js';
+import { deleteAttachmentCollection } from '../storage/attachmentLibrary.js';
+import { scenarioAttachmentDir } from '../storage/paths.js';
 
-export function createScenariosRouter({ dataStore, textStore, scenarioAnalyzer = null, usage = null }) {
+export function createScenariosRouter({ dataStore, textStore, imageStore, scenarioAnalyzer = null, usage = null }) {
   const router = Router();
   router.param('worldId', idParamGuard);
   router.param('id', idParamGuard);
@@ -67,7 +69,19 @@ export function createScenariosRouter({ dataStore, textStore, scenarioAnalyzer =
   }));
 
   router.delete('/worlds/:worldId/scenarios/:id', asyncHandler(async (req, res) => {
-    await unpublishScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.id);
+    await unpublishScenario(
+      dataStore,
+      textStore,
+      req.userId,
+      req.params.worldId,
+      req.params.id,
+      imageStore,
+    );
+    await deleteAttachmentCollection(
+      dataStore,
+      imageStore,
+      scenarioAttachmentDir(req.userId, req.params.worldId, req.params.id),
+    );
     await deleteScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.id);
     res.status(204).end();
   }));

@@ -1,4 +1,5 @@
-import { scenarioMetaKey, scenarioDocPath } from './paths.js';
+import { scenarioAttachmentDir, scenarioMetaKey, scenarioDocPath } from './paths.js';
+import { getAttachmentCollection, topAttachmentOf } from './attachmentLibrary.js';
 
 // rawはユーザー入力そのものをsource of truthとして保存する。directorGuideはrawを
 // 書き換えた本文ではなく、AI GMが進行判断に使う派生データ。
@@ -38,10 +39,16 @@ export async function listScenarios(dataStore, userId, worldId) {
   const keys = await dataStore.list(`users/${userId}/worlds/${worldId}/scenarios`);
   const metas = await Promise.all(keys.map((k) => dataStore.get(k)));
   // 進行ガイドは大きく、一覧カードでは不要。シナリオ選択後のgetScenarioで取得する。
-  return metas.filter(Boolean).map(({ directorGuide: _directorGuide, ...m }) => ({
-    ...m,
-    moods: m.moods ?? [],
-  }));
+  return Promise.all(
+    metas.filter(Boolean).map(async ({ directorGuide: _directorGuide, ...m }) => {
+      const collection = await getAttachmentCollection(
+        dataStore,
+        scenarioAttachmentDir(userId, worldId, m.id),
+      );
+      const topImage = topAttachmentOf(collection);
+      return { ...m, moods: m.moods ?? [], ...(topImage ? { topImage } : {}) };
+    }),
+  );
 }
 
 export async function deleteScenario(dataStore, textStore, userId, worldId, id) {

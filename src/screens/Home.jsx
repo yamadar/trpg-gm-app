@@ -22,6 +22,9 @@ import { saveSession } from '../storage/index.js';
 import { makeId } from '../utils/makeId.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { summarizeRolls } from '../engine/rollStats.js';
+import ImageAttachmentEditor from '../components/media/ImageAttachmentEditor.jsx';
+import TopImage from '../components/media/TopImage.jsx';
+import { attachmentUrl } from '../api/attachmentClient.js';
 
 const NOVEL_POLL_MS = 5000;
 
@@ -106,6 +109,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
   const [endingMap, setEndingMap] = useState({}); // sessionId -> エンディング記録
   const [endingsLoaded, setEndingsLoaded] = useState(false);
   const [endingBusy, setEndingBusy] = useState({});
+  const [imageEditorSessionId, setImageEditorSessionId] = useState(null);
 
   // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
   // hasRunningRefを常に最新の状態と一致させる。通知の判定もここに集約する。
@@ -485,7 +489,15 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
       <Card key={s.id} style={{ cursor: 'pointer' }} onClick={() => onContinue(s.id)}>
         {/* 情報層 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0 }}>
+            <TopImage
+              src={
+                job.topImage
+                  ? attachmentUrl({ type: 'novel', sessionId: s.id }, job.topImage.id, 'thumbnail')
+                  : null
+              }
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
                 fontFamily: F_DISPLAY,
@@ -527,6 +539,7 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
               }}
             >
               {lastLineOf(s)}
+            </div>
             </div>
           </div>
           <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brass, whiteSpace: 'nowrap' }}>続ける →</div>
@@ -596,6 +609,18 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
               <Button variant="ghost" onClick={(e) => handleNovelize(e, s)} disabled={!user} style={ACTION_BTN}>
                 {job.status === 'error' ? '小説化を再試行' : hasNovel ? '小説を再生成' : '小説化する'}
               </Button>
+              {hasNovel && (
+                <Button
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImageEditorSessionId((current) => current === s.id ? null : s.id);
+                  }}
+                  style={ACTION_BTN}
+                >
+                  {imageEditorSessionId === s.id ? '画像管理を閉じる' : '画像を管理'}
+                </Button>
+              )}
             </>
           )}
           {s.worldId && (
@@ -639,6 +664,22 @@ export default function Home({ sessions, storageOk, onNew, onContinue, onNextCha
               </Button>
             ))}
         </div>
+        {imageEditorSessionId === s.id && (
+          <div onClick={(event) => event.stopPropagation()}>
+            <ImageAttachmentEditor
+              owner={{ type: 'novel', sessionId: s.id }}
+              onCollectionChange={(collection) => {
+                const topImage = collection.items.find((item) => item.id === collection.topImageId);
+                applyNovelJobs((prev) => {
+                  const nextJob = { ...(prev[s.id] || {}) };
+                  if (topImage) nextJob.topImage = topImage;
+                  else delete nextJob.topImage;
+                  return { ...prev, [s.id]: nextJob };
+                });
+              }}
+            />
+          </div>
+        )}
       </Card>
     );
   }

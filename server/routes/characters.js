@@ -3,8 +3,10 @@ import { saveCharacter, getCharacter, listCharacterSummaries, deleteCharacter, s
 import { unpublishCharacter } from '../storage/shareLibrary.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard, kindParamGuard } from './validateId.js';
+import { deleteAttachmentCollection } from '../storage/attachmentLibrary.js';
+import { characterAttachmentDir } from '../storage/paths.js';
 
-export function createCharactersRouter({ dataStore, textStore }) {
+export function createCharactersRouter({ dataStore, textStore, imageStore }) {
   const router = Router();
   router.param('worldId', idParamGuard);
   router.param('kind', kindParamGuard);
@@ -44,7 +46,20 @@ export function createCharactersRouter({ dataStore, textStore }) {
   }));
 
   router.delete('/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
-    await unpublishCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
+    await unpublishCharacter(
+      dataStore,
+      textStore,
+      req.userId,
+      req.params.worldId,
+      req.params.kind,
+      req.params.name,
+      imageStore,
+    );
+    await deleteAttachmentCollection(
+      dataStore,
+      imageStore,
+      characterAttachmentDir(req.userId, req.params.worldId, req.params.kind, req.params.name),
+    );
     await deleteCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
     res.status(204).end();
   }));

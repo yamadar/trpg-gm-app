@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import { patchMe } from '../../api/authClient.js';
 import { navigate } from '../../navigation/useRoute.js';
 import LoginModal from '../auth/LoginModal.jsx';
+import { deleteProfileImage, uploadProfileImage } from '../../api/attachmentClient.js';
 
 const menuItemStyle = {
   textAlign: 'left',
@@ -167,6 +168,7 @@ function ProfileEditModal({ user, onClose, onSaved }) {
   const [displayName, setDisplayName] = useState(user.displayName || '');
   const [bio, setBio] = useState(user.bio ?? '');
   const [clearAvatar, setClearAvatar] = useState(false);
+  const [profileFile, setProfileFile] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -176,7 +178,13 @@ function ProfileEditModal({ user, onClose, onSaved }) {
     try {
       const patch = { displayName, bio };
       if (clearAvatar) patch.avatarUrl = null;
-      const { user: updatedUser } = await patchMe(patch);
+      let { user: updatedUser } = await patchMe(patch);
+      if (clearAvatar) {
+        ({ user: updatedUser } = await deleteProfileImage());
+      }
+      if (profileFile) {
+        ({ user: updatedUser } = await uploadProfileImage(profileFile));
+      }
       onSaved(updatedUser);
     } catch (e) {
       setError(e.message || '保存に失敗しました');
@@ -219,6 +227,30 @@ function ProfileEditModal({ user, onClose, onSaved }) {
             onChange={(e) => setBio(e.target.value)}
           />
         </Field>
+        <Field label="プロフィール画像" hint="JPEG・PNG・WebP、10MBまで。公開プロフィールにも表示される。">
+          <div>
+            {user.avatarUrl && (
+              <img
+                src={user.avatarUrl}
+                alt="現在のプロフィール画像"
+                style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', display: 'block', marginBottom: 8 }}
+              />
+            )}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => {
+                setProfileFile(event.target.files?.[0] || null);
+                if (event.target.files?.[0]) setClearAvatar(false);
+              }}
+            />
+            {profileFile && (
+              <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, marginTop: 5 }}>
+                {profileFile.name}
+              </div>
+            )}
+          </div>
+        </Field>
         <label
           style={{
             display: 'flex',
@@ -233,7 +265,10 @@ function ProfileEditModal({ user, onClose, onSaved }) {
           <input
             type="checkbox"
             checked={clearAvatar}
-            onChange={(e) => setClearAvatar(e.target.checked)}
+            onChange={(e) => {
+              setClearAvatar(e.target.checked);
+              if (e.target.checked) setProfileFile(null);
+            }}
           />
           アバターを削除する
         </label>

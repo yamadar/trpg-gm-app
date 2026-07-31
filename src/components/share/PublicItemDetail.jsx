@@ -8,6 +8,7 @@ import { listWorlds } from '../../api/worldLibraryClient.js';
 import { useAuth } from '../../auth/AuthContext.jsx';
 import { KIND_LABELS } from '../../constants/publicContent.js';
 import MarkdownEditor from '../ui/MarkdownEditor.jsx';
+import { publicAttachmentUrl } from '../../api/attachmentClient.js';
 
 // 「もう一度別の◯◯として取り込むか」の確認文で使う。UIの他の場所(既存Worldを選ぶ・
 // 追加先のWorldを選択)と同じ呼び方に揃える。
@@ -104,6 +105,9 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
   // worldId は Character / Scenario の取り込み先(Worldの取り込みでは null)で、
   // 「複製する」を選んだときに同じ宛先で叩き直すために覚えておく。
   const [duplicateConfirm, setDuplicateConfirm] = useState(null); // { worldId } | null
+  const attachments = Array.isArray(item.attachments) ? item.attachments : [];
+  const topImage = attachments.find((image) => image.id === item.topImageId) ?? null;
+  const galleryImages = attachments.filter((image) => image.id !== item.topImageId);
 
   async function runImport(worldId, duplicate) {
     setAdding(true);
@@ -150,6 +154,20 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
   return (
     <div>
       <Card>
+        {topImage && (
+          <figure style={{ margin: '0 0 18px' }}>
+            <img
+              src={publicAttachmentUrl(type, item.publicId, topImage.id)}
+              alt={topImage.description || `${item.title}のトップ画像`}
+              style={{ display: 'block', width: '100%', maxHeight: 420, objectFit: 'contain', borderRadius: 6 }}
+            />
+            {topImage.description && (
+              <figcaption style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft, marginTop: 6 }}>
+                {topImage.description}
+              </figcaption>
+            )}
+          </figure>
+        )}
         <div style={{ fontFamily: F_DISPLAY, fontSize: 18, color: COLORS.ink, marginBottom: 6 }}>{item.title}</div>
         <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint, marginBottom: 4 }}>
           {onAuthorClick ? (
@@ -179,6 +197,31 @@ export default function PublicItemDetail({ type, item, onAuthorClick }) {
             <MarkdownEditor value={item.raw} label={`${item.title}の本文`} readOnly minHeight={0} />
           )}
         </div>
+
+        {galleryImages.length > 0 && (
+          <section style={{ margin: '24px 0' }}>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.brassDark, marginBottom: 10 }}>
+              添付画像
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+              {galleryImages.map((image) => (
+                <figure key={image.id} style={{ margin: 0 }}>
+                  <img
+                    src={publicAttachmentUrl(type, item.publicId, image.id)}
+                    alt={image.description || '添付画像'}
+                    loading="lazy"
+                    style={{ width: '100%', height: 180, objectFit: 'contain', borderRadius: 5 }}
+                  />
+                  {image.description && (
+                    <figcaption style={{ fontFamily: F_BODY, fontSize: 12, color: COLORS.inkSoft, marginTop: 5 }}>
+                      {image.description}
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          </section>
+        )}
 
         {type === 'worlds' && (
           <>

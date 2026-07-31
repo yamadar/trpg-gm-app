@@ -42,6 +42,14 @@ import {
   sessionImageDir,
   sessionImagePath,
   starterManifestKey,
+  attachmentManifestKey,
+  attachmentVariantPath,
+  characterAttachmentDir,
+  novelAttachmentDir,
+  profileImageDir,
+  publicAttachmentDir,
+  scenarioAttachmentDir,
+  worldAttachmentDir,
 } from './paths.js';
 
 describe('storage paths', () => {
@@ -56,6 +64,7 @@ describe('storage paths', () => {
   it('builds session novel paths', () => {
     expect(sessionNovelDocPath('usr_1', 's1')).toBe('users/usr_1/sessions/s1/novel.md');
     expect(sessionNovelMetaKey('usr_1', 's1')).toBe('users/usr_1/sessions/s1/novel');
+    expect(novelAttachmentDir('usr_1', 's1')).toBe('users/usr_1/sessions/s1/novel/attachments');
   });
 
   it('builds the session image dir and file path', () => {
@@ -71,6 +80,7 @@ describe('storage paths', () => {
     expect(worldMetaKey('usr_1', 'waterdeep')).toBe('users/usr_1/worlds/waterdeep');
     expect(worldDocPath('usr_1', 'waterdeep')).toBe('users/usr_1/worlds/waterdeep/world.md');
     expect(worldSourceDocPath('usr_1', 'waterdeep')).toBe('users/usr_1/worlds/waterdeep/source.md');
+    expect(worldAttachmentDir('usr_1', 'waterdeep')).toBe('users/usr_1/worlds/waterdeep/attachments');
   });
 
   it('builds region and category paths', () => {
@@ -92,6 +102,9 @@ describe('storage paths', () => {
     expect(characterMetaKey('usr_1', 'waterdeep', 'pc', 'alice')).toBe(
       'users/usr_1/worlds/waterdeep/pc/alice.parsed',
     );
+    expect(characterAttachmentDir('usr_1', 'waterdeep', 'pc', 'alice')).toBe(
+      'users/usr_1/worlds/waterdeep/pc/alice/attachments',
+    );
   });
 
   it('builds scenario and campaign paths', () => {
@@ -100,6 +113,9 @@ describe('storage paths', () => {
     );
     expect(scenarioMetaKey('usr_1', 'waterdeep', 'sc1')).toBe(
       'users/usr_1/worlds/waterdeep/scenarios/sc1',
+    );
+    expect(scenarioAttachmentDir('usr_1', 'waterdeep', 'sc1')).toBe(
+      'users/usr_1/worlds/waterdeep/scenarios/sc1/attachments',
     );
     expect(campaignMetaKey('usr_1', 'waterdeep', 'cp1')).toBe(
       'users/usr_1/worlds/waterdeep/campaigns/cp1',
@@ -116,6 +132,14 @@ describe('storage paths', () => {
   it('builds a ruleset key', () => {
     expect(rulesetMetaKey('usr_1', 'coc7e')).toBe('users/usr_1/rulesets/coc7e');
   });
+
+  it('builds shared attachment and profile image paths', () => {
+    expect(profileImageDir('usr_1')).toBe('users/usr_1/profile-image');
+    expect(attachmentManifestKey('users/usr_1/profile-image')).toBe('users/usr_1/profile-image/manifest');
+    expect(attachmentVariantPath('users/usr_1/profile-image', 'att_1', 'display')).toBe(
+      'users/usr_1/profile-image/att_1/display.webp',
+    );
+  });
 });
 
 describe('public/publish paths', () => {
@@ -129,6 +153,7 @@ describe('public/publish paths', () => {
     expect(publicCharacterDocPath('pub_abc')).toBe('public/characters/pub_abc/sheet.md');
     expect(publicScenarioDocPath('pub_abc')).toBe('public/scenarios/pub_abc/scenario.md');
     expect(publicNovelDocPath('pub_abc')).toBe('public/novels/pub_abc/novel.md');
+    expect(publicAttachmentDir('worlds', 'pub_abc')).toBe('public/worlds/pub_abc/attachments');
   });
 
   it('builds publish mapping keys under the user namespace', () => {

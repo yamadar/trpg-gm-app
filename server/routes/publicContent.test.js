@@ -28,8 +28,11 @@ import {
   sessionNovelDocPath,
   sessionNovelMetaKey,
   sessionImagePath,
+  profileImageDir,
+  worldAttachmentDir,
 } from '../storage/paths.js';
 import { findOrCreateUser, updateUserProfile } from '../auth/users.js';
+import { addAttachment, setTopAttachment } from '../storage/attachmentLibrary.js';
 
 let dir;
 let dataStore;
@@ -57,7 +60,50 @@ afterEach(async () => {
 });
 
 describe('publicContent routes — authentication-free gallery read', () => {
+  it('serves uploaded profile images without authentication', async () => {
+    const user = await findOrCreateUser(dataStore, {
+      provider: 'google',
+      providerUserId: 'profile-image-user',
+      displayName: '画像ユーザー',
+      avatarUrl: null,
+    });
+    const { item } = await addAttachment(dataStore, imageStore, profileImageDir(user.id), {
+      display: Buffer.from('profile-display'),
+      thumbnail: Buffer.from('profile-thumb'),
+      mimeType: 'image/webp',
+      width: 512,
+      height: 512,
+      byteSize: 28,
+    }, { replace: true, makeTop: true });
+
+    const profile = await request(app).get(`/api/users/${user.id}`);
+    expect(profile.body.avatarUrl).toBe(`/api/users/${user.id}/profile-image/${item.id}/display`);
+    const image = await request(app).get(profile.body.avatarUrl);
+    expect(image.status).toBe(200);
+    expect(image.headers['content-type']).toMatch(/^image\/webp/);
+  });
+
   describe('GET /api/public/:type — list public items', () => {
+    it('returns only the top attachment summary in list results', async () => {
+      const owner = { id: 'usr_img', displayName: '画像作者' };
+      await dataStore.set(worldMetaKey(owner.id, 'w1'), { id: 'w1', title: '画像世界', updatedAt: 1 });
+      await textStore.write(worldDocPath(owner.id, 'w1'), '# 世界');
+      const { item } = await addAttachment(dataStore, imageStore, worldAttachmentDir(owner.id, 'w1'), {
+        display: Buffer.from('display'),
+        thumbnail: Buffer.from('thumb'),
+        mimeType: 'image/webp',
+        width: 800,
+        height: 600,
+        byteSize: 12,
+      }, { description: '表紙' });
+      await setTopAttachment(dataStore, worldAttachmentDir(owner.id, 'w1'), item.id);
+      await publishWorld(dataStore, textStore, owner.id, 'w1', owner, imageStore);
+
+      const res = await request(app).get('/api/public/worlds');
+      expect(res.body.items[0].topImage).toMatchObject({ id: item.id, description: '表紙' });
+      expect(res.body.items[0].attachments).toBeUndefined();
+    });
+
     it('lists public worlds without auth, sorted desc by publishedAt', async () => {
       const owner = { id: 'usr_1', displayName: 'Alice' };
 

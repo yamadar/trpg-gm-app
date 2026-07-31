@@ -6,7 +6,8 @@ Renderの **Web Service + Persistent Disk** で公開する手順。所要時間
 
 このアプリは以下の制約を持つため、永続ディスクを1インスタンスに接続できるPaaSが必要になる。
 
-- サーバー側の永続化(`server/storage/dataStore.js` / `textStore.js` / `imageStore.js`)は**ローカルファイルシステム実装**で、`rename`によるアトミック書き込みと`readdir`による一覧に依存している。オブジェクトストレージへ直接置き換えることはできない。
+- サーバー側の永続化(`server/storage/dataStore.js` / `textStore.js` / `imageStore.js`)は**ローカルファイルシステム実装**で、`rename`によるアトミック書き込みと`readdir`による一覧に依存している。ユーザー添付画像とプロフィール画像も同じ永続ディスクへ保存する。オブジェクトストレージへ直接置き換えることはできない。
+- ユーザー添付画像は`sharp`でWebP変換する。`npm ci`が対象環境向けネイティブバイナリを導入するため、依存を本番で省略しない。
 - ディスクを共有する複数インスタンス構成は想定していない(ロック機構なし)。**必ず1インスタンスで運用する**。
 - `POST /api/messages`はGemini APIの応答を非ストリーミングで待つ(`server/routes/messages.js`・`server/textProvider.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
 - OAuthのredirect_uri(`${BASE_URL}/auth/{provider}/callback`)とCSRF目的のOrigin検証が`BASE_URL`基準のため、**固定ドメイン**が必要。
@@ -49,7 +50,7 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 |---|---|
 | Name | `gmdesk-data` |
 | Mount Path | `/data` |
-| Size | 5GB(場面挿絵PNGが増えるので使用量を見て拡張。**縮小は不可**) |
+| Size | 5GB(場面挿絵とユーザー添付画像が増えるので使用量を見て拡張。**縮小は不可**) |
 
 ## 2. 環境変数を設定する
 
@@ -115,7 +116,7 @@ curl -i https://<ドメイン>/api/sessions
 # => 401 {"error":"login required"}
 ```
 
-ブラウザで開き、ログイン → World作成 → セッション開始まで通ればデプロイ完了。ログイン後に**再デプロイをまたいでもログインが維持される**ことも確認する(維持されない場合は`DATA_DIR`がディスクを指していない)。
+ブラウザで開き、ログイン → World作成 → 画像添付 → セッション開始まで確認する。画像はJPEG/PNG/WebP、1枚10MBまで。ログインと添付画像が**再デプロイ後も維持される**ことも確認する(維持されない場合は`DATA_DIR`がディスクを指していない)。
 
 ## 6. バックアップ(必須)
 

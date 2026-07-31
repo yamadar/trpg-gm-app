@@ -5,25 +5,29 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './dataStore.js';
 import { createFsTextStore } from './textStore.js';
+import { createFsImageStore } from './imageStore.js';
 import { saveWorld } from './worldLibrary.js';
 import { saveRegion, saveCategory } from './worldContentLibrary.js';
 import { saveCharacter, getCharacter, listCharacters } from './characterLibrary.js';
 import { saveScenario, getScenario } from './scenarioLibrary.js';
-import { worldMetaKey, characterMetaKey, scenarioMetaKey } from './paths.js';
+import { worldAttachmentDir, worldMetaKey, characterMetaKey, scenarioMetaKey } from './paths.js';
 import { publishWorld, publishCharacter, publishScenario, unpublishWorld } from './shareLibrary.js';
 import { getWorld } from './worldLibrary.js';
 import { importWorld, importCharacter, importScenario } from './importLibrary.js';
+import { addAttachment, getAttachmentCollection, setTopAttachment } from './attachmentLibrary.js';
 
 const OWNER = { id: 'usr_a', displayName: '太郎' };
 
 let dir;
 let dataStore;
 let textStore;
+let imageStore;
 
 beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'import-library-test-'));
   dataStore = createFsDataStore(dir);
   textStore = createFsTextStore(dir);
+  imageStore = createFsImageStore(dir);
 });
 
 afterEach(async () => {
@@ -38,6 +42,29 @@ async function seedWorld(userId, worldId = 'w1', title = 'テスト世界') {
 }
 
 describe('importWorld', () => {
+  it('copies public attachments into an independent private collection', async () => {
+    await saveWorld(dataStore, textStore, 'usr_a', { id: 'w1', title: '画像世界', raw: '# 世界' });
+    const sourceDir = worldAttachmentDir('usr_a', 'w1');
+    const { item } = await addAttachment(dataStore, imageStore, sourceDir, {
+      display: Buffer.from('display'),
+      thumbnail: Buffer.from('thumb'),
+      mimeType: 'image/webp',
+      width: 800,
+      height: 600,
+      byteSize: 12,
+    }, { description: '地図' });
+    await setTopAttachment(dataStore, sourceDir, item.id);
+    const { meta: pub } = await publishWorld(dataStore, textStore, 'usr_a', 'w1', OWNER, imageStore);
+
+    const imported = await importWorld(dataStore, textStore, 'usr_b', pub.publicId, { imageStore });
+    const collection = await getAttachmentCollection(
+      dataStore,
+      worldAttachmentDir('usr_b', imported.meta.id),
+    );
+    expect(collection.topImageId).toBe(item.id);
+    expect(collection.items[0].description).toBe('地図');
+  });
+
   it('copies world.md, regions and categories under a new id, leaving the source and public snapshot untouched', async () => {
     await seedWorld('usr_a', 'w1', 'テスト世界');
     const { meta: pubMeta } = await publishWorld(dataStore, textStore, 'usr_a', 'w1', OWNER);

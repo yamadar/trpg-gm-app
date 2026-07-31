@@ -38,6 +38,10 @@ export function sessionImagePath(userId, sessionId, imageId) {
   return `users/${userId}/sessions/${sessionId}/images/${imageId}.png`;
 }
 
+export function novelAttachmentDir(userId, sessionId) {
+  return `users/${userId}/sessions/${sessionId}/novel/attachments`;
+}
+
 export function worldListPrefix(userId) {
   return `users/${userId}/worlds`;
 }
@@ -52,6 +56,10 @@ export function worldDocPath(userId, worldId) {
 
 export function worldSourceDocPath(userId, worldId) {
   return `users/${userId}/worlds/${worldId}/source.md`;
+}
+
+export function worldAttachmentDir(userId, worldId) {
+  return `users/${userId}/worlds/${worldId}/attachments`;
 }
 
 export function regionDocPath(userId, worldId, region) {
@@ -78,12 +86,20 @@ export function characterMetaKey(userId, worldId, kind, name) {
   return `users/${userId}/worlds/${worldId}/${kind}/${name}.parsed`;
 }
 
+export function characterAttachmentDir(userId, worldId, kind, name) {
+  return `users/${userId}/worlds/${worldId}/${kind}/${name}/attachments`;
+}
+
 export function scenarioDocPath(userId, worldId, scenarioId) {
   return `users/${userId}/worlds/${worldId}/scenarios/${scenarioId}/scenario.md`;
 }
 
 export function scenarioMetaKey(userId, worldId, scenarioId) {
   return `users/${userId}/worlds/${worldId}/scenarios/${scenarioId}`;
+}
+
+export function scenarioAttachmentDir(userId, worldId, scenarioId) {
+  return `users/${userId}/worlds/${worldId}/scenarios/${scenarioId}/attachments`;
 }
 
 export function campaignMetaKey(userId, worldId, campaignId) {
@@ -156,6 +172,22 @@ export function publicNovelImageDir(publicId) {
 
 export function publicNovelImagePath(publicId, imageId) {
   return `public/novels/${publicId}/images/${imageId}.png`;
+}
+
+export function publicAttachmentDir(type, publicId) {
+  return `public/${type}/${publicId}/attachments`;
+}
+
+export function profileImageDir(userId) {
+  return `users/${userId}/profile-image`;
+}
+
+export function attachmentManifestKey(dir) {
+  return `${dir}/manifest`;
+}
+
+export function attachmentVariantPath(dir, attachmentId, variant) {
+  return `${dir}/${attachmentId}/${variant}.webp`;
 }
 
 export function publishWorldMapKey(userId, worldId) {

@@ -31,13 +31,13 @@ export function createPublishRouter({ dataStore, textStore, imageStore }) {
   }
 
   router.post('/publish/worlds/:worldId', asyncHandler(async (req, res) => {
-    send(res, await publishWorld(dataStore, textStore, req.userId, req.params.worldId, await ownerOf(req)));
+    send(res, await publishWorld(dataStore, textStore, req.userId, req.params.worldId, await ownerOf(req), imageStore));
   }));
   router.post('/publish/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
-    send(res, await publishCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name, await ownerOf(req)));
+    send(res, await publishCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name, await ownerOf(req), imageStore));
   }));
   router.post('/publish/worlds/:worldId/scenarios/:scenarioId', asyncHandler(async (req, res) => {
-    send(res, await publishScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.scenarioId, await ownerOf(req)));
+    send(res, await publishScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.scenarioId, await ownerOf(req), imageStore));
   }));
   router.post('/publish/sessions/:sessionId/novel', asyncHandler(async (req, res) => {
     send(res, await publishNovel(
@@ -51,15 +51,30 @@ export function createPublishRouter({ dataStore, textStore, imageStore }) {
   }));
 
   router.delete('/publish/worlds/:worldId', asyncHandler(async (req, res) => {
-    await unpublishWorld(dataStore, textStore, req.userId, req.params.worldId);
+    await unpublishWorld(dataStore, textStore, req.userId, req.params.worldId, imageStore);
     res.status(204).end();
   }));
   router.delete('/publish/worlds/:worldId/characters/:kind/:name', asyncHandler(async (req, res) => {
-    await unpublishCharacter(dataStore, textStore, req.userId, req.params.worldId, req.params.kind, req.params.name);
+    await unpublishCharacter(
+      dataStore,
+      textStore,
+      req.userId,
+      req.params.worldId,
+      req.params.kind,
+      req.params.name,
+      imageStore,
+    );
     res.status(204).end();
   }));
   router.delete('/publish/worlds/:worldId/scenarios/:scenarioId', asyncHandler(async (req, res) => {
-    await unpublishScenario(dataStore, textStore, req.userId, req.params.worldId, req.params.scenarioId);
+    await unpublishScenario(
+      dataStore,
+      textStore,
+      req.userId,
+      req.params.worldId,
+      req.params.scenarioId,
+      imageStore,
+    );
     res.status(204).end();
   }));
   router.delete('/publish/sessions/:sessionId/novel', asyncHandler(async (req, res) => {

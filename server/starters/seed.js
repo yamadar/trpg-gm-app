@@ -32,7 +32,7 @@ function publicIdOf(result, what) {
   return result.meta.publicId;
 }
 
-async function seedPack(dataStore, textStore, owner, pack) {
+async function seedPack(dataStore, textStore, owner, pack, imageStore) {
   await saveWorld(dataStore, textStore, OFFICIAL_USER_ID, {
     id: pack.id,
     title: pack.title,
@@ -59,9 +59,12 @@ async function seedPack(dataStore, textStore, owner, pack) {
     }
   }
 
-  const worldPublicId = publicIdOf(await publishWorld(dataStore, textStore, OFFICIAL_USER_ID, pack.id, owner), `world ${pack.id}`);
+  const worldPublicId = publicIdOf(
+    await publishWorld(dataStore, textStore, OFFICIAL_USER_ID, pack.id, owner, imageStore),
+    `world ${pack.id}`,
+  );
   const scenarioPublicId = publicIdOf(
-    await publishScenario(dataStore, textStore, OFFICIAL_USER_ID, pack.id, pack.scenario.id, owner),
+    await publishScenario(dataStore, textStore, OFFICIAL_USER_ID, pack.id, pack.scenario.id, owner, imageStore),
     `scenario ${pack.scenario.id}`
   );
   const characterIds = {};
@@ -69,7 +72,10 @@ async function seedPack(dataStore, textStore, owner, pack) {
     characterIds[kind] = [];
     for (const c of pack[kind]) {
       characterIds[kind].push(
-        publicIdOf(await publishCharacter(dataStore, textStore, OFFICIAL_USER_ID, pack.id, kind, c.name, owner), `${kind} ${c.name}`)
+        publicIdOf(
+          await publishCharacter(dataStore, textStore, OFFICIAL_USER_ID, pack.id, kind, c.name, owner, imageStore),
+          `${kind} ${c.name}`,
+        )
       );
     }
   }
@@ -92,11 +98,11 @@ async function seedPack(dataStore, textStore, owner, pack) {
   };
 }
 
-export async function seedStarters(dataStore, textStore, { packs } = {}) {
+export async function seedStarters(dataStore, textStore, { packs, imageStore } = {}) {
   const loaded = packs ?? (await loadStarterPacks());
   const owner = await ensureOfficialUser(dataStore);
   const entries = [];
-  for (const pack of loaded) entries.push(await seedPack(dataStore, textStore, owner, pack));
+  for (const pack of loaded) entries.push(await seedPack(dataStore, textStore, owner, pack, imageStore));
   const manifest = { packs: entries, seededAt: Date.now() };
   await dataStore.set(starterManifestKey(), manifest);
   return manifest;

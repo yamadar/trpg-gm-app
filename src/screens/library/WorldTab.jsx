@@ -22,6 +22,9 @@ import MoodChips from '../../components/ui/MoodChips.jsx';
 import MarkdownEditor from '../../components/ui/MarkdownEditor.jsx';
 import { normalizeMarkdown } from '../../utils/markdown.js';
 import { makeId } from '../../utils/makeId.js';
+import ImageAttachmentEditor from '../../components/media/ImageAttachmentEditor.jsx';
+import TopImage from '../../components/media/TopImage.jsx';
+import { attachmentUrl } from '../../api/attachmentClient.js';
 
 export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWorldsChanged }) {
   const { user } = useAuth();
@@ -315,7 +318,15 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
             style={{ cursor: 'pointer', borderColor: selectedWorldId === w.id ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
+                <TopImage
+                  src={
+                    w.topImage
+                      ? attachmentUrl({ type: 'world', worldId: w.id }, w.topImage.id, 'thumbnail')
+                      : null
+                  }
+                />
+                <div>
                 <button
                   type="button"
                   className="card-primary-action"
@@ -333,6 +344,7 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
                     {w.moods.join(' / ')}
                   </div>
                 )}
+                </div>
               </div>
               {user && (
                 <div
@@ -419,6 +431,11 @@ export default function WorldTab({ worlds, selectedWorldId, onSelectWorld, onWor
               削除
             </Button>
           </div>
+
+          <ImageAttachmentEditor
+            owner={{ type: 'world', worldId: selectedWorldId }}
+            onCollectionChange={onWorldsChanged}
+          />
 
           <div>
             <div style={{ fontFamily: F_DISPLAY, fontSize: 13, color: COLORS.brassDark, marginBottom: 8 }}>

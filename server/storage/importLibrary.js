@@ -1,10 +1,37 @@
 import { slugify } from './slugify.js';
-import { worldMetaKey, characterMetaKey, scenarioMetaKey } from './paths.js';
+import {
+  characterAttachmentDir,
+  publicAttachmentDir,
+  scenarioAttachmentDir,
+  worldAttachmentDir,
+  worldMetaKey,
+  characterMetaKey,
+  scenarioMetaKey,
+} from './paths.js';
 import { saveWorld, getWorld, listWorlds } from './worldLibrary.js';
 import { saveRegion, saveCategory } from './worldContentLibrary.js';
 import { saveCharacter, getCharacter, listCharacters } from './characterLibrary.js';
 import { saveScenario, getScenario, listScenarios } from './scenarioLibrary.js';
 import { getPublicWorld, getPublicItem } from './shareLibrary.js';
+import { copyAttachmentCollection } from './attachmentLibrary.js';
+
+async function importAttachments(dataStore, imageStore, type, publicId, pub, targetDir) {
+  const items = Array.isArray(pub.attachments) ? pub.attachments : [];
+  if (items.length === 0 && !pub.topImageId) return;
+  if (!imageStore) throw new Error('imageStore is required to import attachments');
+  await copyAttachmentCollection({
+    dataStore,
+    imageStore,
+    sourceDir: publicAttachmentDir(type, publicId),
+    targetDir,
+    sourceCollection: {
+      schemaVersion: 1,
+      items,
+      topImageId: pub.topImageId ?? null,
+      updatedAt: pub.updatedAt ?? Date.now(),
+    },
+  });
+}
 
 async function findAvailable(base, exists) {
   if (!(await exists(base))) return base;
@@ -48,7 +75,13 @@ function findReusable(metas, publicId, base, label, labelOf) {
 //   'reject' … 複製せず reason:'already_imported' と既存メタを返す。呼び出し側が
 //              「もう一度別のWorldとして取り込むか」を確認してから 'copy' で
 //              叩き直すための入口
-export async function importWorld(dataStore, textStore, userId, publicId, { preferredId, onDuplicate = 'copy' } = {}) {
+export async function importWorld(
+  dataStore,
+  textStore,
+  userId,
+  publicId,
+  { preferredId, onDuplicate = 'copy', imageStore } = {},
+) {
   const pub = await getPublicWorld(dataStore, textStore, publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   const base = typeof preferredId === 'string' && preferredId.length > 0 ? preferredId : slugify(pub.title);
@@ -77,11 +110,26 @@ export async function importWorld(dataStore, textStore, userId, publicId, { pref
       raw: category.raw,
     });
   }
+  await importAttachments(
+    dataStore,
+    imageStore,
+    'worlds',
+    publicId,
+    pub,
+    worldAttachmentDir(userId, id),
+  );
   return { ok: true, reused: false, meta: world };
 }
 
 // onDuplicate の意味は importWorld と同じ。判定は取り込み先World(targetWorldId)の中だけ。
-export async function importCharacter(dataStore, textStore, userId, publicId, targetWorldId, { onDuplicate = 'copy' } = {}) {
+export async function importCharacter(
+  dataStore,
+  textStore,
+  userId,
+  publicId,
+  targetWorldId,
+  { onDuplicate = 'copy', imageStore } = {},
+) {
   const pub = await getPublicItem(dataStore, textStore, 'characters', publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   if ((await dataStore.get(worldMetaKey(userId, targetWorldId))) === null) return { ok: false, reason: 'target_not_found' };
@@ -114,12 +162,27 @@ export async function importCharacter(dataStore, textStore, userId, publicId, ta
     revealed: false, // インポート先ではNPC秘匿情報を未開示に戻す
     sourcePublicId: publicId,
   });
+  await importAttachments(
+    dataStore,
+    imageStore,
+    'characters',
+    publicId,
+    pub,
+    characterAttachmentDir(userId, targetWorldId, pub.kind, name),
+  );
   return { ok: true, reused: false, meta: character };
 }
 
 // preferredId / onDuplicate は importWorld と同じ逃げ道。スターターパックのシナリオは
 // pack.json で意味のあるidを宣言しているが、指定が無ければ従来どおりslugify(title)に潰れる。
-export async function importScenario(dataStore, textStore, userId, publicId, targetWorldId, { preferredId, onDuplicate = 'copy' } = {}) {
+export async function importScenario(
+  dataStore,
+  textStore,
+  userId,
+  publicId,
+  targetWorldId,
+  { preferredId, onDuplicate = 'copy', imageStore } = {},
+) {
   const pub = await getPublicItem(dataStore, textStore, 'scenarios', publicId);
   if (!pub) return { ok: false, reason: 'not_found' };
   if ((await dataStore.get(worldMetaKey(userId, targetWorldId))) === null) return { ok: false, reason: 'target_not_found' };
@@ -143,5 +206,13 @@ export async function importScenario(dataStore, textStore, userId, publicId, tar
     directorGuide: pub.directorGuide ?? null,
     sourcePublicId: publicId,
   });
+  await importAttachments(
+    dataStore,
+    imageStore,
+    'scenarios',
+    publicId,
+    pub,
+    scenarioAttachmentDir(userId, targetWorldId, id),
+  );
   return { ok: true, reused: false, meta: scenario };
 }

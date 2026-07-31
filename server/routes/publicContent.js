@@ -3,7 +3,14 @@ import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { queryPublic, getPublicWorld, getPublicItem } from '../storage/shareLibrary.js';
 import { getUser } from '../auth/users.js';
-import { publicMetaKey, publicNovelImagePath, starterManifestKey } from '../storage/paths.js';
+import {
+  profileImageDir,
+  publicAttachmentDir,
+  publicMetaKey,
+  publicNovelImagePath,
+  starterManifestKey,
+} from '../storage/paths.js';
+import { readAttachmentVariant } from '../storage/attachmentLibrary.js';
 
 const TYPES = new Set(['worlds', 'characters', 'scenarios', 'novels']);
 
@@ -56,6 +63,32 @@ export function createPublicContentRouter({ dataStore, textStore, imageStore }) 
     res.send(image);
   }));
 
+  router.get('/public/:type/:publicId/attachments/:imageId/:variant', asyncHandler(async (req, res) => {
+    if (!TYPES.has(req.params.type)) {
+      res.status(404).json({ error: 'unknown type' });
+      return;
+    }
+    const meta = await dataStore.get(publicMetaKey(req.params.type, req.params.publicId));
+    if (!meta || !Array.isArray(meta.attachments) || !meta.attachments.some((item) => item.id === req.params.imageId)) {
+      res.status(404).json({ error: 'attachment not found' });
+      return;
+    }
+    const image = await readAttachmentVariant(
+      dataStore,
+      imageStore,
+      publicAttachmentDir(req.params.type, req.params.publicId),
+      req.params.imageId,
+      req.params.variant,
+    );
+    if (!image) {
+      res.status(404).json({ error: 'attachment not found' });
+      return;
+    }
+    res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(image);
+  }));
+
   router.get('/public/:type/:publicId', asyncHandler(async (req, res) => {
     const { type, publicId } = req.params;
     if (!TYPES.has(type)) {
@@ -81,6 +114,28 @@ export function createPublicContentRouter({ dataStore, textStore, imageStore }) 
       return;
     }
     res.json({ id: user.id, displayName: user.displayName, avatarUrl: user.avatarUrl, bio: user.bio });
+  }));
+
+  router.get('/users/:userId/profile-image/:imageId/:variant', asyncHandler(async (req, res) => {
+    const user = await getUser(dataStore, req.params.userId);
+    if (!user) {
+      res.status(404).json({ error: 'user not found' });
+      return;
+    }
+    const image = await readAttachmentVariant(
+      dataStore,
+      imageStore,
+      profileImageDir(req.params.userId),
+      req.params.imageId,
+      req.params.variant,
+    );
+    if (!image) {
+      res.status(404).json({ error: 'profile image not found' });
+      return;
+    }
+    res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(image);
   }));
 
   return router;

@@ -1,4 +1,5 @@
-import { worldMetaKey, worldDocPath, worldListPrefix } from './paths.js';
+import { worldAttachmentDir, worldMetaKey, worldDocPath, worldListPrefix } from './paths.js';
+import { getAttachmentCollection, topAttachmentOf } from './attachmentLibrary.js';
 
 // sourcePublicId: 公開素材から取り込んだ複製であることの印。同じ公開素材を取り込み直した
 // ときに複製を増やさないための手掛かりで、importLibrary が付ける。素材ライブラリからの
@@ -28,7 +29,13 @@ export async function getWorld(dataStore, textStore, userId, id) {
 export async function listWorlds(dataStore, userId) {
   const keys = await dataStore.list(worldListPrefix(userId));
   const metas = await Promise.all(keys.map((k) => dataStore.get(k)));
-  return metas.filter(Boolean).map((m) => ({ ...m, moods: m.moods ?? [] }));
+  return Promise.all(
+    metas.filter(Boolean).map(async (m) => {
+      const collection = await getAttachmentCollection(dataStore, worldAttachmentDir(userId, m.id));
+      const topImage = topAttachmentOf(collection);
+      return { ...m, moods: m.moods ?? [], ...(topImage ? { topImage } : {}) };
+    }),
+  );
 }
 
 export async function deleteWorld(dataStore, textStore, userId, id) {

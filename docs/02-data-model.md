@@ -117,17 +117,25 @@ worlds/{world_id}.json               Worldメタ(id/title/updatedAt)
 worlds/{world_id}/
   world.md                          世界観の要約(GMプロンプトに注入される本体。3.2.1節参照)
   source.md                         Worldインポート時の原文をそのまま保持(要約前の元資料)
+  attachments/
+    manifest.json                   World添付画像のImageCollection
+    {attachment_id}/
+      display.webp                  詳細表示用
+      thumbnail.webp                一覧・カード用
   regions/{region}.json             地域メタ(id/title)
   regions/{region}.md               地域詳細(大規模世界観の場合)
   categories/{topic}.json           カテゴリメタ(id/title)
   categories/{topic}.md             カテゴリ詳細(大規模世界観の場合)
   npc/{name}.md                     NPC原本
   npc/{name}.parsed.json            NPCメタレコード(revealed管理含む。parsed抽出は未実装)
+  npc/{name}/attachments/...        NPC添付画像
   pc/{name}.md                      PC原本
   pc/{name}.parsed.json             PCメタレコード。parsed: {goal, bonds}をキャッシュ
+  pc/{name}/attachments/...         PC添付画像
   scenarios/{scenario_id}.json      Scenarioメタ(title/recommendedRuleset/updatedAt)
   scenarios/{scenario_id}/
     scenario.md                    本文
+    attachments/...                Scenario添付画像
   campaigns/{campaign_id}.json      Campaignメタ({id,worldId,title,carriedPc:{raw,xp},chapters[],createdAt,updatedAt})
 
 rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。{id,label,desc,hint,growthUnit,formula}
@@ -144,12 +152,47 @@ sessions/{session_id}/
                                       startedAt, updatedAt, error, bootId })
   novelNotice.json                 完了通知の未読フラグ({ unread: boolean }。
                                     実装済み2026-07-25)
+  novel/attachments/...            小説添付画像。本文中の生成挿絵とは別コレクション
+
+profile-image/
+  manifest.json                    ユーザーが設定したプロフィール画像。最大1枚
+  {attachment_id}/
+    display.webp
+    thumbnail.webp
 
 public/starters                      スターターパックのマニフェスト({ packs[], seededAt })。
                                      シード(server/starters/seed.js)が書き、GET /api/startersが返す。
                                      唯一この行だけは`users/{userId}/`配下ではなくグローバルなキーであり、
                                      公開ツリー`public/...`名前空間の一部(04-persistence.md参照)
 ```
+
+**添付画像モデル(`server/storage/attachmentLibrary.js`)**
+
+```json
+{
+  "schemaVersion": 1,
+  "topImageId": "att_0123456789abcdef",
+  "items": [
+    {
+      "id": "att_0123456789abcdef",
+      "description": "画像ごとの説明",
+      "mimeType": "image/webp",
+      "width": 1600,
+      "height": 900,
+      "byteSize": 245678,
+      "createdAt": 1785460000000,
+      "updatedAt": 1785460000000
+    }
+  ],
+  "updatedAt": 1785460000000
+}
+```
+
+World・Scenario・Character・Novelは各20枚まで。`topImageId`は同じ`items`内のIDか`null`だけを許す。トップ画像削除時は`null`へ戻す。説明は各500字まで。入力はJPEG/PNG/WebP・1枚10MB・4000万画素までで、EXIF向きを反映してメタデータを除去し、表示用最大2560pxと640×360サムネイルへWebP変換する。プロフィール画像も同じモデルを使うが、アップロードごとに既存画像を置換し、512×512表示用と128×128サムネイルを作る。
+
+Novelの添付画像は、本文中の`〈挿絵N〉`と`novel.json.imageIds`で管理するAI生成挿絵とは別物。添付画像は小説カード・公開詳細のトップ画像/ギャラリー用途、生成挿絵は本文内の位置を持つ。
+
+公開時は`items`、説明、`topImageId`、両WebPを公開ツリーへコピーする。再公開まで非公開側の追加・編集・削除は公開版へ影響しない。公開素材のインポートも画像一式を新しい非公開コレクションへコピーし、以後独立して編集できる。
 
 **キャラクターの`name`はASCIIに限られる内部識別子**: `server/routes/characters.js`が`router.param('name', idParamGuard)`を持ち、`isValidId`が`^[A-Za-z0-9._-]+$`を要求する(`name`がそのままファイルパスになるため)。素材ライブラリの新規作成UIはユーザーへ`name`入力を求めず、`makeId('pc'|'npc')`で一意なASCII値を自動生成する。ユーザー向け名前は任意の`characterName`として別に保存し、空欄なら本文から生成AIが`parsed.name`へ抽出する。一覧・選択・公開の表示優先順位は`characterName`、`parsed.name`、本文の`PC名:`/`NPC名:`行、「名前未設定のPC/NPC」で、内部`name`は表示しない。`characterName`未送信の旧クライアントは既存値を維持し、空文字送信は明示解除として`null`へ正規化する。スターターパックはローマ字スラッグを`name`にし、日本語表記をシート本文の`PC名:`行に持つ(`server/starters/loadPacks.js`はこの`isValidId`を直接importして再利用しており、独自の正規表現は持たない。06-content-generation.md「スターターコンテンツ」節参照)。
 

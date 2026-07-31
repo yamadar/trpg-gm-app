@@ -111,7 +111,8 @@ export function createAuthRouter({
       }
       patch.bio = bio;
     }
-    res.json({ user: await updateUserProfile(dataStore, user.id, patch) });
+    await updateUserProfile(dataStore, user.id, patch);
+    res.json({ user: await getUser(dataStore, user.id) });
   }));
 
   return router;

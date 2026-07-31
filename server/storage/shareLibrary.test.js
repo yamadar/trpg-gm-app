@@ -27,6 +27,10 @@ import {
   sessionNovelDocPath,
   sessionNovelMetaKey,
   sessionImagePath,
+  publicAttachmentDir,
+  worldAttachmentDir,
+  attachmentManifestKey,
+  attachmentVariantPath,
 } from './paths.js';
 import {
   publishWorld,
@@ -48,6 +52,12 @@ import {
   getPublishedNovels,
 } from './shareLibrary.js';
 import { updateUserProfile, userProfileKey } from '../auth/users.js';
+import {
+  addAttachment,
+  readAttachmentVariant,
+  setTopAttachment,
+  updateAttachmentDescription,
+} from './attachmentLibrary.js';
 
 const OWNER = { id: 'usr_1', displayName: '太郎' };
 
@@ -76,6 +86,38 @@ async function seedWorld(userId, worldId = 'w1') {
 }
 
 describe('publishWorld', () => {
+  it('publishes attachment descriptions and top image as an independent snapshot', async () => {
+    await seedWorld('usr_1');
+    const sourceDir = worldAttachmentDir('usr_1', 'w1');
+    const { item } = await addAttachment(dataStore, imageStore, sourceDir, {
+      display: Buffer.from('display'),
+      thumbnail: Buffer.from('thumb'),
+      mimeType: 'image/webp',
+      width: 800,
+      height: 600,
+      byteSize: 12,
+    }, { description: '最初の説明' });
+    await setTopAttachment(dataStore, sourceDir, item.id);
+
+    const first = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER, imageStore);
+    expect(first.meta.topImageId).toBe(item.id);
+    expect(first.meta.attachments[0].description).toBe('最初の説明');
+    expect(await readAttachmentVariant(
+      dataStore,
+      imageStore,
+      publicAttachmentDir('worlds', first.meta.publicId),
+      item.id,
+      'display',
+    )).toEqual(Buffer.from('display'));
+
+    await updateAttachmentDescription(dataStore, sourceDir, item.id, '更新後');
+    expect((await getPublicWorld(dataStore, textStore, first.meta.publicId)).attachments[0].description).toBe('最初の説明');
+
+    const second = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER, imageStore);
+    expect(second.meta.publicId).toBe(first.meta.publicId);
+    expect(second.meta.attachments[0].description).toBe('更新後');
+  });
+
   it('snapshots world.md, regions and categories but not source.md', async () => {
     await seedWorld('usr_1');
     const { ok, meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
@@ -340,16 +382,27 @@ describe('publishNovel', () => {
 describe('unpublish*', () => {
   it('unpublishWorld removes snapshot, meta and mapping and is idempotent', async () => {
     await seedWorld('usr_1');
-    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER);
+    const { item } = await addAttachment(dataStore, imageStore, worldAttachmentDir('usr_1', 'w1'), {
+      display: Buffer.from('display'),
+      thumbnail: Buffer.from('thumbnail'),
+      mimeType: 'image/webp',
+      width: 800,
+      height: 450,
+      byteSize: 16,
+    });
+    const { meta } = await publishWorld(dataStore, textStore, 'usr_1', 'w1', OWNER, imageStore);
+    const publicImages = publicAttachmentDir('worlds', meta.publicId);
 
-    await unpublishWorld(dataStore, textStore, 'usr_1', 'w1');
+    await unpublishWorld(dataStore, textStore, 'usr_1', 'w1', imageStore);
 
     expect(await dataStore.get(publicMetaKey('worlds', meta.publicId))).toBeNull();
+    expect(await dataStore.get(attachmentManifestKey(publicImages))).toBeNull();
     expect(await textStore.read(publicWorldDocPath(meta.publicId))).toBeNull();
     expect(await textStore.read(publicRegionDocPath(meta.publicId, 'north'))).toBeNull();
+    expect(await imageStore.read(attachmentVariantPath(publicImages, item.id, 'display'))).toBeNull();
     expect(await dataStore.get(publishWorldMapKey('usr_1', 'w1'))).toBeNull();
 
-    await expect(unpublishWorld(dataStore, textStore, 'usr_1', 'w1')).resolves.not.toThrow();
+    await expect(unpublishWorld(dataStore, textStore, 'usr_1', 'w1', imageStore)).resolves.not.toThrow();
   });
 
   it('unpublishCharacter removes snapshot, meta and mapping and is idempotent', async () => {

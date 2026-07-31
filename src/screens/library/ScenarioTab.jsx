@@ -14,6 +14,9 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import { RULESETS } from '../../data/rulesets.js';
 import MoodChips from '../../components/ui/MoodChips.jsx';
 import { makeId } from '../../utils/makeId.js';
+import ImageAttachmentEditor from '../../components/media/ImageAttachmentEditor.jsx';
+import TopImage from '../../components/media/TopImage.jsx';
+import { attachmentUrl } from '../../api/attachmentClient.js';
 
 export default function ScenarioTab({ worldId }) {
   const { user } = useAuth();
@@ -213,7 +216,19 @@ export default function ScenarioTab({ worldId }) {
             style={{ cursor: 'pointer', borderColor: selectedId === s.id ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
+                <TopImage
+                  src={
+                    s.topImage
+                      ? attachmentUrl(
+                        { type: 'scenario', worldId, scenarioId: s.id },
+                        s.topImage.id,
+                        'thumbnail',
+                      )
+                      : null
+                  }
+                />
+                <div>
                 <button
                   type="button"
                   className="card-primary-action"
@@ -234,6 +249,7 @@ export default function ScenarioTab({ worldId }) {
                     {s.moods.join(' / ')}
                   </div>
                 )}
+                </div>
               </div>
               {user && (
                 <div
@@ -348,6 +364,10 @@ export default function ScenarioTab({ worldId }) {
               削除
             </Button>
           </div>
+          <ImageAttachmentEditor
+            owner={{ type: 'scenario', worldId, scenarioId: selectedId }}
+            onCollectionChange={refresh}
+          />
         </Card>
       )}
 

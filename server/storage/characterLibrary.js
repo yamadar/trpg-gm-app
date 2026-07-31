@@ -1,5 +1,6 @@
-import { characterMetaKey, characterDocPath } from './paths.js';
+import { characterAttachmentDir, characterMetaKey, characterDocPath } from './paths.js';
 import { summarizeSheet } from './characterSummary.js';
+import { getAttachmentCollection, topAttachmentOf } from './attachmentLibrary.js';
 
 // sourcePublicId の扱いは saveWorld と同じ(取り込み元の印を編集保存で失わせない)。
 export async function saveCharacter(
@@ -58,10 +59,17 @@ export async function listCharacterSummaries(dataStore, textStore, userId, world
     metas.map(async (meta) => {
       const raw = (await textStore.read(characterDocPath(userId, worldId, kind, meta.name))) ?? '';
       const { displayName, excerpt } = summarizeSheet(raw);
+      const topImage = topAttachmentOf(
+        await getAttachmentCollection(
+          dataStore,
+          characterAttachmentDir(userId, worldId, kind, meta.name),
+        ),
+      );
       return {
         ...meta,
         displayName: meta.characterName || meta.parsed?.name || displayName || '',
         excerpt,
+        ...(topImage ? { topImage } : {}),
       };
     })
   );

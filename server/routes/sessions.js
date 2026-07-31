@@ -6,11 +6,13 @@ import {
   sessionNovelNoticeKey,
   sessionListPrefix,
   sessionImagePath,
+  novelAttachmentDir,
 } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
 import { stripImageMarkers } from '../novelMarkers.js';
 import { buildIllustratedHtml } from '../illustratedNovel.js';
+import { getAttachmentCollection, topAttachmentOf } from '../storage/attachmentLibrary.js';
 
 // 生成後にセッションが進んでいれば、保存済みの小説は古い。
 function isStale(meta, session) {
@@ -91,6 +93,9 @@ export function createSessionsRouter({
           dataStore.get(sessionNovelNoticeKey(req.userId, id)),
           dataStore.get(key),
         ]);
+        const topImage = topAttachmentOf(
+          await getAttachmentCollection(dataStore, novelAttachmentDir(req.userId, id)),
+        );
         out[id] = {
           status,
           error,
@@ -103,6 +108,7 @@ export function createSessionsRouter({
           // レコードが無い(この機能の投入以前に生成された小説)は既読扱いにする。
           // ここを未読に倒すと、投入直後に過去の全小説が一斉に通知される。
           unread: notice?.unread === true,
+          ...(topImage ? { topImage } : {}),
         };
       })
     );

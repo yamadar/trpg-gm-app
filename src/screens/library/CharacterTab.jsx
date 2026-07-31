@@ -14,6 +14,9 @@ import { useAuth } from '../../auth/AuthContext.jsx';
 import { getOrParseCharacter } from '../../api/characterSheetCache.js';
 import { makeId } from '../../utils/makeId.js';
 import { characterDisplayName } from '../../utils/characterDisplayName.js';
+import ImageAttachmentEditor from '../../components/media/ImageAttachmentEditor.jsx';
+import TopImage from '../../components/media/TopImage.jsx';
+import { attachmentUrl } from '../../api/attachmentClient.js';
 
 export default function CharacterTab({ worldId }) {
   const { user } = useAuth();
@@ -249,18 +252,31 @@ export default function CharacterTab({ worldId }) {
             style={{ cursor: 'pointer', borderColor: selectedName === c.name ? COLORS.brass : COLORS.line }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button
-                type="button"
-                className="card-primary-action"
-                aria-current={selectedName === c.name}
-                onClick={() => {
-                  setCreating(false);
-                  setSelectedName(c.name);
-                }}
-                style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}
-              >
-                {characterDisplayName(c, kind)}
-              </button>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
+                <TopImage
+                  src={
+                    c.topImage
+                      ? attachmentUrl(
+                        { type: 'character', worldId, kind, name: c.name },
+                        c.topImage.id,
+                        'thumbnail',
+                      )
+                      : null
+                  }
+                />
+                <button
+                  type="button"
+                  className="card-primary-action"
+                  aria-current={selectedName === c.name}
+                  onClick={() => {
+                    setCreating(false);
+                    setSelectedName(c.name);
+                  }}
+                  style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}
+                >
+                  {characterDisplayName(c, kind)}
+                </button>
+              </div>
               <div
                 className="card-inline-action"
                 style={{ display: 'flex', gap: 8, alignItems: 'center' }}
@@ -375,6 +391,10 @@ export default function CharacterTab({ worldId }) {
               削除
             </Button>
           </div>
+          <ImageAttachmentEditor
+            owner={{ type: 'character', worldId, kind, name: selectedName }}
+            onCollectionChange={refresh}
+          />
         </Card>
       )}
 
