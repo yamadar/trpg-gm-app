@@ -12,6 +12,11 @@ export const PARTY_PHASES = [
 
 export const PARTY_AWAY_POLICIES = ['follow', 'wait', 'delegate'];
 
+const MAX_PARTY_SCENES = 200;
+const MAX_PARTY_FLAGS = 500;
+const MAX_PARTY_NARRATIVES = 500;
+const MAX_PARTY_AUTO_ACTIONS = 500;
+
 export function normalizePartySettings(value = {}) {
   const maxPlayers = Number.isSafeInteger(value.maxPlayers)
     ? Math.max(2, Math.min(6, value.maxPlayers))
@@ -309,12 +314,12 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
         ? Math.max(0, Math.min(10, Math.round(result.globalUpdate.tensionLevel)))
         : next.global.tensionLevel,
       endingReached: result.globalUpdate.endingReached === true,
-      flags: {
+      flags: Object.fromEntries(Object.entries({
         ...next.global.flags,
         ...(result.globalUpdate.flags && typeof result.globalUpdate.flags === 'object'
           ? result.globalUpdate.flags
           : {}),
-      },
+      }).slice(-MAX_PARTY_FLAGS)),
     };
   }
 
@@ -327,7 +332,7 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
       text: item.text.trim().slice(0, 12000),
       createdAt: now,
     }));
-  next.narratives = [...(next.narratives || []), ...created];
+  next.narratives = [...(next.narratives || []), ...created].slice(-MAX_PARTY_NARRATIVES);
   next.choicesByPc = Object.fromEntries(
     (result.choicesByPc || [])
       .filter((item) => pcIds.has(item.pcId))
@@ -343,7 +348,7 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
         text: String(item.text || '').slice(0, 1000),
         reason: String(item.reason || '').slice(0, 500),
       })),
-  ];
+  ].slice(-MAX_PARTY_AUTO_ACTIONS);
   next.stateRevision = (next.stateRevision || 0) + 1;
   next.updatedAt = now;
   return next;
@@ -362,6 +367,7 @@ export function validatePartyResolution(session, snapshot, round, result) {
     ...Object.keys(snapshot.scenes || {}),
     ...(result.sceneUpdates || []).map((item) => item.sceneId),
   ]);
+  if (sceneIds.size > MAX_PARTY_SCENES) throw new Error('party scene limit reached');
   for (const scene of result.sceneUpdates || []) {
     if (!scene?.sceneId || (scene.participantPcIds || []).some((id) => !pcIds.has(id))) {
       throw new Error('party resolution contains an unknown scene PC');

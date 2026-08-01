@@ -13,6 +13,10 @@ import {
   partyMembershipListPrefix,
 } from './paths.js';
 
+export const MAX_STORED_PARTY_ROUNDS = 1_000;
+export const MAX_STORED_PARTY_EVENTS = 2_000;
+export const MAX_STORED_PARTY_CHAT_MESSAGES = 5_000;
+
 export function hashInviteToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -37,6 +41,9 @@ export async function getPartySnapshot(dataStore, sessionId) {
 
 export async function savePartyRound(dataStore, sessionId, round) {
   await dataStore.set(partyRoundKey(sessionId, round.id), round);
+  if (Number.isSafeInteger(round.number) && round.number >= MAX_STORED_PARTY_ROUNDS) {
+    await dataStore.delete(partyRoundKey(sessionId, `round_${round.number - MAX_STORED_PARTY_ROUNDS}`));
+  }
   return round;
 }
 
@@ -81,6 +88,9 @@ export async function appendPartyEvent(dataStore, session, event, snapshot = nul
   };
   // eventが真実源。snapshot/sessionより先に保存する。
   await dataStore.set(partyEventKey(session.id, seq), saved);
+  if (seq > MAX_STORED_PARTY_EVENTS) {
+    await dataStore.delete(partyEventKey(session.id, seq - MAX_STORED_PARTY_EVENTS));
+  }
   if (snapshot) {
     snapshot.lastEventSeq = seq;
     await savePartySnapshot(dataStore, session.id, snapshot);
@@ -103,6 +113,9 @@ export async function appendPartyChat(dataStore, session, message) {
   const seq = (session.chatSeq || 0) + 1;
   const saved = { ...message, id: `chat_${session.id}_${seq}`, seq };
   await dataStore.set(partyChatKey(session.id, seq), saved);
+  if (seq > MAX_STORED_PARTY_CHAT_MESSAGES) {
+    await dataStore.delete(partyChatKey(session.id, seq - MAX_STORED_PARTY_CHAT_MESSAGES));
+  }
   session.chatSeq = seq;
   session.updatedAt = message.createdAt;
   await savePartySession(dataStore, session);

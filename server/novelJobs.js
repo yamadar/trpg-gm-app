@@ -142,22 +142,23 @@ export function createNovelJobRunner({
       // 一斉に未読になってしまう。成功時に立てて受け取り時に降ろす形にする。
       await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: true });
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
-    } catch (e) {
+    } catch {
       try {
-        // Error以外の値がthrowされてもe.messageがundefinedにならないようにする
-        // (カードにエラー理由が出ない状態を避けるため)。
         await write(userId, sessionId, {
           status: 'error',
           startedAt,
           updatedAt: now(),
-          error: String(e?.message || e),
+          error: '小説化に失敗した。時間をおいて再試行してください。',
           bootId,
         });
       } catch (writeErr) {
         // ここでの書き込み失敗(ディスクI/Oエラー等)を握りつぶすとrun()のPromiseが
         // rejectしてしまい、start()側で誰も待っていないため未処理rejectionでプロセスが
         // 落ちる。記録は諦めるが、ログには残す。
-        console.error('novelJobs: failed to persist error record', writeErr);
+        console.error('novelJobs error persistence failed', {
+          name: writeErr?.name || 'Error',
+          code: writeErr?.code || null,
+        });
       }
     }
   }

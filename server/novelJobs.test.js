@@ -237,7 +237,8 @@ describe('createNovelJobRunner', () => {
 
     const out = await runner.read('u1', 's1');
     expect(out.status).toBe('error');
-    expect(out.error).toContain('boom');
+    expect(out.error).toBe('小説化に失敗した。時間をおいて再試行してください。');
+    expect(out.error).not.toContain('boom');
     expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBeNull();
   });
 
@@ -249,7 +250,7 @@ describe('createNovelJobRunner', () => {
 
     const out = await runner.read('u1', 's1');
     expect(out.status).toBe('error');
-    expect(out.error).toContain('aborted');
+    expect(out.error).toBe('小説化に失敗した。時間をおいて再試行してください。');
   });
 
   it('continues a truncated response and saves the joined text as complete', async () => {
@@ -361,7 +362,7 @@ describe('createNovelJobRunner', () => {
 
     const out = await runner.read('u1', 's1');
     expect(out.status).toBe('error');
-    expect(out.error).toBe('boom-string'); // undefinedにならない
+    expect(out.error).toBe('小説化に失敗した。時間をおいて再試行してください。');
   });
 
   it('removes the pending entry once the job settles', async () => {

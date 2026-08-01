@@ -1,11 +1,16 @@
 import { apiFetch } from './apiFetch.js';
 
-export async function callTextModel(body) {
-  return apiFetch('/api/messages', {
+export async function callTextOperation(operation, input) {
+  return apiFetch(`/api/text-operations/${encodeURIComponent(operation)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ input }),
   });
+}
+
+// 既存モジュールのモック境界を保つ互換名。任意リクエスト本文は受けず、固定操作名と入力だけを送る。
+export async function callTextModel(operation, input) {
+  return callTextOperation(operation, input);
 }
 
 export function extractText(content) {

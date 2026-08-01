@@ -39,6 +39,9 @@ const TYPING_MS = 6_000;
 const LOCK_GRACE_MS = 5_000;
 const TYPING_EXTENSION_MS = 15_000;
 const MAX_TYPING_EXTENSION_MS = 90_000;
+const MAX_OWNED_PARTIES = 20;
+const MAX_GM_SNAPSHOT_BYTES = 512 * 1024;
+const MAX_PARTY_INVITES = 100;
 
 function partyError(status, message, code) {
   const error = new Error(message);
@@ -454,90 +457,111 @@ export function createPartyService({
         const data = await load(job.sessionId);
         if (data.round?.resolutionId !== job.resolutionId || data.round.phase !== 'resolving') return;
         data.round.phase = 'paused';
-        data.round.error = `AI GM処理に失敗した: ${error.message}`;
+        data.round.error = 'AI GM処理に失敗した。ホストが再開すると再試行できる。';
         data.session.status = 'paused';
+        const publicCodes = new Set([
+          'DAILY_LIMIT',
+          'GENERATOR_UNAVAILABLE',
+          'PARTY_SECRET_LEAK_BLOCKED',
+        ]);
+        const code = publicCodes.has(error?.code) ? error.code : 'PARTY_RESOLUTION_FAILED';
         await record(data, {
           type: 'resolution_failed',
           roundId: data.round.id,
-          payload: { error: error.message, code: error.code || null, resetAt: error.resetAt || null },
+          payload: {
+            error: 'party resolution failed',
+            code,
+            resetAt: Number.isFinite(error?.resetAt) ? error.resetAt : null,
+          },
         });
       });
     }
   }
 
   async function create(userId, body) {
-    const timestamp = now();
-    const title = cleanText(body?.title, 200);
-    if (!title) throw partyError(400, 'title is required');
-    if (!body?.gmSnapshot || typeof body.gmSnapshot !== 'object') throw partyError(400, 'gmSnapshot is required');
-    const rawPcs = Array.isArray(body.pcs) ? body.pcs.slice(0, 6) : [];
-    if (rawPcs.length < 2) throw partyError(400, 'at least two PCs are required');
-    const usedIds = new Set();
-    const pcs = rawPcs.map((pc, index) => {
-      let id = safeId(pc.id, `pc_${index + 1}`);
-      while (usedIds.has(id)) id = `${id}_${index + 1}`;
-      usedIds.add(id);
-      return {
+    return withLock(`owner/${userId}`, async () => {
+      const timestamp = now();
+      const title = cleanText(body?.title, 200);
+      if (!title) throw partyError(400, 'title is required');
+      if (!body?.gmSnapshot || typeof body.gmSnapshot !== 'object' || Array.isArray(body.gmSnapshot)) {
+        throw partyError(400, 'gmSnapshot is required');
+      }
+      if (Buffer.byteLength(JSON.stringify(body.gmSnapshot), 'utf8') > MAX_GM_SNAPSHOT_BYTES) {
+        throw partyError(413, 'gmSnapshot is too large', 'PARTY_SNAPSHOT_TOO_LARGE');
+      }
+      const memberships = await listPartyMemberships(dataStore, userId);
+      if (memberships.filter((membership) => membership.ownerId === userId).length >= MAX_OWNED_PARTIES) {
+        throw partyError(409, 'party session limit reached', 'PARTY_LIMIT_REACHED');
+      }
+      const rawPcs = Array.isArray(body.pcs) ? body.pcs.slice(0, 6) : [];
+      if (rawPcs.length < 2) throw partyError(400, 'at least two PCs are required');
+      const usedIds = new Set();
+      const pcs = rawPcs.map((pc, index) => {
+        let id = safeId(pc.id, `pc_${index + 1}`);
+        while (usedIds.has(id)) id = `${id}_${index + 1}`;
+        usedIds.add(id);
+        return {
+          id,
+          characterName: cleanText(pc.characterName || pc.name, 200) || `PC ${index + 1}`,
+          raw: cleanText(pc.raw, 30000),
+          goal: cleanText(pc.goal, 1000),
+          bonds: cleanText(pc.bonds, 2000),
+        };
+      });
+      const profile = await dataStore.get(`users/${userId}/profile`);
+      const id = randomId('party');
+      const settings = normalizePartySettings(body.settings);
+      const session = {
         id,
-        characterName: cleanText(pc.characterName || pc.name, 200) || `PC ${index + 1}`,
-        raw: cleanText(pc.raw, 30000),
-        goal: cleanText(pc.goal, 1000),
-        bonds: cleanText(pc.bonds, 2000),
+        mode: 'party',
+        ownerId: userId,
+        campaignId: safeId(body.campaignId, null),
+        worldId: safeId(body.worldId, null),
+        title,
+        status: 'lobby',
+        settings,
+        participants: [{
+          userId,
+          displayName: profile?.displayName || 'ホスト',
+          role: 'host',
+          pcId: null,
+          joinedAt: timestamp,
+          lastSeenAt: timestamp,
+          lobbyReady: false,
+          activity: 'active',
+          awayPolicy: settings.defaultAwayPolicy,
+          delegatedToUserId: null,
+          consecutiveMisses: 0,
+          lastActionRound: 0,
+        }],
+        pcs,
+        gmSnapshot: {
+          world: body.gmSnapshot.world || {},
+          scenario: body.gmSnapshot.scenario || {},
+          ruleset: body.gmSnapshot.ruleset || { id: 'simple', formula: 'simple', resourceDefs: [] },
+          directorGuide: body.gmSnapshot.directorGuide || body.gmSnapshot.scenario?.directorGuide || null,
+        },
+        eventSeq: 0,
+        chatSeq: 0,
+        stateRevision: 0,
+        currentRoundId: null,
+        leaderIndex: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
       };
+      const snapshot = createPartySnapshot(pcs, session.gmSnapshot.ruleset, timestamp);
+      await savePartySession(dataStore, session);
+      await savePartySnapshot(dataStore, id, snapshot);
+      await savePartyMembership(dataStore, userId, session);
+      await appendPartyEvent(dataStore, session, {
+        type: 'party_created',
+        actorUserId: userId,
+        payload: { title, settings },
+        createdAt: timestamp,
+      }, snapshot);
+      touchPresence(id, userId);
+      return projection({ session, snapshot, round: null }, userId);
     });
-    const profile = await dataStore.get(`users/${userId}/profile`);
-    const id = randomId('party');
-    const settings = normalizePartySettings(body.settings);
-    const session = {
-      id,
-      mode: 'party',
-      ownerId: userId,
-      campaignId: safeId(body.campaignId, null),
-      worldId: safeId(body.worldId, null),
-      title,
-      status: 'lobby',
-      settings,
-      participants: [{
-        userId,
-        displayName: profile?.displayName || 'ホスト',
-        role: 'host',
-        pcId: null,
-        joinedAt: timestamp,
-        lastSeenAt: timestamp,
-        lobbyReady: false,
-        activity: 'active',
-        awayPolicy: settings.defaultAwayPolicy,
-        delegatedToUserId: null,
-        consecutiveMisses: 0,
-        lastActionRound: 0,
-      }],
-      pcs,
-      gmSnapshot: {
-        world: body.gmSnapshot.world || {},
-        scenario: body.gmSnapshot.scenario || {},
-        ruleset: body.gmSnapshot.ruleset || { id: 'simple', formula: 'simple', resourceDefs: [] },
-        directorGuide: body.gmSnapshot.directorGuide || body.gmSnapshot.scenario?.directorGuide || null,
-      },
-      eventSeq: 0,
-      chatSeq: 0,
-      stateRevision: 0,
-      currentRoundId: null,
-      leaderIndex: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    const snapshot = createPartySnapshot(pcs, session.gmSnapshot.ruleset, timestamp);
-    await savePartySession(dataStore, session);
-    await savePartySnapshot(dataStore, id, snapshot);
-    await savePartyMembership(dataStore, userId, session);
-    await appendPartyEvent(dataStore, session, {
-      type: 'party_created',
-      actorUserId: userId,
-      payload: { title, settings },
-      createdAt: timestamp,
-    }, snapshot);
-    touchPresence(id, userId);
-    return projection({ session, snapshot, round: null }, userId);
   }
 
   async function list(userId) {
@@ -568,6 +592,9 @@ export function createPartyService({
     return withLock(sessionId, async () => {
       const data = await load(sessionId);
       ensureHost(data.session, userId);
+      if ((await listPartyInvites(dataStore, sessionId)).length >= MAX_PARTY_INVITES) {
+        throw partyError(409, 'party invite limit reached', 'PARTY_INVITE_LIMIT_REACHED');
+      }
       const token = randomToken();
       const timestamp = now();
       const invite = {

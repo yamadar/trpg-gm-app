@@ -31,14 +31,17 @@ describe('generateScenario', () => {
     expect(scenario).toBe('## シナリオ概要\n本文');
   });
 
-  it('includes the goal/bonds hook instruction only when a PC sheet is provided', async () => {
+  it('sends scenario materials through the fixed generate-scenario operation', async () => {
     const callTextModelMock = vi
       .spyOn(client, 'callTextModel')
       .mockResolvedValue({ content: [{ type: 'text', text: 'x' }] });
     await generateScenario('推理物', 'PC設定', '世界観要約');
-    expect(callTextModelMock.mock.calls[0][0].system).toContain('hook');
+    expect(callTextModelMock.mock.calls[0]).toEqual([
+      'generate-scenario',
+      { genre: '推理物', pcRaw: 'PC設定', worldSummary: '世界観要約' },
+    ]);
     await generateScenario('推理物', '', '世界観要約');
-    expect(callTextModelMock.mock.calls[1][0].system).not.toContain('hook');
+    expect(callTextModelMock.mock.calls[1][1].pcRaw).toBe('');
   });
 
   it('throws when the response was truncated by max_tokens', async () => {
@@ -61,7 +64,8 @@ describe('takeTurn', () => {
 
     await takeTurn(makeSession(), '(セッション開始。導入シーンを描写せよ)', { allowRoll: false });
 
-    expect(callTextModelMock.mock.calls[0][0].tools).toBeUndefined();
+    expect(callTextModelMock.mock.calls[0][0]).toBe('take-turn');
+    expect(callTextModelMock.mock.calls[0][1].allowRoll).toBe(false);
   });
 
   it('offers the roll tool by default', async () => {
@@ -71,7 +75,7 @@ describe('takeTurn', () => {
 
     await takeTurn(makeSession(), '周りを見渡す');
 
-    expect(callTextModelMock.mock.calls[0][0].tools.map((t) => t.name)).toEqual(['roll_check']);
+    expect(callTextModelMock.mock.calls[0][1].allowRoll).toBe(true);
   });
 
   // 判定は1ターンに最大1回。ツールを開けたまま追撃すると、モデルが再度roll_checkを
@@ -94,7 +98,7 @@ describe('takeTurn', () => {
 
     await takeTurn(makeSession(), '崖を登る');
 
-    expect(callTextModelMock.mock.calls[1][0].tool_choice).toEqual({ type: 'none' });
+    expect(callTextModelMock.mock.calls[1][1].continuation).toBeDefined();
   });
 
   it('returns the parsed result without a roll when no tool_use happens', async () => {
@@ -106,12 +110,10 @@ describe('takeTurn', () => {
 
     expect(result.narrative).toBe('静かな朝。');
     expect(roll).toBeNull();
-    const request = callTextModelMock.mock.calls[0][0];
-    // 動的状態はsystemではなくuserメッセージ側に入る
-    expect(request.messages[0].content).toContain('# プレイヤーの行動\n周りを見渡す');
-    expect(request.messages[0].content).toContain('シーン: 冒頭');
-    expect(request.system[0]).toEqual(expect.objectContaining({ type: 'text' }));
-    expect(request.output_config.format.type).toBe('json_schema');
+    const [operation, input] = callTextModelMock.mock.calls[0];
+    expect(operation).toBe('take-turn');
+    expect(input.playerText).toBe('周りを見渡す');
+    expect(input.session.state.current_scene).toBe('冒頭');
   });
 
   it('converts structured-output flags array into a plain object', async () => {
@@ -167,8 +169,9 @@ describe('takeTurn', () => {
     expect(roll.check_label).toBe('崖を登る');
     expect(roll.success).toBe(true);
     expect(callTextModelMock).toHaveBeenCalledTimes(2);
-    const secondCallMessages = callTextModelMock.mock.calls[1][0].messages;
-    expect(secondCallMessages.at(-1).content[0].type).toBe('tool_result');
+    const continuation = callTextModelMock.mock.calls[1][1].continuation;
+    expect(continuation.assistantContent).toEqual(toolUseResponse.content);
+    expect(continuation.toolResult.success).toBe(true);
   });
 
   it('uses the coc7e adapter formula for coc7e sessions', async () => {
@@ -219,8 +222,7 @@ describe('takeTurn', () => {
     expect(roll.resourceChange).toEqual(resourceChange);
     expect(session.state.resources.san.value).toBe(60); // 非破壊
 
-    const toolResult = callTextModelMock.mock.calls[1][0].messages.at(-1).content[0];
-    const payload = JSON.parse(toolResult.content);
+    const payload = callTextModelMock.mock.calls[1][1].continuation.toolResult;
     expect(payload.san_loss).toBe(2);
     expect(payload.san_now).toBe(58);
   });
@@ -253,7 +255,7 @@ describe('takeTurn', () => {
 
     expect(resourceChange.after).toBe(0);
     expect(resourceChange.delta).toBe(-1); // clamp後の実効値
-    const payload = JSON.parse(callTextModelMock.mock.calls[1][0].messages.at(-1).content[0].content);
+    const payload = callTextModelMock.mock.calls[1][1].continuation.toolResult;
     expect(payload.note).toContain('正気');
   });
 
@@ -294,13 +296,13 @@ describe('takeTurn', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.39); // roll = 40 -> margin 20
 
     await takeTurn(makeSession({ ruleset: { id: 'gurps', formula: 'gurps' } }), '撃つ');
-    const payload = JSON.parse(callTextModelMock.mock.calls[1][0].messages.at(-1).content[0].content);
+    const payload = callTextModelMock.mock.calls[1][1].continuation.toolResult;
     expect(payload.margin).toBe(20);
   });
 });
 
 describe('recallMemory', () => {
-  it('/api/messages経由で回想を生成し、systemに翻訳指示・userにhistory/flagsを含める', async () => {
+  it('固定回想操作へセッションを送り、回想を生成する', async () => {
     const spy = vi
       .spyOn(client, 'callTextModel')
       .mockResolvedValue({ content: [{ type: 'text', text: '  カイは村長の依頼を思い返した。  ' }] });
@@ -310,10 +312,8 @@ describe('recallMemory', () => {
     });
     const out = await recallMemory(session);
     expect(out).toBe('カイは村長の依頼を思い返した。');
-    const body = spy.mock.calls[0][0];
-    expect(body.system).toContain('翻訳');
-    expect(body.messages[0].content).toContain('廃坑を調査中');
-    expect(body.messages[0].content).toContain('goblins_present');
+    expect(spy.mock.calls[0][0]).toBe('recall-memory');
+    expect(spy.mock.calls[0][1].session).toBe(session);
   });
   it('空レスポンスはフォールバック文言を返す', async () => {
     vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
@@ -322,7 +322,7 @@ describe('recallMemory', () => {
 });
 
 describe('advanceCampaignPc', () => {
-  it('更新版PCシートとxpを返し、systemに持ち越し指示・userに元シート/履歴/フラグを含める', async () => {
+  it('更新版PCシートとxpを返し、固定引き継ぎ操作へセッションを送る', async () => {
     const spy = vi
       .spyOn(client, 'callTextModel')
       .mockResolvedValue({ content: [{ type: 'text', text: '  PC名: カイ(熟練の猟師)\n持ち物: 銀の矢  ' }] });
@@ -332,11 +332,8 @@ describe('advanceCampaignPc', () => {
     });
     const out = await advanceCampaignPc(session);
     expect(out).toEqual({ pcRaw: 'PC名: カイ(熟練の猟師)\n持ち物: 銀の矢', xp: 12 });
-    const body = spy.mock.calls[0][0];
-    expect(body.system).toContain('次の冒険');
-    expect(body.messages[0].content).toContain('PC名: カイ');
-    expect(body.messages[0].content).toContain('廃坑の小鬼を退けた');
-    expect(body.messages[0].content).toContain('silver_arrow_found');
+    expect(spy.mock.calls[0][0]).toBe('advance-campaign-pc');
+    expect(spy.mock.calls[0][1].session).toBe(session);
   });
   it('空レスポンスは元のpc.rawへフォールバックする', async () => {
     vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '' }] });

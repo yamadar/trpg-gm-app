@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createMessagesRouter } from './routes/messages.js';
+import { createTextOperationsRouter } from './routes/textOperations.js';
 import { createSessionsRouter } from './routes/sessions.js';
 import { createEndingsRouter } from './routes/endings.js';
 import { createWorldsRouter } from './routes/worlds.js';
@@ -23,6 +24,7 @@ import { seedStarters } from './starters/seed.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 import { createFsImageStore } from './storage/imageStore.js';
+import { createStorageGuard } from './storage/storageGuard.js';
 import { createProviders } from './auth/providers.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createRequireAuth, createOriginCheck } from './auth/middleware.js';
@@ -39,6 +41,30 @@ import { createPartyService } from './partyService.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_BASE_URL = 'http://localhost:5173';
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "connect-src 'self'",
+  "font-src 'self' data:",
+  "manifest-src 'self'",
+].join('; ');
+
+function securityHeaders(req, res, next) {
+  res.set({
+    'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  });
+  next();
+}
 
 // env.BASE_URL is only trusted when it's a well-formed absolute URL. This
 // guards against tooling that injects unrelated values into process.env
@@ -105,7 +131,9 @@ export function createApp({
   staticDir = resolveStaticDir(env.STATIC_DIR),
 } = {}) {
   const app = express();
+  app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  app.use(securityHeaders);
   app.use(express.json({ limit: '2mb' }));
 
   const dataStore = createFsDataStore(dataDir);
@@ -128,8 +156,12 @@ export function createApp({
     dataStore,
     limits: {
       messages: parseLimit(env.LIMIT_MESSAGES_PER_DAY, 200),
+      textTokens: parseLimit(env.LIMIT_TEXT_TOKENS_PER_DAY, 500_000),
       novelize: parseLimit(env.LIMIT_NOVELIZE_PER_DAY, 10),
       images: parseLimit(env.LIMIT_IMAGES_PER_DAY, 30),
+    },
+    globalLimits: {
+      textTokens: parseLimit(env.LIMIT_GLOBAL_TEXT_TOKENS_PER_DAY, 5_000_000),
     },
   });
   const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, model: textModel, fetchImpl });
@@ -148,8 +180,20 @@ export function createApp({
   app.use('/api', createPublicContentRouter({ dataStore, textStore, imageStore })); // 公開ギャラリーは認証不要
   app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiImageApiKey })); // 機能検出は認証不要
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
+  app.use('/api', createStorageGuard({
+    dataDir,
+    maxUserBytes: parseLimit(env.MAX_USER_STORAGE_BYTES, 256 * 1024 * 1024),
+    minFreeBytes: parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024),
+    writeHeadroomBytes: parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024),
+  }));
 
-  app.use('/api', createMessagesRouter({ apiKey, model: textModel, fetchImpl, usage }));
+  app.use('/api', createTextOperationsRouter({
+    apiKey,
+    model: textModel,
+    fetchImpl,
+    usage,
+    maxConcurrent: parseLimit(env.LIMIT_TEXT_CONCURRENT, 6),
+  }));
   app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
   const partyService = createPartyService({
     dataStore,
@@ -245,9 +289,43 @@ export function createApp({
   }
 
   app.use((err, req, res, next) => {
-    console.error(err);
-    const status = typeof err.status === 'number' ? err.status : typeof err.statusCode === 'number' ? err.statusCode : 500;
-    res.status(status).json({ error: err.message || 'internal server error' });
+    const requestId = crypto.randomUUID();
+    const rawStatus = typeof err?.status === 'number'
+      ? err.status
+      : typeof err?.statusCode === 'number'
+        ? err.statusCode
+        : 500;
+    const status = rawStatus >= 400 && rawStatus <= 599 ? rawStatus : 500;
+    // 本文、query、Cookie、Authorization、例外message/stackをログ対象にしない。
+    // requestIdでクライアント報告と安全な最小メタデータを対応付ける。
+    console.error('request failed', {
+      requestId,
+      method: req.method,
+      path: req.path,
+      status,
+      errorName: err?.name || 'Error',
+      errorCode: err?.code || null,
+    });
+    if (status >= 500) {
+      const upstream = status === 502 || status === 503;
+      res.status(status).json({
+        error: upstream ? 'upstream service error' : 'internal server error',
+        code: upstream ? 'UPSTREAM_ERROR' : 'INTERNAL_SERVER_ERROR',
+        requestId,
+      });
+      return;
+    }
+    const publicErrors = {
+      400: ['bad request', 'BAD_REQUEST'],
+      401: ['login required', 'UNAUTHORIZED'],
+      403: ['forbidden', 'FORBIDDEN'],
+      404: ['not found', 'NOT_FOUND'],
+      409: ['conflict', 'CONFLICT'],
+      413: ['request too large', 'REQUEST_TOO_LARGE'],
+      429: ['too many requests', 'TOO_MANY_REQUESTS'],
+    };
+    const [error, code] = publicErrors[status] || ['request failed', 'REQUEST_FAILED'];
+    res.status(status).json({ error, code, requestId });
   });
 
   return app;
@@ -262,7 +340,10 @@ if (process.env.NODE_ENV !== 'test') {
     imageStore: createFsImageStore(dataDir),
   })
     .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
-    .catch((e) => console.error('starter seed failed', e))
+    .catch((error) => console.error('starter seed failed', {
+      name: error?.name || 'Error',
+      code: error?.code || null,
+    }))
     .finally(() => {
       createApp().listen(port, () => {
         console.log(`server listening on port ${port}`);

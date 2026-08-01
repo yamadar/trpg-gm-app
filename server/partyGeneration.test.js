@@ -35,6 +35,7 @@ describe('partyGeneration', () => {
   it('plans all actions once, resolves code-owned checks, then creates shared and PC views', async () => {
     const plan = {
       resolution: 'advance', decisionQuestion: '', decisionOptions: [], autoActions: [],
+      narratorBrief: '扉と罠の行動を裁定し、扉が開く。',
       checks: [{ pcId: 'pc1', checkLabel: '扉', successPercent: 70, checkKind: 'normal', supportPcIds: ['pc2'] }],
     };
     const outcome = {
@@ -65,6 +66,14 @@ describe('partyGeneration', () => {
     expect(firstPrompt).toContain('扉を開く');
     expect(firstPrompt).toContain('罠を調べる');
     expect(firstPrompt).not.toContain('Partyチャット');
+    expect(firstPrompt).not.toContain('Scenario秘密原文');
+    const firstBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(firstBody.systemInstruction.parts[0].text).toContain('Scenario秘密原文');
+    const secondBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    const secondBodyText = JSON.stringify(secondBody);
+    expect(secondBodyText).not.toContain('Scenario秘密原文');
+    expect(secondBody.systemInstruction.parts[0].text).not.toContain('扉を開く');
+    expect(secondBody.systemInstruction.parts[0].text).not.toContain(plan.narratorBrief);
   });
 
   it('returns neutral vote options without generating an outcome when actions are exclusive', async () => {
@@ -75,11 +84,79 @@ describe('partyGeneration', () => {
         { id: 'north', label: '北へ', description: '' },
         { id: 'south', label: '南へ', description: '' },
       ],
+      narratorBrief: '船の進路をPartyで選ぶ必要がある。',
       checks: [], autoActions: [],
     }));
     const result = await generatePartyResolution({ session, snapshot, round, apiKey: 'key', model: 'model', fetchImpl });
     expect(result).toMatchObject({ resolution: 'decision_required', decision: { question: '船をどちらへ進める?' } });
     expect(result.decision.options.map((item) => item.id)).toEqual(['option_1', 'option_2']);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a privileged planner response that copies GM-only material', async () => {
+    const secretSession = {
+      ...session,
+      gmSnapshot: {
+        ...session.gmSnapshot,
+        scenario: { raw: '## GM専用情報\nULTRA_SECRET_BLACK_DRAGON_92841 が黒幕。' },
+      },
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(geminiText({
+      resolution: 'decision_required',
+      decisionQuestion: 'どちらへ進む?',
+      decisionOptions: [
+        { id: 'a', label: '待つ', description: '' },
+        { id: 'b', label: 'ULTRA_SECRET_BLACK_DRAGON_92841を倒す', description: '' },
+      ],
+      narratorBrief: '',
+      checks: [],
+      autoActions: [],
+    }));
+    await expect(generatePartyResolution({
+      session: secretSession,
+      snapshot,
+      round,
+      apiKey: 'key',
+      model: 'model',
+      fetchImpl,
+    })).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
+  });
+
+  it('blocks player-facing narrative that copies GM-only material', async () => {
+    const secret = 'ULTRA_SECRET_BLACK_DRAGON_92841';
+    const secretSession = {
+      ...session,
+      gmSnapshot: {
+        ...session.gmSnapshot,
+        scenario: { raw: `## GM専用情報\n${secret} が黒幕。` },
+      },
+    };
+    const plan = {
+      resolution: 'advance',
+      decisionQuestion: '',
+      decisionOptions: [],
+      narratorBrief: '扉を調べる。',
+      checks: [],
+      autoActions: [],
+    };
+    const outcome = {
+      globalUpdate: { time: '直後', historySummary: '', tensionLevel: 1, endingReached: false, flagUpdates: [] },
+      sceneUpdates: [],
+      pcUpdates: [],
+      narratives: [{ id: 'leak', audienceKind: 'all', audienceIds: [], text: `${secret} が黒幕だ。` }],
+      choicesByPc: [],
+      autoActions: [],
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(geminiText(plan))
+      .mockResolvedValueOnce(geminiText(outcome));
+    await expect(generatePartyResolution({
+      session: secretSession,
+      snapshot,
+      round,
+      apiKey: 'key',
+      model: 'model',
+      fetchImpl,
+    })).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
   });
 });

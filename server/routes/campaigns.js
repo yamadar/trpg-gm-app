@@ -128,9 +128,10 @@ async function consumeGeneration(usage, userId) {
   if (!usage) return { ok: true };
   try {
     return await usage.consume(userId, 'messages');
-  } catch (error) {
-    const wrapped = new Error(`usage check failed: ${error.message}`);
+  } catch {
+    const wrapped = new Error('usage check failed');
     wrapped.status = 502;
+    wrapped.code = 'USAGE_CHECK_FAILED';
     throw wrapped;
   }
 }
@@ -350,8 +351,8 @@ export function createCampaignsRouter({
     let generated;
     try {
       generated = await generator.reconcile({ campaign, sources, worldRaw: worldRaw || '', session });
-    } catch (error) {
-      res.status(502).json({ error: `campaign reconciliation failed: ${error.message}` });
+    } catch {
+      res.status(502).json({ error: 'campaign reconciliation failed', code: 'CAMPAIGN_RECONCILIATION_FAILED' });
       return;
     }
     const timestamp = now();
@@ -530,8 +531,8 @@ export function createCampaignsRouter({
         worldRaw: worldRaw || '',
         requestText: cleanText(req.body?.requestText, 4000),
       });
-    } catch (error) {
-      res.status(502).json({ error: `campaign pitch generation failed: ${error.message}` });
+    } catch {
+      res.status(502).json({ error: 'campaign pitch generation failed', code: 'CAMPAIGN_PITCH_GENERATION_FAILED' });
       return;
     }
     const timestamp = now();
@@ -589,8 +590,8 @@ export function createCampaignsRouter({
         pitchId: pitch.id,
         basedOnCanonRevision: campaign.canonRevision ?? 0,
       });
-    } catch (error) {
-      res.status(502).json({ error: `campaign scenario generation failed: ${error.message}` });
+    } catch {
+      res.status(502).json({ error: 'campaign scenario generation failed', code: 'CAMPAIGN_SCENARIO_GENERATION_FAILED' });
     }
   }));
 

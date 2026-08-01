@@ -60,6 +60,23 @@ async function readyLobby() {
 }
 
 describe('partyService', () => {
+  it('rejects oversized GM snapshots before writing shared storage', async () => {
+    await expect(service.create('host', {
+      ...createBody,
+      gmSnapshot: { ...createBody.gmSnapshot, scenario: { raw: 'x'.repeat(512 * 1024) } },
+    })).rejects.toMatchObject({ status: 413, code: 'PARTY_SNAPSHOT_TOO_LARGE' });
+  });
+
+  it('caps party sessions owned by one user', async () => {
+    for (let index = 0; index < 20; index += 1) {
+      await service.create('host', { ...createBody, title: `Party ${index}` });
+    }
+    await expect(service.create('host', createBody)).rejects.toMatchObject({
+      status: 409,
+      code: 'PARTY_LIMIT_REACHED',
+    });
+  });
+
   it('creates hashed invites, joins members and never projects GM snapshots or another PC raw', async () => {
     const created = await service.create('host', createBody);
     const invite = await service.createInvite('host', created.id);
@@ -137,6 +154,17 @@ describe('partyService', () => {
     snapshot = await service.getSnapshot('host', id);
     expect(snapshot.round.phase).toBe('paused');
     expect(generator).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not persist generator exception details in player-visible state or events', async () => {
+    const id = await readyLobby();
+    generator.mockRejectedValueOnce(new Error('/internal/provider token=SECRET'));
+    const snapshot = await service.start('host', id);
+    expect(snapshot.round.phase).toBe('paused');
+    expect(snapshot.round.error).toContain('AI GM処理に失敗');
+    const events = await service.events('host', id, 0);
+    expect(JSON.stringify({ snapshot, events })).not.toContain('/internal/provider');
+    expect(JSON.stringify({ snapshot, events })).not.toContain('token=SECRET');
   });
 
   it('keeps chat outside resolution input and supports away/return', async () => {

@@ -67,7 +67,7 @@ describe('attachmentClient', () => {
     await uploadProfileImage(file);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/sessions/s1/novel/attachments');
     expect(fetchMock.mock.calls[0][1].body).toBeInstanceOf(FormData);
-    expect(fetchMock.mock.calls[0][1].headers).toBeUndefined();
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({ 'X-GMDesk-CSRF': '1' });
     expect(fetchMock.mock.calls[1][0]).toBe('/api/me/profile-image');
   });
 });

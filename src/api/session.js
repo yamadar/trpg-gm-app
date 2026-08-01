@@ -1,43 +1,13 @@
 import { callTextModel, extractText, extractToolUse, parseJsonLoose } from './client.js';
-import { buildRollTool, resolveAdapter, TURN_OUTPUT_FORMAT, buildSystemBlocks, buildTurnUserContent } from './prompts.js';
+import { resolveAdapter } from './prompts.js';
 
 export async function summarizeWorld(raw) {
-  const data = await callTextModel({
-    max_tokens: 2000,
-    system:
-      '以下の世界観資料を、TRPGのGMが毎ターン参照できる程度の要約(600〜900字)に圧縮せよ。地名・組織・時代背景などキーとなる設定は保持すること。説明文やコードブロック記号は付けず、要約文のみを出力すること。',
-    messages: [{ role: 'user', content: raw }],
-  });
+  const data = await callTextModel('summarize-world', { raw });
   return extractText(data.content).trim();
 }
 
 export async function generateScenario(genre, pcRaw, worldSummary) {
-  const hookLine = pcRaw
-    ? '\nPCのgoal/bondsに関連する引き(hook)を導入部に必ず含めること。'
-    : '';
-  const data = await callTextModel({
-    max_tokens: 3000,
-    system: `TRPGシナリオを作成せよ。
-
-# ジャンル要望
-${genre || '(指定なし。世界観に合う自由なジャンルでよい)'}
-
-# 世界観
-${worldSummary || '(未設定。ジャンルに応じて自由に構築してよい)'}
-
-# PC設定
-${pcRaw || '(未設定)'}
-
-以下の見出し構成のMarkdownで出力せよ(コードブロック記号やコメントは付けない):
-## シナリオ概要
-(プレイヤーに見せてよい導入)
-## GM専用情報
-(黒幕・真相・隠しフラグなど、プレイヤーには開示しない情報)
-## 章構成
-(章ごとの見出しと概要、分岐条件を簡潔に。最終章には climax とわかる一文を添える)
-${hookLine}`,
-    messages: [{ role: 'user', content: 'シナリオを生成せよ。' }],
-  });
+  const data = await callTextModel('generate-scenario', { genre, pcRaw, worldSummary });
   if (data.stop_reason === 'max_tokens') {
     throw new Error('シナリオ生成が途中で打ち切られました(max_tokens)。再試行してください。');
   }
@@ -60,16 +30,7 @@ function normalizeFlags(result) {
 // 判定スタンプとして場面の先頭に描かれてしまう。
 export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
   const adapter = resolveAdapter(session);
-  const system = buildSystemBlocks(session);
-  let messages = [{ role: 'user', content: buildTurnUserContent(session, playerText) }];
-  const base = {
-    max_tokens: 2000,
-    system,
-    ...(allowRoll ? { tools: [buildRollTool(adapter)] } : {}),
-    output_config: { format: TURN_OUTPUT_FORMAT },
-  };
-
-  let data = await callTextModel({ ...base, messages });
+  let data = await callTextModel('take-turn', { session, playerText, allowRoll });
   let roll = null;
   let resourceChange = null;
 
@@ -98,26 +59,17 @@ export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
       if (resourceChange.after === 0) payload.note = '正気を完全に失った。狂気に呑まれる描写をせよ。';
     }
 
-    messages = [
-      ...messages,
-      { role: 'assistant', content: data.content },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(payload),
-          },
-        ],
-      },
-    ];
     // 判定は1ターンに最大1回。ここでツールを開けたままにすると、モデルは判定結果を
     // 受け取った後さらにroll_checkを呼びつつ、structured outputsのスキーマを満たす
     // ためだけの空JSON(narrative空・choices空)を添えて返すことがある。その2度目の
     // 呼び出しは下の1回きりの分岐では拾われず、空JSONがそのままターンの内容として
     // 表示される。tool_choice:noneで追撃時のツールを閉じ、本文の生成を必ず終わらせる。
-    data = await callTextModel({ ...base, messages, tool_choice: { type: 'none' } });
+    data = await callTextModel('take-turn', {
+      session,
+      playerText,
+      allowRoll,
+      continuation: { assistantContent: data.content, toolResult: payload },
+    });
   }
 
   const text = extractText(data.content);
@@ -127,64 +79,13 @@ export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
 
 // PC視点のオンデマンド回想。生フラグはLLMへの入力に留め、プレイヤーには自然な日本語のみ返す。
 export async function recallMemory(session) {
-  const flags = session.state?.flags || {};
-  const flagsText =
-    Object.entries(flags)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(', ') || '(なし)';
-  const recentLog =
-    (session.state?.recent_log || [])
-      .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
-      .join('\n') || '(まだなし)';
-  const pcLine = [
-    session.pc?.raw,
-    session.pc?.goal && `goal: ${session.pc.goal}`,
-    session.pc?.bonds && `bonds: ${session.pc.bonds}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  const data = await callTextModel({
-    max_tokens: 600,
-    system:
-      'あなたはTRPGのGM。PCがこれまでに知り得たこと・手に入れたものを、PC視点で簡潔に思い返す短い地の文(200字程度)を書け。ゲーム的表現(フラグのキー名・数値・選択肢)はそのまま出さず、自然な日本語に翻訳すること。未開示の秘密やメタ情報は書かない。まだ何も無ければその旨を一言。説明やコードブロック記号は付けず、回想の地の文のみを出力せよ。',
-    messages: [
-      {
-        role: 'user',
-        content: `# PC\n${pcLine || '(未設定)'}\n\n# 物語要約\n${
-          session.state?.history_summary || '(まだなし)'
-        }\n\n# 既知フラグ(自然な日本語へ翻訳する材料)\n${flagsText}\n\n# 直近のログ\n${recentLog}`,
-      },
-    ],
-  });
+  const data = await callTextModel('recall-memory', { session });
   return extractText(data.content).trim() || '(まだ特に思い出すことはない)';
 }
 
 // キャンペーン章末の引き継ぎ。既存PCシートへ冒険の成果を織り込んだ更新版と、持ち越しxpを返す。
 export async function advanceCampaignPc(session) {
-  const flags = session.state?.flags || {};
-  const flagsText =
-    Object.entries(flags)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(', ') || '(なし)';
-  const recentLog =
-    (session.state?.recent_log || [])
-      .map((l) => `${l.role === 'player' ? 'PL' : 'GM'}: ${l.text}`)
-      .join('\n') || '(まだなし)';
-
-  const data = await callTextModel({
-    max_tokens: 1500,
-    system:
-      'あなたはTRPGのGM。1つの冒険を終えたPCの、次の冒険へ持ち越す更新版キャラクターシートを書け。元シートの体裁(PC名・能力・持ち物・goal・bonds等)を保ちつつ、この冒険で得た物・能力や経験の成長・出来事・新たな因縁や関係の変化を反映すること。ゲーム的表現(フラグのキー名・数値・選択肢)や未開示の秘密・メタ情報は書かない。説明やコードブロック記号は付けず、更新版シート本文のみを出力せよ。',
-    messages: [
-      {
-        role: 'user',
-        content: `# 元のPCシート\n${session.pc?.raw || '(未設定)'}\n\n# この冒険の要約\n${
-          session.state?.history_summary || '(なし)'
-        }\n\n# 冒険中のフラグ(自然な記述へ反映する材料)\n${flagsText}\n\n# 直近のログ\n${recentLog}`,
-      },
-    ],
-  });
+  const data = await callTextModel('advance-campaign-pc', { session });
   const pcRaw = extractText(data.content).trim() || session.pc?.raw || '';
   return { pcRaw, xp: session.state?.xp || 0 };
 }

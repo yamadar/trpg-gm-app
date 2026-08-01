@@ -9,8 +9,8 @@ Renderの **Web Service + Persistent Disk** で公開する手順。所要時間
 - サーバー側の永続化(`server/storage/dataStore.js` / `textStore.js` / `imageStore.js`)は**ローカルファイルシステム実装**で、`rename`によるアトミック書き込みと`readdir`による一覧に依存している。ユーザー添付画像とプロフィール画像も同じ永続ディスクへ保存する。オブジェクトストレージへ直接置き換えることはできない。
 - ユーザー添付画像は`sharp`でWebP変換する。`npm ci`が対象環境向けネイティブバイナリを導入するため、依存を本番で省略しない。
 - ディスクを共有する複数インスタンス構成は想定していない(ロック機構なし)。**必ず1インスタンスで運用する**。
-- `POST /api/messages`はGemini APIの応答を非ストリーミングで待つ(`server/routes/messages.js`・`server/textProvider.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
-- OAuthのredirect_uri(`${BASE_URL}/auth/{provider}/callback`)とCSRF目的のOrigin検証が`BASE_URL`基準のため、**固定ドメイン**が必要。
+- `POST /api/text-operations/:operation`はGemini APIの応答を非ストリーミングで待つ(`server/routes/textOperations.js`・`server/textProvider.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
+- OAuthのredirect_uri(`${BASE_URL}/auth/{provider}/callback`)とCSRF目的のOrigin検証が`BASE_URL`基準のため、**固定ドメイン**が必要。認証済み更新は固定カスタムヘッダーとFetch Metadataも検査する。
 
 ## 前提
 
@@ -70,12 +70,18 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | 同上 | 同上 |
 | `X_CLIENT_ID` / `X_CLIENT_SECRET` | 同上 | 同上 |
 | `LIMIT_MESSAGES_PER_DAY` | 既定`200` | 任意 |
+| `LIMIT_TEXT_TOKENS_PER_DAY` | 既定`500000` | 任意。操作別テキスト生成のユーザー単位予約token上限 |
+| `LIMIT_GLOBAL_TEXT_TOKENS_PER_DAY` | 既定`5000000` | 任意。操作別テキスト生成のサービス全体予約token上限 |
+| `LIMIT_TEXT_CONCURRENT` | 既定`6` | 任意。操作別テキスト生成の同時上流呼び出し上限 |
 | `LIMIT_NOVELIZE_PER_DAY` | 既定`10` | 任意 |
 | `LIMIT_IMAGES_PER_DAY` | 既定`30` | 任意 |
+| `MAX_USER_STORAGE_BYTES` | 既定`268435456`(256MiB) | 任意。ユーザー所有領域と所有Party共有領域の合計上限 |
+| `MIN_FREE_STORAGE_BYTES` | 既定`268435456`(256MiB) | 任意。更新を拒否し始めるディスク空き容量 |
+| `STORAGE_WRITE_HEADROOM_BYTES` | 既定`12582912`(12MiB) | 任意。書き込みごとの一時領域・増分見積もり |
 
 `PORT`はRenderが自動で注入するので設定しない(`server/index.js`が`process.env.PORT`を読む)。
 
-> **コスト上の注意**: AI APIの利用料は**サーバーの鍵で全ユーザー分がオーナーに課金される**。上記3つの`LIMIT_*`はユーザー単位・日次(UTC)の上限で、`登録ユーザー数 × 上限`が理論上の最大支出になる。公開範囲に応じて既定値を下げること。
+> **コスト上の注意**: AI APIの利用料は**サーバーの鍵で全ユーザー分がオーナーに課金される**。回数上限に加え、操作別テキスト生成は推定入力+要求出力tokenのユーザー単位・サービス全体の日次上限と同時実行上限を持つ。予約tokenは請求上の実利用tokenと一致しないため、Gemini側のハードクォータと予算アラートも設定する。
 
 ## 3. ドメインを確定し、`BASE_URL`を直す
 
@@ -163,7 +169,7 @@ tar czf /tmp/gmdesk-$(date +%Y%m%d).tar.gz -C /data .
 | 画面が真っ白 / APIのJSONが直接見える | `STATIC_DIR`が未設定。`dist`を設定して再デプロイする |
 | サーバーが起動せず`SECURE_COOKIES must be one of ...` | `SECURE_COOKIES`の値がタイプミス。受け付けるのは`true`/`false`・`1`/`0`・`yes`/`no`・`on`/`off`(大文字小文字は不問)。Secureが黙って無効化されるのを防ぐため起動時に停止する仕様 |
 | APIのURLでHTMLが返る | SPAフォールバックの除外条件から外れている。`/api/`・`/auth/`配下は除外される(`server/index.js`) |
-| テキスト生成が`GEMINI_TEXT_API_KEY is not configured`で失敗 | `GEMINI_TEXT_API_KEY`が未設定。画像用キーとは別に設定する |
+| テキスト生成が`ai_service_unavailable`で失敗 | `GEMINI_TEXT_API_KEY`が未設定。画像用キーとは別に設定する |
 | テキスト生成が「AIサービス側の利用枠」で失敗 | Geminiプロジェクト側のクォータ・請求設定・前払いクレジット・モデル別レート制限を確認する。ユーザー単位の日次上限とは別枠なので、新規ユーザー作成や日付変更では解消しない |
 | サーバーが起動せず`GEMINI_TEXT_MODEL must be configured`で失敗 | `GEMINI_TEXT_API_KEY`に対応する`GEMINI_TEXT_MODEL`が未設定 |
 | サーバーが起動せず`GEMINI_IMAGE_MODEL must be configured`で失敗 | `GEMINI_IMAGE_API_KEY`に対応する`GEMINI_IMAGE_MODEL`が未設定 |

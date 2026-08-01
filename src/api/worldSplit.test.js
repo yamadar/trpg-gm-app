@@ -85,9 +85,10 @@ describe('splitWorld', () => {
       content: [{ type: 'text', text: JSON.stringify({ world: 'x', regions: [], categories: [] }) }],
     });
     await splitWorld('原文', '海沿いの街を追加してほしい');
-    const sentMessage = callTextModelMock.mock.calls[0][0].messages[0].content;
-    expect(sentMessage).toContain('原文');
-    expect(sentMessage).toContain('海沿いの街を追加してほしい');
+    expect(callTextModelMock.mock.calls[0]).toEqual([
+      'split-world',
+      { rawText: '原文', adjustmentRequest: '海沿いの街を追加してほしい' },
+    ]);
   });
 
   it('defaults regions and categories to empty arrays when missing from the response', async () => {

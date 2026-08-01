@@ -21,6 +21,19 @@ describe('apiFetch', () => {
   it('returns undefined for a successful response without content', async () => {
     stubFetch(204, '');
     await expect(apiFetch('/api/x', { method: 'DELETE' })).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledWith('/api/x', {
+      method: 'DELETE',
+      headers: { 'X-GMDesk-CSRF': '1' },
+    });
+  });
+
+  it('preserves caller headers and adds the CSRF header to mutations only', async () => {
+    stubFetch(200, '{}');
+    await apiFetch('/api/x', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    expect(fetch).toHaveBeenCalledWith('/api/x', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-GMDesk-CSRF': '1' },
+    });
   });
 
   it('maps 401 to a login-required message', async () => {

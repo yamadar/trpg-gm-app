@@ -2,53 +2,6 @@ import { callTextModel, extractText, parseJsonLoose } from './client.js';
 import { slugify } from '../utils/slugify.js';
 import { normalizeMarkdown } from '../utils/markdown.js';
 
-const SPLIT_OUTPUT_FORMAT = {
-  type: 'json_schema',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['world', 'regions', 'categories'],
-    properties: {
-      world: {
-        type: 'string',
-        description: '目次+要約のMarkdown本文(600〜900字程度。各regionとcategoryの一行概要を含める)',
-      },
-      regions: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['id', 'title', 'content'],
-          properties: {
-            id: { type: 'string', description: '英数字とハイフンのみのスラグ' },
-            title: { type: 'string', description: 'UI表示用の具体的で読みやすい地域名(ファイル名ではない)' },
-            content: { type: 'string', description: 'その地域のMarkdown詳細本文' },
-          },
-        },
-      },
-      categories: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['id', 'title', 'content'],
-          properties: {
-            id: { type: 'string', description: '英数字とハイフンのみのスラグ' },
-            title: {
-              type: 'string',
-              description: 'UI表示用の具体的で読みやすいカテゴリ名(ファイル名ではない)',
-            },
-            content: {
-              type: 'string',
-              description: 'そのカテゴリの詳細本文(魔法体系・宗教・歴史・種族・組織など)',
-            },
-          },
-        },
-      },
-    },
-  },
-};
-
 function dedupeIds(items) {
   const used = new Set();
   return items.map((item) => {
@@ -78,21 +31,7 @@ function normalizeItems(items) {
 }
 
 export async function splitWorld(rawText, adjustmentRequest) {
-  const data = await callTextModel({
-    max_tokens: 16000,
-    output_config: { format: SPLIT_OUTPUT_FORMAT },
-    system: `以下の世界観資料を、TRPGのGMが必要な範囲だけ参照できるよう地域(region)・カテゴリ(category)に分割せよ。
-
-世界観の規模に応じて、region・categoryの数は自由に決めてよい(小規模な世界観なら1〜2個程度でもよい)。
-world・各contentは正しいMarkdownで記述し、改行には実際の改行文字を使うこと。
-各titleにはIDや英数字スラグではなく、内容を端的に表す自然な表示名を付けること。`,
-    messages: [
-      {
-        role: 'user',
-        content: adjustmentRequest ? `${rawText}\n\n# 再分割の修正依頼\n${adjustmentRequest}` : rawText,
-      },
-    ],
-  });
+  const data = await callTextModel('split-world', { rawText, adjustmentRequest });
   const text = extractText(data.content);
   const parsed = parseJsonLoose(text);
   return {

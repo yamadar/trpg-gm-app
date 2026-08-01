@@ -66,11 +66,12 @@ afterEach(async () => {
 });
 
 describe('endings routes', () => {
-  it('returns 500 when no API key is configured', async () => {
+  it('returns a fixed 503 when ending generation is unavailable', async () => {
     buildApp({ apiKey: undefined });
     await putSession('s1');
     const res = await request(app).post('/api/sessions/s1/ending').send({ stats: STATS });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('ENDING_GENERATION_UNAVAILABLE');
   });
 
   it('returns 404 for a missing session', async () => {
@@ -134,13 +135,14 @@ describe('endings routes', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('returns 502 instead of a generic 500 when usage.consume rejects (matches messages.js error handling)', async () => {
+  it('returns a fixed 502 when usage.consume rejects without exposing storage details', async () => {
     const usage = { consume: vi.fn().mockRejectedValue(new Error('disk full')) };
     buildApp({ usage });
     await putSession('s1');
     const res = await request(app).post('/api/sessions/s1/ending').send({ stats: STATS });
     expect(res.status).toBe(502);
-    expect(res.body).toEqual({ error: 'usage check failed: disk full' });
+    expect(res.body).toEqual({ error: 'usage check failed', code: 'USAGE_CHECK_FAILED' });
+    expect(JSON.stringify(res.body)).not.toContain('disk full');
   });
 
   it('consumes the messages usage kind', async () => {

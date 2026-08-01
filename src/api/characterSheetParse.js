@@ -5,36 +5,8 @@ import { callTextModel, extractText, parseJsonLoose } from './client.js';
 // v2: name(キャラクター名)を追加。
 export const SHEET_PARSE_VERSION = 2;
 
-const SHEET_OUTPUT_FORMAT = {
-  type: 'json_schema',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['name', 'goal', 'bonds'],
-    properties: {
-      name: {
-        type: 'string',
-        description: 'このキャラクターの名前(記載がなければ空文字列)',
-      },
-      goal: {
-        type: 'string',
-        description: 'このキャラクターが物語を通じて達成したいこと(記載がなければ空文字列)',
-      },
-      bonds: {
-        type: 'string',
-        description: '他PC/NPC/世界との因縁・関係(記載がなければ空文字列)',
-      },
-    },
-  },
-};
-
 export async function parseCharacterSheet(raw) {
-  const data = await callTextModel({
-    max_tokens: 1000,
-    output_config: { format: SHEET_OUTPUT_FORMAT },
-    system: '以下のキャラクターシートから name(名前)・goal(目標)・bonds(因縁・関係)を抽出せよ。',
-    messages: [{ role: 'user', content: raw }],
-  });
+  const data = await callTextModel('parse-character-sheet', { raw });
   const text = extractText(data.content);
   const parsed = parseJsonLoose(text);
   return {

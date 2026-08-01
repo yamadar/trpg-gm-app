@@ -55,8 +55,8 @@ export function createScenariosRouter({ dataStore, textStore, imageStore, scenar
         let check;
         try {
           check = await usage.consume(req.userId, 'messages');
-        } catch (e) {
-          res.status(502).json({ error: `usage check failed: ${e.message}` });
+        } catch {
+          res.status(502).json({ error: 'usage check failed', code: 'USAGE_CHECK_FAILED' });
           return;
         }
         if (!check.ok) {
@@ -66,8 +66,8 @@ export function createScenariosRouter({ dataStore, textStore, imageStore, scenar
       }
       try {
         directorGuide = await scenarioAnalyzer({ title: req.body.title, raw: req.body.raw });
-      } catch (e) {
-        res.status(502).json({ error: `scenario analysis failed: ${e.message}` });
+      } catch {
+        res.status(502).json({ error: 'scenario analysis failed', code: 'SCENARIO_ANALYSIS_FAILED' });
         return;
       }
     }

@@ -1,23 +1,27 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { callTextModel, extractText, extractToolUse, parseJsonLoose } from './client.js';
+import { callTextOperation, extractText, extractToolUse, parseJsonLoose } from './client.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('callTextModel', () => {
-  it('posts to /api/messages and returns the parsed json body', async () => {
+describe('callTextOperation', () => {
+  it('posts an operation input to its allowlisted endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ content: [] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await callTextModel({ model: 'x' });
+    const result = await callTextOperation('summarize-world', { raw: '世界' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/messages',
-      expect.objectContaining({ method: 'POST' })
+      '/api/text-operations/summarize-world',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ input: { raw: '世界' } }),
+        headers: expect.objectContaining({ 'X-GMDesk-CSRF': '1' }),
+      })
     );
     expect(result).toEqual({ content: [] });
   });
@@ -30,7 +34,9 @@ describe('callTextModel', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(callTextModel({})).rejects.toThrow('API error 500: server exploded');
+    await expect(callTextOperation('summarize-world', { raw: '世界' })).rejects.toThrow(
+      'API error 500: server exploded',
+    );
   });
 });
 

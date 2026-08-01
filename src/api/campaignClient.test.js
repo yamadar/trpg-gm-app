@@ -37,7 +37,10 @@ describe('campaignClient', () => {
   });
   it('DELETEs a campaign', async () => {
     await deleteCampaign('w1', 'cp1');
-    expect(fetch).toHaveBeenCalledWith('/api/worlds/w1/campaigns/cp1', { method: 'DELETE' });
+    expect(fetch).toHaveBeenCalledWith('/api/worlds/w1/campaigns/cp1', {
+      method: 'DELETE',
+      headers: { 'X-GMDesk-CSRF': '1' },
+    });
   });
   it('throws when the DELETE response is not ok', async () => {
     fetch.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'boom' });
@@ -60,7 +63,7 @@ describe('campaignClient', () => {
     await reconcileCampaignChapter('w1', 'cp1', 's1');
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/worlds/w1/campaigns/cp1/chapters/s1/reconcile',
-      { method: 'POST' },
+      { method: 'POST', headers: { 'X-GMDesk-CSRF': '1' } },
     );
     const body = { summary: '決着', changes: [] };
     await acceptCampaignReconciliation('w1', 'cp1', 's1', body);
