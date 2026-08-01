@@ -9,6 +9,7 @@ import { createWorldsRouter } from './routes/worlds.js';
 import { createCharactersRouter } from './routes/characters.js';
 import { createScenariosRouter } from './routes/scenarios.js';
 import { createCampaignsRouter } from './routes/campaigns.js';
+import { createPartySessionsRouter } from './routes/partySessions.js';
 import { createWorldContentRouter } from './routes/worldContent.js';
 import { createRulesetsRouter } from './routes/rulesets.js';
 import { createPublicContentRouter } from './routes/publicContent.js';
@@ -32,6 +33,8 @@ import {
   generateCampaignPitches,
   generateCampaignScenario,
 } from './campaignGeneration.js';
+import { generatePartyResolution } from './partyGeneration.js';
+import { createPartyService } from './partyService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -148,6 +151,20 @@ export function createApp({
 
   app.use('/api', createMessagesRouter({ apiKey, model: textModel, fetchImpl, usage }));
   app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
+  const partyService = createPartyService({
+    dataStore,
+    usage,
+    generator: apiKey
+      ? (args) => generatePartyResolution({
+          ...args,
+          apiKey,
+          model: textModel,
+          fetchImpl,
+        })
+      : null,
+  });
+  app.locals.partyService = partyService;
+  app.use('/api', createPartySessionsRouter({ service: partyService }));
   app.use('/api', createEndingsRouter({ dataStore, apiKey, model: textModel, fetchImpl, usage }));
   app.use('/api', createSceneImagesRouter({
     dataStore,

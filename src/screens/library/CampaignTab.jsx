@@ -102,6 +102,7 @@ export default function CampaignTab({
   focusCampaignId = null,
   focusSessionId = null,
   onStartChapter,
+  onStartPartyChapter,
 }) {
   const [campaigns, setCampaigns] = useState([]);
   const [selectedId, setSelectedId] = useState(focusCampaignId);
@@ -120,6 +121,7 @@ export default function CampaignTab({
   const [draft, setDraft] = useState(null);
   const [draftSummary, setDraftSummary] = useState('');
   const [draftPcRaw, setDraftPcRaw] = useState('');
+  const [draftPcs, setDraftPcs] = useState([]);
   const [draftChanges, setDraftChanges] = useState([]);
   const [acceptedChangeIds, setAcceptedChangeIds] = useState(() => new Set());
 
@@ -145,6 +147,7 @@ export default function CampaignTab({
     setDraft(value);
     setDraftSummary(value?.summary || '');
     setDraftPcRaw(value?.proposedPcRaw || '');
+    setDraftPcs(value?.proposedPcs || []);
     setDraftChanges(value?.changes || []);
     // AI提案はまだ正史ではない。GMが確認した項目だけを明示的に採用する。
     setAcceptedChangeIds(new Set());
@@ -237,6 +240,7 @@ export default function CampaignTab({
       const saved = await putCampaign(worldId, selectedId, {
         title: editTitle,
         carriedPc: loaded.carriedPc,
+        carriedPcs: loaded.carriedPcs,
         chapters: loaded.chapters,
         currentState: loaded.currentState,
         canonRevision: loaded.canonRevision,
@@ -292,6 +296,27 @@ export default function CampaignTab({
     }
   }
 
+  async function handleStartFirstPartyChapter() {
+    if (!onStartPartyChapter) return;
+    setBusy('start-party');
+    setError('');
+    try {
+      const world = await getWorld(worldId);
+      onStartPartyChapter({
+        worldId,
+        world: { id: world.id, raw: world.raw, summary: world.raw, moods: world.moods || [] },
+        pcs: loaded.carriedPcs || [],
+        rulesetId: loaded.rulesetId || 'simple',
+        campaignId: loaded.id,
+        title: loaded.title,
+      });
+    } catch (e) {
+      setError('Party第一話の準備に失敗した: ' + e.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function handleReconcile(sessionId) {
     setBusy(`reconcile:${sessionId}`);
     setError('');
@@ -318,6 +343,7 @@ export default function CampaignTab({
       await acceptCampaignReconciliation(worldId, selectedId, draft.sessionId, {
         summary: draftSummary,
         pcRaw: draftPcRaw,
+        pcs: draftPcs,
         changes: draftChanges.filter((change) => acceptedChangeIds.has(change.id)),
       });
       showDraft(null);
@@ -407,6 +433,38 @@ export default function CampaignTab({
       });
     } catch (e) {
       setError('次章の開始準備に失敗した: ' + e.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function handleSaveScenarioAndStartParty() {
+    if (!scenarioRaw.trim() || !onStartPartyChapter) return;
+    setBusy('start-next-party');
+    setError('');
+    try {
+      const scenarioId = makeId(scenarioTitle || 'next-scenario');
+      const scenario = await putScenario(worldId, scenarioId, {
+        title: scenarioTitle || '次の章',
+        raw: scenarioRaw,
+        recommendedRuleset: loaded.rulesetId || null,
+        moods: [],
+        sourceCampaignId: loaded.id,
+        sourceCampaignRevision: loaded.canonRevision || 0,
+        generatedFromPitchId: scenarioPitchId,
+      });
+      const world = await getWorld(worldId);
+      onStartPartyChapter({
+        worldId,
+        world: { id: world.id, raw: world.raw, summary: world.raw, moods: world.moods || [] },
+        pcs: loaded.carriedPcs || [],
+        rulesetId: loaded.rulesetId || 'simple',
+        campaignId: loaded.id,
+        title: scenario.title,
+        scenario,
+      });
+    } catch (e) {
+      setError('Party次章の開始準備に失敗した: ' + e.message);
     } finally {
       setBusy('');
     }
@@ -514,9 +572,14 @@ export default function CampaignTab({
                 <StateRecords key={title} title={title} records={records} />
               ))}
               {(loaded.chapters || []).length === 0 && (
-                <Button variant="primary" onClick={handleStartFirstChapter} disabled={!!busy || !onStartChapter}>
-                  {busy === 'start' ? '準備中…' : '第一話を始める'}
-                </Button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Button variant="primary" onClick={handleStartFirstChapter} disabled={!!busy || !onStartChapter}>
+                    {busy === 'start' ? '準備中…' : '第一話をひとりで始める'}
+                  </Button>
+                  <Button variant="ghost" onClick={handleStartFirstPartyChapter} disabled={!!busy || !onStartPartyChapter}>
+                    {busy === 'start-party' ? '準備中…' : '第一話をPartyで始める'}
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -565,24 +628,16 @@ export default function CampaignTab({
 
           {activeTab === 'pc' && (
             <div role="tabpanel" id="tabpanel-pc">
-              <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginBottom: 6 }}>
-                CP: {loaded.carriedPc?.xp ?? 0}
-              </div>
-              <pre
-                style={{
-                  fontFamily: F_BODY,
-                  fontSize: 13,
-                  color: COLORS.inkSoft,
-                  whiteSpace: 'pre-wrap',
-                  background: COLORS.card,
-                  border: `1px solid ${COLORS.line}`,
-                  borderRadius: 4,
-                  padding: '8px 10px',
-                  margin: 0,
-                }}
-              >
-                {loaded.carriedPc?.raw || '(PC情報なし。第一話のSetupで作成する)'}
-              </pre>
+              {(loaded.carriedPcs?.length ? loaded.carriedPcs : [loaded.carriedPc]).map((pc, index) => (
+                <div key={pc?.id || index} style={{ marginBottom: 14 }}>
+                  <div style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.brassDark, marginBottom: 6 }}>
+                    {pc?.characterName || `PC ${index + 1}`} / CP: {pc?.xp ?? 0}
+                  </div>
+                  <pre style={{ fontFamily: F_BODY, fontSize: 13, color: COLORS.inkSoft, whiteSpace: 'pre-wrap', background: COLORS.card, border: `1px solid ${COLORS.line}`, borderRadius: 4, padding: '8px 10px', margin: 0 }}>
+                    {pc?.raw || '(PC情報なし。第一話のSetupで作成する)'}
+                  </pre>
+                </div>
+              ))}
             </div>
           )}
 
@@ -696,6 +751,16 @@ export default function CampaignTab({
                       style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
                     />
                   </Field>
+                  {draftPcs.map((pc, index) => (
+                    <Field key={pc.id} label={`${pc.characterName || pc.id}の引き継ぎシート`}>
+                      <textarea
+                        value={pc.raw}
+                        onChange={(e) => setDraftPcs((items) => items.map((item, i) => i === index ? { ...item, raw: e.target.value } : item))}
+                        rows={8}
+                        style={{ ...inputStyle, resize: 'vertical', fontFamily: F_BODY }}
+                      />
+                    </Field>
+                  ))}
                   <Button variant="brass" onClick={handleAcceptDraft} disabled={!!busy}>
                     {busy === 'accept' ? '正史を更新中…' : '選んだ内容を正史へ反映'}
                   </Button>
@@ -782,9 +847,14 @@ export default function CampaignTab({
                       minHeight={420}
                     />
                   </Field>
-                  <Button variant="brass" onClick={handleSaveScenarioAndStart} disabled={!!busy || !onStartChapter}>
-                    {busy === 'start-next' ? '保存中…' : 'Scenarioを保存して次章を始める'}
-                  </Button>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Button variant="brass" onClick={handleSaveScenarioAndStart} disabled={!!busy || !onStartChapter}>
+                      {busy === 'start-next' ? '保存中…' : '保存してひとりで始める'}
+                    </Button>
+                    <Button variant="ghost" onClick={handleSaveScenarioAndStartParty} disabled={!!busy || !onStartPartyChapter}>
+                      {busy === 'start-next-party' ? '保存中…' : '保存してPartyで始める'}
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

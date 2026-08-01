@@ -2,7 +2,7 @@
 
 2026-08-01 設計、同日コア実装済み。既存の[キャンペーンSP1 コアループ](2026-07-24-campaign-design.md)と、`Campaign`管理タブを追加したSP2を拡張する。
 
-実装範囲はAC1〜AC4。原典3文書、GM承認式章精算、正史revision、次話候補2〜3案、Scenario全文生成、通常Scenario保存、Setup前入力まで接続済み。AC5のパーティCampaign統合は未実装。設計時点からの差分として、AI生成は永続非同期ジョブではなく最大120秒の同期HTTPで実装し、利用枠は既存`messages`へ相乗りする。超長期ログのチャンク分割、Campaign進行ガイド抽出、候補単体の差し替え・編集は後続。
+実装範囲はAC1〜AC5。原典3文書、GM承認式章精算、正史revision、次話候補2〜3案、Scenario全文生成、通常Scenario保存、Solo/Party開始、Party全PCの`carriedPcs`まで接続済み。設計時点からの差分として、AI生成は永続非同期ジョブではなく最大120秒の同期HTTPで実装し、利用枠は既存`messages`へ相乗りする。超長期ログのチャンク分割、Campaign進行ガイド抽出、候補単体の差し替え・編集は後続。
 
 関連設計:
 
@@ -549,13 +549,13 @@ AI利用枠は現行実装では既存`messages`日次枠を使う。生成処�
 - `mode`未指定の旧Sessionはソロ扱い
 - 既存互換の「次話を作る」は、原典未設定Campaignでも章精算へ進める
 
-### 12.2 パーティSession
+### 12.2 パーティSession(実装済み2026-08-01)
 
-[同時参加型パーティセッション設計](2026-08-01-party-session-design.md)実装後、章精算入力を次のように拡張する。
+[同時参加型パーティセッション設計](2026-08-01-party-session-design.md)の終了exportと接続し、章精算入力を次のように拡張した。
 
 - `pcs[]`
 - PC別resources・conditions・knownFacts
-- Scene別ログ
+- Scene別stateとaudience付きGM描写
 - Party全体の決定
 - 離席中のAI同行行動と人間入力の区別
 
@@ -659,12 +659,14 @@ AI同行で生成された行動は正史上の出来事には含めるが、「
 - 通常Scenario保存
 - Setup前入力と次章開始
 
-### AC5: パーティCampaign統合 — 未実装
+### AC5: パーティCampaign統合 — 実装済み
 
 - `carriedPcs`
-- PC別既知情報
-- Scene別章精算
+- PC別state・既知情報
+- Scene別state・描写を含む章精算
 - AI同行行動の識別
+
+Party終了時、ホスト所有Session名前空間へCampaign精算用exportを作り、対象Campaign章を`ended`へ更新する。章精算draftは`proposedPcs`を持ち、GMがPCごとのシート/xpを編集して採用すると`carriedPcs`へ一括保存する。第一話・生成済み次話はCampaignタブからSolo/Partyを選んで開始できる。
 
 ## 17. 完了条件
 

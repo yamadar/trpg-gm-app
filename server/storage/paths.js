@@ -6,6 +6,58 @@ export function sessionKey(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}`;
 }
 
+export function partySessionListPrefix() {
+  return 'sharedSessions';
+}
+
+export function partySessionKey(sessionId) {
+  return `sharedSessions/${sessionId}`;
+}
+
+export function partySnapshotKey(sessionId) {
+  return `sharedSessions/${sessionId}/snapshot`;
+}
+
+export function partyRoundKey(sessionId, roundId) {
+  return `sharedSessions/${sessionId}/rounds/${roundId}`;
+}
+
+export function partyRoundListPrefix(sessionId) {
+  return `sharedSessions/${sessionId}/rounds`;
+}
+
+export function partyEventKey(sessionId, seq) {
+  return `sharedSessions/${sessionId}/events/${String(seq).padStart(12, '0')}`;
+}
+
+export function partyEventListPrefix(sessionId) {
+  return `sharedSessions/${sessionId}/events`;
+}
+
+export function partyChatKey(sessionId, seq) {
+  return `sharedSessions/${sessionId}/chat/${String(seq).padStart(12, '0')}`;
+}
+
+export function partyChatListPrefix(sessionId) {
+  return `sharedSessions/${sessionId}/chat`;
+}
+
+export function partyInviteKey(sessionId, inviteId) {
+  return `sharedSessions/${sessionId}/invites/${inviteId}`;
+}
+
+export function partyInviteListPrefix(sessionId) {
+  return `sharedSessions/${sessionId}/invites`;
+}
+
+export function partyMembershipKey(userId, sessionId) {
+  return `users/${userId}/sharedSessions/${sessionId}`;
+}
+
+export function partyMembershipListPrefix(userId) {
+  return `users/${userId}/sharedSessions`;
+}
+
 export function sessionNovelDocPath(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}/novel.md`;
 }

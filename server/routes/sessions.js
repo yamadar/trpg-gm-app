@@ -72,7 +72,9 @@ export function createSessionsRouter({
   router.get('/sessions', asyncHandler(async (req, res) => {
     const keys = await dataStore.list(sessionListPrefix(req.userId));
     const sessions = await Promise.all(keys.map((k) => dataStore.get(k)));
-    res.json(sessions.filter(Boolean));
+    // Party終了時のCampaign章精算用exportはowner名前空間にも置くが、Solo一覧へ
+    // 二重表示しない。Party一覧は /party-sessions が担う。
+    res.json(sessions.filter((session) => session && session.mode !== 'party'));
   }));
 
   // 一覧画面が全セッションのジョブ状態を1リクエストで取れるようにする

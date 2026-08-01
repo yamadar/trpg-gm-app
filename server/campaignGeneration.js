@@ -51,6 +51,20 @@ const RECONCILE_FORMAT = {
     properties: {
       summary: { type: 'string' },
       proposed_pc_raw: { type: 'string' },
+      proposed_pcs: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'character_name', 'raw', 'xp'],
+          properties: {
+            id: { type: 'string' },
+            character_name: { type: 'string' },
+            raw: { type: 'string' },
+            xp: { type: 'integer' },
+          },
+        },
+      },
       changes: { type: 'array', items: CHANGE_SCHEMA },
     },
   },
@@ -110,11 +124,15 @@ function extractText(content) {
 function transcriptOf(session) {
   return (session.log || [])
     .map((entry, index) => {
-      const role = entry.role === 'player' ? 'PL' : 'GM';
+      const role = entry.role === 'player'
+        ? entry.source === 'auto' ? 'AI同行' : 'PL'
+        : 'GM';
+      const actor = entry.characterName ? `(${entry.characterName})` : '';
       const roll = entry.roll
-        ? ` [判定: ${entry.roll.check_label || ''} ${entry.roll.roll ?? ''} ${entry.roll.degree || ''}]`
+        ? ` [判定: ${entry.roll.check_label || entry.roll.checkLabel || ''} ${entry.roll.roll ?? ''} ${entry.roll.degree || ''}]`
         : '';
-      return `[${index}] ${role}: ${entry.text || ''}${roll}`;
+      const reason = entry.source === 'auto' && entry.reason ? ` [理由: ${entry.reason}]` : '';
+      return `[${index}] ${role}${actor}: ${entry.text || ''}${roll}${reason}`;
     })
     .join('\n');
 }
@@ -168,6 +186,7 @@ export async function reconcileCampaignChapter({
 - thread_resolveは現在状態にある未解決事項を解決した場合だけ使う。
 - source_log_indexesへ根拠となるログ番号を入れる。
 - proposed_pc_rawは元シートの体裁を保ち、獲得物・成長・関係変化だけを反映する。未開示のGM情報や内部フラグ名を含めない。
+- Party Sessionではproposed_pcsへ全PCを同じ順序で返し、PC別resources・conditions・人間行動とAI同行行動を区別して反映する。proposed_pc_rawは先頭PCと同じ本文にする。
 - 説明やMarkdownコードブロックを付けず、指定JSONだけを返す。`,
     user: `${sourcesText(sources)}
 
@@ -182,6 +201,9 @@ ${session.scenario?.raw || '(未設定)'}
 
 # 元のPCシート
 ${session.pc?.raw || '(未設定)'}
+
+# Party全PC設定
+${JSON.stringify(session.pcs || [], null, 2)}
 
 # 最終state
 ${JSON.stringify(session.state || {}, null, 2)}
@@ -228,7 +250,7 @@ ${worldRaw || '(未設定)'}
 ${JSON.stringify(campaign.currentState || {}, null, 2)}
 
 # 引き継ぎPC
-${campaign.carriedPc?.raw || '(未設定)'}
+${JSON.stringify(campaign.carriedPcs?.length ? campaign.carriedPcs : [campaign.carriedPc], null, 2)}
 
 # 章履歴
 ${JSON.stringify(campaign.chapters || [], null, 2)}
@@ -281,7 +303,7 @@ ${worldRaw || '(未設定)'}
 ${JSON.stringify(campaign.currentState || {}, null, 2)}
 
 # 引き継ぎPC
-${campaign.carriedPc?.raw || '(未設定)'}
+${JSON.stringify(campaign.carriedPcs?.length ? campaign.carriedPcs : [campaign.carriedPc], null, 2)}
 
 # 選択した次話候補
 ${JSON.stringify(pitch, null, 2)}

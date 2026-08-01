@@ -120,6 +120,15 @@ describe('parseRoute', () => {
     expect(parseRoute('#/play')).toBeNull();
   });
 
+  it('parses Party setup, room and tokenized join routes', () => {
+    expect(parseRoute('#/party-setup')).toEqual({ name: 'partySetup' });
+    expect(parseRoute('#/party/p_1')).toEqual({ name: 'party', sessionId: 'p_1' });
+    expect(parseRoute('#/party/p_1/join/token_abc')).toEqual({
+      name: 'partyJoin', sessionId: 'p_1', inviteToken: 'token_abc',
+    });
+    expect(parseRoute('#/party/p_1/join')).toBeNull();
+  });
+
   it('returns null for unknown hashes and for extra segments', () => {
     expect(parseRoute('#/foo')).toBeNull();
     // ページ内アンカー用の hash も解釈できない = ホームへ落ちる。だからシェルの
@@ -152,6 +161,9 @@ describe('buildHash', () => {
     );
     expect(buildHash({ name: 'setup' })).toBe('#/setup');
     expect(buildHash({ name: 'play', sessionId: 'ses_1' })).toBe('#/play/ses_1');
+    expect(buildHash({ name: 'partySetup' })).toBe('#/party-setup');
+    expect(buildHash({ name: 'party', sessionId: 'p_1' })).toBe('#/party/p_1');
+    expect(buildHash({ name: 'partyJoin', sessionId: 'p_1', inviteToken: 'token_abc' })).toBe('#/party/p_1/join/token_abc');
     expect(buildHash(null)).toBe('#/');
   });
 
@@ -169,6 +181,9 @@ describe('buildHash', () => {
       '#/u/usr_1/worlds/pub_1',
       '#/setup',
       '#/play/ses_1',
+      '#/party-setup',
+      '#/party/p_1',
+      '#/party/p_1/join/token_abc',
     ];
     for (const h of hashes) expect(buildHash(parseRoute(h))).toBe(h);
   });
@@ -221,6 +236,9 @@ describe('isFocusRoute', () => {
   it('treats setup and play as focus mode', () => {
     expect(isFocusRoute(parseRoute('#/setup'))).toBe(true);
     expect(isFocusRoute(parseRoute('#/play/ses_1'))).toBe(true);
+    expect(isFocusRoute(parseRoute('#/party-setup'))).toBe(true);
+    expect(isFocusRoute(parseRoute('#/party/p_1'))).toBe(true);
+    expect(isFocusRoute(parseRoute('#/party/p_1/join/token'))).toBe(true);
   });
 
   it('treats every other route as browsing mode', () => {

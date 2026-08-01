@@ -36,7 +36,7 @@ describe('CampaignTab', () => {
     expect(await screen.findByText(/第一章/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: '引き継ぎPC' }));
     expect(screen.getByText(/PC名: カイ\(熟練\)/)).toBeInTheDocument();
-    expect(screen.getByText('CP: 12')).toBeInTheDocument();
+    expect(screen.getByText(/CP: 12/)).toBeInTheDocument();
   });
 
   it('改名保存で既存のcarriedPc/chaptersごとputCampaignを呼ぶ', async () => {
@@ -88,6 +88,10 @@ describe('CampaignTab', () => {
       status: 'ready',
       summary: '橋を落とした。',
       proposedPcRaw: 'PC名: カイ\n所持品: 印章',
+      proposedPcs: [
+        { id: 'pc1', characterName: 'カイ', raw: '剣士\n所持品: 印章', xp: 12 },
+        { id: 'pc2', characterName: 'ミナ', raw: '学者\n所持品: 石版', xp: 9 },
+      ],
       changes: [
         { id: 'change_1', kind: 'canon_fact_add', title: '橋が崩落', details: '北門は通れない。' },
       ],
@@ -111,7 +115,41 @@ describe('CampaignTab', () => {
     expect(acceptSpy.mock.calls[0][3]).toMatchObject({
       summary: '橋を落とした。',
       pcRaw: 'PC名: カイ\n所持品: 印章',
+      pcs: draft.proposedPcs,
       changes: [expect.objectContaining({ id: 'change_1', title: '橋が崩落' })],
+    });
+  });
+
+  it('starts a first Party chapter with Campaign carriedPcs', async () => {
+    const campaign = {
+      ...CP,
+      carriedPcs: [
+        { id: 'pc1', characterName: 'カイ', raw: '剣士', xp: 4 },
+        { id: 'pc2', characterName: 'ミナ', raw: '学者', xp: 7 },
+      ],
+      chapters: [],
+    };
+    vi.spyOn(campaignClient, 'listCampaigns').mockResolvedValue([campaign]);
+    vi.spyOn(campaignClient, 'getCampaign').mockResolvedValue(campaign);
+    vi.spyOn(worldClient, 'getWorld').mockResolvedValue({ id: 'w1', raw: '# World', moods: ['シリアス'] });
+    const onStartPartyChapter = vi.fn();
+
+    render(
+      <CampaignTab
+        worldId="w1"
+        focusCampaignId="cp1"
+        onStartPartyChapter={onStartPartyChapter}
+      />,
+    );
+    fireEvent.click(await screen.findByText('第一話をPartyで始める'));
+
+    await waitFor(() => expect(onStartPartyChapter).toHaveBeenCalled());
+    expect(onStartPartyChapter.mock.calls[0][0]).toMatchObject({
+      worldId: 'w1',
+      campaignId: 'cp1',
+      pcs: campaign.carriedPcs,
+      rulesetId: 'simple',
+      title: '影の連鎖',
     });
   });
 
@@ -162,8 +200,8 @@ describe('CampaignTab', () => {
     fireEvent.click(screen.getByText('次話候補を作る'));
     fireEvent.click(await screen.findByText('灰の密使'));
     fireEvent.click(screen.getByText('選択案からScenarioを生成'));
-    expect(await screen.findByText('Scenarioを保存して次章を始める')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Scenarioを保存して次章を始める'));
+    expect(await screen.findByText('保存してひとりで始める')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('保存してひとりで始める'));
 
     await waitFor(() => expect(putScenarioSpy).toHaveBeenCalled());
     expect(putScenarioSpy.mock.calls[0][2]).toMatchObject({

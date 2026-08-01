@@ -50,6 +50,23 @@ describe('campaignLibrary', () => {
     expect(second.createdAt).toBe(first.createdAt);
     expect(second.title).toBe('B');
   });
+  it('stores multiple carried PCs and derives one-item carriedPcs for legacy data', async () => {
+    const carriedPcs = [
+      { id: 'pc1', characterName: 'カイ', raw: '剣士', xp: 4 },
+      { id: 'pc2', characterName: 'ミナ', raw: '学者', xp: 7 },
+    ];
+    await saveCampaign(dataStore, 'u', {
+      id: 'party-cp', worldId: 'w1', title: '二人旅', carriedPcs, chapters: [],
+    });
+    expect((await getCampaign(dataStore, 'u', 'w1', 'party-cp')).carriedPcs).toEqual(carriedPcs);
+
+    await dataStore.set('users/u/worlds/w1/campaigns/legacy', {
+      id: 'legacy', worldId: 'w1', title: '旧形式', carriedPc: { raw: 'PC', xp: 2 }, chapters: [],
+    });
+    expect((await getCampaign(dataStore, 'u', 'w1', 'legacy')).carriedPcs).toEqual([
+      { id: 'pc', raw: 'PC', xp: 2 },
+    ]);
+  });
   it('lists campaigns for a world', async () => {
     await saveCampaign(dataStore, 'u', {
       id: 'cp1',

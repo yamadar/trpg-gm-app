@@ -238,6 +238,71 @@ describe('campaigns routes', () => {
     expect(accepted.body.code).toBe('STALE_SESSION');
   });
 
+  it('reconciles every PC from an ended Party session and stores edited carriedPcs', async () => {
+    await request(app).put('/api/worlds/w1/campaigns/cp1').send({
+      ...body,
+      chapters: [{ sessionId: 'party1', title: '二人の遺跡', status: 'ended', endedAt: 80 }],
+    });
+    const session = {
+      id: 'party1',
+      mode: 'party',
+      title: '二人の遺跡',
+      worldId: 'w1',
+      campaignId: 'cp1',
+      endedAt: 80,
+      updatedAt: 90,
+      rulesetId: 'simple',
+      pcs: [
+        { id: 'pc1', characterName: 'カイ', raw: '剣士' },
+        { id: 'pc2', characterName: 'ミナ', raw: '学者' },
+      ],
+      scenario: { id: 'sc_party', raw: '# 遺跡' },
+      state: {
+        turn_count: 3,
+        party: { pcs: { pc1: { xp: 4 }, pc2: { xp: 7 } } },
+      },
+      log: [
+        { role: 'player', text: 'カイ: 正面を守る' },
+        { role: 'player', text: 'ミナ: 石碑を読む' },
+      ],
+    };
+    await dataStore.set(sessionKey('usr_test', 'party1'), session);
+    generator.reconcile.mockResolvedValueOnce({
+      summary: '二人で封印を解いた。',
+      proposed_pc_raw: '剣士',
+      proposed_pcs: [
+        { id: 'pc1', character_name: 'カイ', raw: '剣士\n傷: 左腕', xp: 5 },
+        { id: 'pc2', character_name: 'ミナ', raw: '学者\n所持品: 石版', xp: 8 },
+      ],
+      changes: [],
+    });
+
+    const reconciled = await request(app)
+      .post('/api/worlds/w1/campaigns/cp1/chapters/party1/reconcile')
+      .send({});
+    expect(reconciled.status).toBe(201);
+    expect(reconciled.body.proposedPcs).toEqual([
+      { id: 'pc1', characterName: 'カイ', raw: '剣士\n傷: 左腕', xp: 5 },
+      { id: 'pc2', characterName: 'ミナ', raw: '学者\n所持品: 石版', xp: 8 },
+    ]);
+
+    const accepted = await request(app)
+      .post('/api/worlds/w1/campaigns/cp1/chapters/party1/accept')
+      .send({
+        pcs: [
+          reconciled.body.proposedPcs[0],
+          { ...reconciled.body.proposedPcs[1], raw: '学者\n所持品: 解読済み石版', xp: 9 },
+        ],
+        changes: [],
+      });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.carriedPcs).toEqual([
+      { id: 'pc1', characterName: 'カイ', raw: '剣士\n傷: 左腕', xp: 5 },
+      { id: 'pc2', characterName: 'ミナ', raw: '学者\n所持品: 解読済み石版', xp: 9 },
+    ]);
+    expect(accepted.body.chapters[0]).toMatchObject({ status: 'reconciled', scenarioId: 'sc_party' });
+  });
+
   it('invalidates generated pitches when a Campaign source document changes', async () => {
     await request(app).put('/api/worlds/w1/campaigns/cp1').send({
       ...body,
