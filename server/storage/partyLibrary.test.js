@@ -6,6 +6,7 @@ import {
   MAX_STORED_PARTY_CHAT_MESSAGES,
   MAX_STORED_PARTY_EVENTS,
   MAX_STORED_PARTY_ROUNDS,
+  listPartyChat,
   savePartyRound,
 } from './partyLibrary.js';
 import { partyChatKey, partyEventKey, partyRoundKey } from './paths.js';
@@ -36,5 +37,23 @@ describe('party storage retention', () => {
       number: MAX_STORED_PARTY_ROUNDS,
     });
     expect(dataStore.delete).toHaveBeenCalledWith(partyRoundKey('party_1', 'round_0'));
+  });
+
+  it('reads only chat files newer than the requested sequence', async () => {
+    const keys = [1, 2, 3].map((seq) => partyChatKey('party_1', seq));
+    const dataStore = {
+      list: vi.fn().mockResolvedValue(keys),
+      get: vi.fn().mockImplementation(async (key) => {
+        const seq = Number(key.slice(key.lastIndexOf('/') + 1));
+        return { id: `chat_${seq}`, seq };
+      }),
+    };
+
+    await expect(listPartyChat(dataStore, 'party_1', 1)).resolves.toEqual([
+      { id: 'chat_2', seq: 2 },
+      { id: 'chat_3', seq: 3 },
+    ]);
+    expect(dataStore.get).not.toHaveBeenCalledWith(keys[0]);
+    expect(dataStore.get).toHaveBeenCalledTimes(2);
   });
 });

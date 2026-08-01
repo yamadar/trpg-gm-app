@@ -38,6 +38,8 @@ const PHASE_LABELS = {
   ended: '終了',
 };
 
+const MAX_VISIBLE_CHAT_MESSAGES = 500;
+
 function commandId(prefix) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -89,6 +91,8 @@ export default function PartyPlay({ sessionId }) {
   const fetchingRef = useRef(false);
   const typingAtRef = useRef(0);
   const roundRef = useRef(null);
+  const chatSeqRef = useRef(0);
+  const chatInitializedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (fetchingRef.current) return;
@@ -96,11 +100,28 @@ export default function PartyPlay({ sessionId }) {
     try {
       const [snapshot, messages] = await Promise.all([
         getPartySnapshot(sessionId),
-        getPartyChat(sessionId, 0),
+        getPartyChat(sessionId, chatSeqRef.current),
       ]);
       setParty(snapshot);
       if (Number.isFinite(snapshot.serverNow)) setServerOffset(snapshot.serverNow - Date.now());
-      setChat(messages.messages || []);
+      const incoming = Array.isArray(messages.messages) ? messages.messages : [];
+      const initialChat = !chatInitializedRef.current;
+      if (initialChat || incoming.length > 0) {
+        setChat((current) => {
+          if (initialChat) return incoming.slice(-MAX_VISIBLE_CHAT_MESSAGES);
+          const known = new Set(current.map((message) => message.id));
+          return [...current, ...incoming.filter((message) => !known.has(message.id))]
+            .slice(-MAX_VISIBLE_CHAT_MESSAGES);
+        });
+      }
+      const highestIncomingSeq = incoming.reduce(
+        (highest, message) => Number.isSafeInteger(message.seq) ? Math.max(highest, message.seq) : highest,
+        chatSeqRef.current,
+      );
+      chatSeqRef.current = Number.isSafeInteger(messages.nextSeq)
+        ? Math.max(highestIncomingSeq, messages.nextSeq)
+        : highestIncomingSeq;
+      chatInitializedRef.current = true;
       setError('');
     } catch (e) {
       setError('Party状態の取得に失敗した: ' + e.message);

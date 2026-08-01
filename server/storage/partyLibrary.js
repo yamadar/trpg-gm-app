@@ -124,7 +124,14 @@ export async function appendPartyChat(dataStore, session, message) {
 
 export async function listPartyChat(dataStore, sessionId, after = 0) {
   const keys = await dataStore.list(partyChatListPrefix(sessionId));
-  const values = await Promise.all(keys.map((key) => dataStore.get(key)));
+  const values = await Promise.all(
+    keys
+      .filter((key) => {
+        const encodedSeq = key.slice(key.lastIndexOf('/') + 1);
+        return /^\d{12}$/.test(encodedSeq) && Number(encodedSeq) > after;
+      })
+      .map((key) => dataStore.get(key)),
+  );
   return values
     .filter((message) => message && message.seq > after)
     .sort((a, b) => a.seq - b.seq);

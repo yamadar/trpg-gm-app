@@ -8,6 +8,7 @@ import * as storage from './storage/index.js';
 import * as sessionApi from './api/session.js';
 import * as campaignClient from './api/campaignClient.js';
 import * as sessionSyncClient from './api/sessionSyncClient.js';
+import * as partyClient from './api/partyClient.js';
 
 afterEach(() => {
   window.location.hash = '';
@@ -92,6 +93,52 @@ describe('App', () => {
     render(<App />);
     await screen.findByText('テストセッション');
     expect(listSpy).not.toHaveBeenCalled();
+  });
+
+  it('remounts PartyPlay when navigating directly between Party sessions', async () => {
+    const partySnapshot = (id) => ({
+      id,
+      title: id === 'p1' ? '旧Party' : '新Party',
+      status: 'playing',
+      settings: {},
+      participants: [{
+        userId: 'u1',
+        displayName: 'ホスト',
+        role: 'host',
+        pcId: 'pc1',
+        activity: 'active',
+        awayPolicy: 'follow',
+        connection: 'online',
+        typing: false,
+      }],
+      pcs: [{ id: 'pc1', characterName: 'カイ' }],
+      me: { userId: 'u1', role: 'host', pcId: 'pc1' },
+      round: {
+        id: 'round_1',
+        phase: 'collecting',
+        deadlineAt: Date.now() + 90_000,
+        intents: [],
+        readyUserIds: [],
+      },
+      snapshot: { narratives: [], choicesByPc: {} },
+      serverNow: Date.now(),
+    });
+    vi.spyOn(partyClient, 'getPartySnapshot').mockImplementation(async (id) => partySnapshot(id));
+    vi.spyOn(partyClient, 'getPartyChat').mockImplementation(async (id, after) => ({
+      messages: after === 0
+        ? [{ id: `chat_${id}_1`, seq: 1, displayName: 'ホスト', text: `${id}の相談` }]
+        : [],
+      nextSeq: 1,
+    }));
+
+    window.location.hash = '#/party/p1';
+    render(<App />);
+    await waitFor(() => expect(document.body).toHaveTextContent('p1の相談'));
+
+    act(() => navigate({ name: 'party', sessionId: 'p2' }));
+    await waitFor(() => expect(document.body).toHaveTextContent('p2の相談'));
+    expect(document.body).not.toHaveTextContent('p1の相談');
+    expect(partyClient.getPartyChat).toHaveBeenCalledWith('p2', 0);
   });
 
   it('navigates to the library through the global nav and back home', async () => {

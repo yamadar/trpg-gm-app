@@ -157,4 +157,4 @@ Homeの「+ パーティで遊ぶ」はParty作成へ進み、参加中PartyはS
 
 招待URLの参加画面はtokenでmembershipを作り、成功後`#/party/{sessionId}`へ置換する。ロビーでは空いているPCを一人一体claimし、全員ready後にホストが開始する。ホストは招待URL発行、開始、停止/再開、締切前の強制進行、終了を操作できる。invite失効・参加者削除/再割当のサーバーAPIはあるが、専用管理UIは未実装。
 
-Play画面はデスクトップでParty/物語/行動+チャットの3列、狭い画面で物語/行動/Party/チャットのタブへ切り替える。参加者ごとの接続、typing、ready、離席を表示し、提出行動は全員へ1秒以内の次回pollで見える。自由入力、PC別選択肢、更新/撤回、ready解除、投票、手動離席/復帰、Partyチャットを提供する。keydown/IME入力時だけtyping heartbeatを送り、サーバー時刻差分から締切を表示する。画面を閉じてもmembershipとstateは残り、同URLから再入室できる。現行通信は1秒RESTポーリングで、WebSocket pushは未実装。
+Play画面はデスクトップでParty/物語/行動+チャットの3列、狭い画面で物語/行動/Party/チャットのタブへ切り替える。参加者ごとの接続、typing、ready、離席を表示し、提出行動は全員へ1秒以内の次回pollで見える。自由入力、PC別選択肢、更新/撤回、ready解除、投票、手動離席/復帰、Partyチャットを提供する。チャットは最後に受信したseq以降だけを差分取得し、既存表示へ追記する。DOM上の表示は最新500件へ制限する。keydown/IME入力時だけtyping heartbeatを送り、サーバー時刻差分から締切を表示する。画面を閉じてもmembershipとstateは残り、同URLから再入室できる。Party IDが変わる画面遷移ではPlayを再マウントして内部state/refを初期化する。現行通信は1秒RESTポーリングで、WebSocket pushは未実装。

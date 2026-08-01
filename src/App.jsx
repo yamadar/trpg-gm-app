@@ -399,7 +399,7 @@ function AppInner() {
         {route.name === 'partyJoin' && (
           <PartyJoin sessionId={route.sessionId} inviteToken={route.inviteToken} />
         )}
-        {route.name === 'party' && <PartyPlay sessionId={route.sessionId} />}
+        {route.name === 'party' && <PartyPlay key={route.sessionId} sessionId={route.sessionId} />}
         {route.name === 'library' && (
           <Library
             route={route}

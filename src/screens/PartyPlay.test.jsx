@@ -72,4 +72,44 @@ describe('PartyPlay', () => {
     await waitFor(() => expect(send).toHaveBeenCalledWith('p1', '北へ行こう', expect.stringMatching(/^chat_/)));
     expect(screen.getByText('相談内容はAI GMへ送られない。')).toBeInTheDocument();
   });
+
+  it('polls Party chat after the last sequence and appends only new messages', async () => {
+    vi.spyOn(partyClient, 'getPartySnapshot').mockResolvedValue(snapshot());
+    const chatFetch = vi.mocked(partyClient.getPartyChat);
+    chatFetch
+      .mockResolvedValueOnce({
+        messages: [{ id: 'chat_1', seq: 1, displayName: 'ホスト', text: '最初の相談' }],
+        nextSeq: 1,
+      })
+      .mockResolvedValueOnce({
+        messages: [{ id: 'chat_2', seq: 2, displayName: '参加者', text: '次の相談' }],
+        nextSeq: 2,
+      });
+    vi.spyOn(partyClient, 'sendPartyChat').mockResolvedValue({});
+
+    render(<PartyPlay sessionId="p1" />);
+    expect(await screen.findByText(/最初の相談/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Partyチャット'), { target: { value: '送信して更新' } });
+    fireEvent.click(screen.getByText('送信'));
+
+    expect(await screen.findByText(/次の相談/)).toBeInTheDocument();
+    expect(screen.getByText(/最初の相談/)).toBeInTheDocument();
+    expect(chatFetch).toHaveBeenNthCalledWith(1, 'p1', 0);
+    expect(chatFetch).toHaveBeenNthCalledWith(2, 'p1', 1);
+  });
+
+  it('keeps only the latest 500 chat messages in the DOM', async () => {
+    vi.spyOn(partyClient, 'getPartySnapshot').mockResolvedValue(snapshot());
+    const messages = Array.from({ length: 501 }, (_, index) => ({
+      id: `chat_${index + 1}`,
+      seq: index + 1,
+      displayName: 'ホスト',
+      text: index === 0 ? 'OLDEST_CHAT_SENTINEL' : index === 500 ? 'LATEST_CHAT_SENTINEL' : `相談${index + 1}`,
+    }));
+    vi.mocked(partyClient.getPartyChat).mockResolvedValue({ messages, nextSeq: 501 });
+
+    render(<PartyPlay sessionId="p1" />);
+    expect(await screen.findByText(/LATEST_CHAT_SENTINEL/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('OLDEST_CHAT_SENTINEL');
+  });
 });
