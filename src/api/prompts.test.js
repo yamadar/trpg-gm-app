@@ -338,10 +338,34 @@ describe('選択肢のネタバレ防止', () => {
 
   it('reminds the GM per turn to ground choices in the supplied context', () => {
     const content = buildTurnUserContent(makeSession(), '波止場を調べる');
-    expect(content).toContain(
-      'choicesは、上記の直近ログ・物語要約・既知フラグ・説明済み用語と、このターンのnarrativeで実際に描写した内容だけを材料に書くこと'
-    );
+    expect(content).toContain('choicesは「選択肢の作り方」節の材料範囲');
     expect(content).toContain('選択肢で初出させない');
+  });
+
+  // 同じ制約が schema description / 「選択肢の作り方」節 / 毎ターンの注意書き の
+  // 3箇所にあり、以前は許可される材料の列挙が3者で食い違っていた(schemaはnarrative+直近ログ
+  // のみ、節はPC設定を含む6種、毎ターン注意はPC設定を落とした5種)。recent_logは12件で
+  // 打ち切られるため、それより古い事実は物語要約にしか残らず、節では使ってよく schema では
+  // 使えない材料になっていた。節を唯一の正とし、他2箇所はそこを参照する形へ統一する。
+  it('keeps the three statements of the choices rule from contradicting each other', () => {
+    const text = staticText(makeSession());
+    const perTurn = buildTurnUserContent(makeSession(), '波止場を調べる');
+
+    // 節が材料範囲を定義する唯一の場所。
+    expect(text).toContain(
+      '使ってよい材料は、同じターンのnarrativeで実際に描写した内容・直近ログ・物語要約・既知フラグ・PC設定・説明済み用語に限る'
+    );
+    // 他2箇所は独自の列挙を持たず、節を参照する。
+    expect(TURN_OUTPUT_FORMAT.schema.properties.choices.description).toContain(
+      '「選択肢の作り方」節に従う'
+    );
+    expect(perTurn).toContain('「選択肢の作り方」節の材料範囲');
+
+    // 節が許可する材料を、他2箇所が締め出していないこと。
+    for (const material of ['物語要約', '既知フラグ', '説明済み用語', 'PC設定']) {
+      expect(perTurn).toContain(material);
+    }
+    expect(TURN_OUTPUT_FORMAT.schema.properties.choices.description).not.toContain('直近ログにも無い');
   });
 });
 

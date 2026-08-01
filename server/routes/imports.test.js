@@ -499,7 +499,11 @@ describe('imports routes', () => {
       const res = await request(app).post('/api/starters/hyakki-yagyo/import');
 
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ error: 'starter scenario is missing; re-run the seed' });
+      // どの話で落ちたかがエラーに出ること。話が複数あるパックでは、話を特定できないと
+      // 再シードの当たりを付けられない。
+      expect(res.body).toEqual({
+        error: 'starter scenario "episode-two" is missing; re-run the seed',
+      });
       expect(await getScenario(dataStore, textStore, 'usr_test', 'hyakki-yagyo', 'episode-one')).not.toBeNull();
       expect(await getScenario(dataStore, textStore, 'usr_test', 'hyakki-yagyo', 'episode-two')).toBeNull();
     });

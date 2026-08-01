@@ -106,7 +106,11 @@ export function createImportsRouter({ dataStore, textStore, imageStore }) {
         imageStore,
       });
       if (!result.ok) {
-        res.status(500).json({ error: 'starter scenario is missing; re-run the seed' });
+        // どの話で落ちたかを含める。キャンペーンパックでは失敗しうる話が複数あり、
+        // 「starter scenario is missing」だけでは再シード時に原因を特定できない。
+        res.status(500).json({
+          error: `starter scenario "${entry.id ?? entry.publicId}" is missing; re-run the seed`,
+        });
         return;
       }
       scenarios.push(result.meta);
@@ -128,8 +132,15 @@ export function createImportsRouter({ dataStore, textStore, imageStore }) {
     }
 
     // `scenario` はSetupへ渡す開始話。全話は素材ライブラリへ取り込み済みで、
-    // API利用者は `scenarios` から続話も確認できる。
-    res.status(201).json({ world: world.meta, scenario: scenarios[0], scenarios, ...imported });
+    // API利用者は `scenarios` から続話も確認できる。続話は一覧用途しかないため
+    // 本文(raw)を落とす。5話パックでは raw 込みだと応答が50KB超になり、
+    // そのほとんどをクライアントが読まずに捨てていた。
+    res.status(201).json({
+      world: world.meta,
+      scenario: scenarios[0],
+      scenarios: scenarios.map(({ raw: _raw, ...meta }) => meta),
+      ...imported,
+    });
   }));
 
   return router;

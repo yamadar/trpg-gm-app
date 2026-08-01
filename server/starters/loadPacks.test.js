@@ -135,6 +135,9 @@ describe('loadStarterPacks validation (malformed fixtures)', () => {
   // 妥当なパック一式を書き出し、overridesで狙った箇所だけを壊す。
   // world/scenarioDoc を null にすると「ファイルを置かない(missing)」、
   // '' にすると「空ファイル(empty)」を再現できる。
+  // scenarioDoc が効くのは単一シナリオ(meta.scenario)のパックだけ。meta.scenarios を
+  // 使うキャンペーンパックでは id をキーにした scenarioDocs: { [id]: null | '' | 本文 }
+  // を指定すること(scenarioDoc を渡しても無視される)。
   async function writePack(rootDir, packId, overrides = {}) {
     const dir = path.join(rootDir, packId);
     await fs.mkdir(path.join(dir, 'pc'), { recursive: true });
@@ -369,6 +372,97 @@ describe('loadStarterPacks validation (malformed fixtures)', () => {
     });
     await expect(loadStarterPacks(dir)).rejects.toThrow(
       /starter pack "sample": scenarios\/episode-two\.md must contain both/
+    );
+  });
+
+  it('rejects a pack declaring both scenario and scenarios', async () => {
+    const dir = await buildInvalidRoot('sample', {
+      meta: {
+        scenario: { id: 'sample-scenario', title: 'サンプルシナリオ' },
+        scenarios: [
+          { id: 'episode-one', title: '第一話' },
+          { id: 'episode-two', title: '第二話' },
+        ],
+      },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": declare either scenario or scenarios, not both/
+    );
+  });
+
+  it('rejects a scenarios array with fewer than 2 entries', async () => {
+    const dir = await buildInvalidRoot('sample', {
+      meta: { scenario: undefined, scenarios: [{ id: 'episode-one', title: '第一話' }] },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenarios must list at least 2 scenarios/
+    );
+  });
+
+  it('rejects a non-array scenarios value', async () => {
+    const dir = await buildInvalidRoot('sample', {
+      meta: { scenario: undefined, scenarios: { 'episode-one': '第一話' } },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenarios must be an array/
+    );
+  });
+
+  // `scenarios: null` は「キャンペーンではない」の意思表示として書かれうる。旧来の
+  // === undefined 判定ではキャンペーン分岐へ落ち、単一シナリオしか宣言していないのに
+  // 「両方を宣言するな」という逆のエラーになっていた。
+  it('treats an explicitly null scenarios as the legacy single-scenario shape', async () => {
+    const dir = await buildInvalidRoot('sample', { meta: { scenarios: null } });
+    const [pack] = await loadStarterPacks(dir);
+    expect(pack.scenarios.map((scenario) => scenario.id)).toEqual(['sample-scenario']);
+  });
+
+  // scenarios[i].id は scenarios/{id}.md のパス組み立てに直接使われる。pc/npc名と同じく
+  // isValidId だけが防御なので、traversalを含むidが弾かれることを明示的に確かめる。
+  it('rejects a traversal-shaped id in a multi-scenario pack', async () => {
+    const dir = await buildInvalidRoot('sample', {
+      meta: {
+        scenario: undefined,
+        scenarios: [
+          { id: 'episode-one', title: '第一話' },
+          { id: '../../etc/passwd', title: '第二話' },
+        ],
+      },
+      // 本文は書き出さない。traversalするidでは fixture 側の writeFile が先に
+      // ENOENT で落ちてしまい、ローダーの検証まで到達できないため。
+      scenarioDocs: { '../../etc/passwd': null },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenarios\[1\]\.id is not a valid id/
+    );
+  });
+
+  it('rejects an empty or missing title in a multi-scenario pack', async () => {
+    const dir = await buildInvalidRoot('sample', {
+      meta: {
+        scenario: undefined,
+        scenarios: [
+          { id: 'episode-one', title: '第一話' },
+          { id: 'episode-two', title: '  ' },
+        ],
+      },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": scenarios\[1\]\.title must be a non-empty string/
+    );
+  });
+
+  it('rejects a missing scenarios/{id}.md document', async () => {
+    const scenarios = [
+      { id: 'episode-one', title: '第一話' },
+      { id: 'episode-two', title: '第二話' },
+    ];
+    const dir = await buildInvalidRoot('sample', {
+      meta: { scenario: undefined, scenarios },
+      scenarioDocs: { 'episode-two': null },
+    });
+    await expect(loadStarterPacks(dir)).rejects.toThrow(
+      /starter pack "sample": missing or empty document/
     );
   });
 });

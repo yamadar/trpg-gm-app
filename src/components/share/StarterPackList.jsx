@@ -11,6 +11,13 @@ function rulesetLabel(id) {
   return RULESETS.find((r) => r.id === id)?.label ?? id;
 }
 
+// 話数は取り込みが実際に辿る `scenarios` から数える。マニフェストの scenarioCount は
+// 同じ事実の二重管理で、ズレると「全5話」と表示して3話しか取り込まれない状態になる。
+// scenarios を持たない旧マニフェストは scenarioCount、それも無ければ1話として扱う。
+function scenarioCountOf(pack) {
+  return pack.scenarios?.length ?? pack.scenarioCount ?? 1;
+}
+
 export default function StarterPackList({ onImported }) {
   // ギャラリーはログイン無しで閲覧できる設計だが、取り込み先のAPIは認証必須。
   // 未ログインのまま押させて401を踏ませるより、ここで先にボタンを隠す
@@ -96,7 +103,9 @@ export default function StarterPackList({ onImported }) {
               <Badge key={`${m}-${i}`}>{m}</Badge>
             ))}
             <span style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint }}>
-              {pack.scenarioCount > 1 ? `全${pack.scenarioCount}話 / ${pack.scenarioTitle}` : pack.scenarioTitle}
+              {scenarioCountOf(pack) > 1
+                ? `全${scenarioCountOf(pack)}話 / ${pack.scenarioTitle}`
+                : pack.scenarioTitle}
             </span>
           </div>
 

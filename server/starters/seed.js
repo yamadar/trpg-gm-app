@@ -32,8 +32,16 @@ function publicIdOf(result, what) {
   return result.meta.publicId;
 }
 
+// loadStarterPacks は常に非空の `scenarios` を返すが、seedStarters は呼び出し側から
+// packs を直接受け取れる(テスト・スクリプト経路)。どちらの形も持たないパックを
+// [undefined] として通すと saveWorld の後に scenario.id で TypeError になり、
+// パックidを含まないエラーで全パックのシードが巻き添えになるため、ここで弾く。
 function scenariosOf(pack) {
-  return Array.isArray(pack.scenarios) && pack.scenarios.length > 0 ? pack.scenarios : [pack.scenario];
+  if (Array.isArray(pack.scenarios) && pack.scenarios.length > 0) return pack.scenarios;
+  if (!pack.scenario) {
+    throw new Error(`starter pack "${pack.id}": neither scenario nor a non-empty scenarios was provided`);
+  }
+  return [pack.scenario];
 }
 
 async function seedPack(dataStore, textStore, owner, pack, imageStore) {

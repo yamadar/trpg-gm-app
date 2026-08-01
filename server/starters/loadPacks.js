@@ -55,7 +55,10 @@ function validateScenarioMeta(packId, scenario, field) {
 async function loadScenarios(packId, dir, meta) {
   // 既存パックの singular `scenario` はそのまま受け付ける。キャンペーンパックだけ
   // `scenarios` を使い、各本文を scenarios/{id}.md に分ける。
-  if (meta.scenarios === undefined) {
+  // `scenarios: null` を「未指定」と同じ旧形式として扱う。=== undefined だと null が
+  // キャンペーン分岐へ落ち、単一シナリオしか宣言していないパックに対して
+  // 「両方を宣言するな」という逆の内容のエラーが出てしまう。
+  if (meta.scenarios == null) {
     validateScenarioMeta(packId, meta.scenario, 'scenario');
     const raw = await readDoc(packId, path.join(dir, 'scenario.md'));
     if (!raw.includes('## シナリオ概要') || !raw.includes('## GM専用情報')) {
@@ -65,9 +68,8 @@ async function loadScenarios(packId, dir, meta) {
   }
 
   if (meta.scenario !== undefined) fail(packId, 'declare either scenario or scenarios, not both');
-  if (!Array.isArray(meta.scenarios) || meta.scenarios.length < 2) {
-    fail(packId, 'scenarios must list at least 2 scenarios');
-  }
+  if (!Array.isArray(meta.scenarios)) fail(packId, 'scenarios must be an array');
+  if (meta.scenarios.length < 2) fail(packId, 'scenarios must list at least 2 scenarios');
 
   const seen = new Set();
   const scenarios = [];
