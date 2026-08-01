@@ -150,6 +150,47 @@ describe('toCompatibleTextResponse', () => {
       }],
     })).toThrow(/MALFORMED_FUNCTION_CALL.*invalid arguments/);
   });
+
+  // systemブロックはセッション中不変なので、暗黙キャッシュが効いていれば cached が
+  // input の大半を占める。この内訳を見ないと削減策の効果を測れない。
+  it('reports the token breakdown including the cached share of the input', () => {
+    const res = toCompatibleTextResponse({
+      candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+      usageMetadata: {
+        promptTokenCount: 10000,
+        cachedContentTokenCount: 8000,
+        candidatesTokenCount: 500,
+        thoughtsTokenCount: 120,
+        totalTokenCount: 10620,
+      },
+    });
+    expect(res.usage).toEqual({
+      input_tokens: 10000,
+      cached_input_tokens: 8000,
+      output_tokens: 500,
+      thoughts_tokens: 120,
+      total_tokens: 10620,
+      cache_hit_ratio: 0.8,
+    });
+  });
+
+  it('reports a zero cache ratio when nothing was served from cache', () => {
+    const res = toCompatibleTextResponse({
+      candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+      usageMetadata: { promptTokenCount: 12000, candidatesTokenCount: 300, totalTokenCount: 12300 },
+    });
+    expect(res.usage.cached_input_tokens).toBe(0);
+    expect(res.usage.cache_hit_ratio).toBe(0);
+  });
+
+  // usageMetadata が無いレスポンスで usage キーが生えると、既存の toEqual 比較が
+  // 一斉に壊れる。付けないことを明示的に守る。
+  it('omits usage entirely when the response carries no usageMetadata', () => {
+    const res = toCompatibleTextResponse({
+      candidates: [{ content: { parts: [{ text: 'hi' }] }, finishReason: 'STOP' }],
+    });
+    expect(res).not.toHaveProperty('usage');
+  });
 });
 
 describe('generateText', () => {

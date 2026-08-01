@@ -157,7 +157,28 @@ export function toCompatibleTextResponse(data) {
       : content.some((part) => part.type === 'tool_use')
         ? 'tool_use'
         : 'end_turn';
-  return { content, stop_reason: stopReason };
+  const usage = toUsage(data?.usageMetadata);
+  return { content, stop_reason: stopReason, ...(usage ? { usage } : {}) };
+}
+
+// Geminiのトークン内訳。systemブロックはセッション中不変なので、暗黙キャッシュが
+// 効いていれば cached_input_tokens が input_tokens の大半を占めるはずで、0が続くなら
+// 効いていない。それを見ずに削減策を選ぶと当て推量になるため、まず観測できるようにする。
+// usageMetadata自体が無いレスポンス(古いAPI・テストの簡易スタブ)ではundefinedを返す。
+function toUsage(meta) {
+  if (!meta || typeof meta !== 'object') return undefined;
+  const num = (v) => (Number.isFinite(v) ? v : 0);
+  const input = num(meta.promptTokenCount);
+  const cached = num(meta.cachedContentTokenCount);
+  return {
+    input_tokens: input,
+    output_tokens: num(meta.candidatesTokenCount),
+    cached_input_tokens: cached,
+    thoughts_tokens: num(meta.thoughtsTokenCount),
+    total_tokens: num(meta.totalTokenCount),
+    // 入力のうちキャッシュから読まれた割合。削減策の効果はここで測る。
+    cache_hit_ratio: input > 0 ? Number((cached / input).toFixed(3)) : 0,
+  };
 }
 
 export class GeminiTextResponseError extends Error {

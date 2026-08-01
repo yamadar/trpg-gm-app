@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { loadStarterPacks, STARTERS_DIR } from './loadPacks.js';
+import { loadStarterPacks, STARTERS_DIR, SCENARIO_CHAR_BUDGET } from './loadPacks.js';
 import { MOODS } from '../storage/moods.js';
 
 const RULESET_IDS = ['simple', 'coc7e', 'dnd5e', 'gurps'];
@@ -102,6 +102,19 @@ describe('loadStarterPacks', () => {
 
   it('exports the content directory path', () => {
     expect(STARTERS_DIR).toMatch(/content[/\\]starters$/);
+  });
+
+  // シナリオ本文は毎ターンのsystemプロンプトへ丸ごと入るため、長さがそのまま
+  // 全セッションの入力トークンになる。ロード時のwarnは誰も見ないので、出荷される
+  // コンテンツが線を越えていないことはここで止める。
+  it('keeps every shipped scenario within the per-turn prompt budget', async () => {
+    const packs = await loadStarterPacks();
+    const over = packs.flatMap((pack) =>
+      pack.scenarios
+        .filter((scenario) => scenario.raw.length > SCENARIO_CHAR_BUDGET)
+        .map((scenario) => `${pack.id}/${scenario.id}: ${scenario.raw.length} chars`),
+    );
+    expect(over).toEqual([]);
   });
 });
 

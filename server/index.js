@@ -211,6 +211,8 @@ if (process.env.NODE_ENV !== 'test') {
   // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
   seedStarters(createFsDataStore(dataDir), createFsTextStore(dataDir), {
     imageStore: createFsImageStore(dataDir),
+    // 内容ハッシュが一致すると書き込みを飛ばす。保存済みデータを疑うときの逃げ道。
+    force: process.env.FORCE_STARTER_RESEED === '1',
   })
     .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
     .catch((e) => console.error('starter seed failed', e))

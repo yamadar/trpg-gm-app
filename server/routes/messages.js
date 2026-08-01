@@ -10,6 +10,18 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 1ターン1行。systemブロックはセッション中不変なので、暗黙キャッシュが効いていれば
+// cached が input の大半になる。0が続くなら効いていないと判断できる。
+// プロンプト本文は出さない(プレイ内容がログに残るため)。数値だけを残す。
+function logUsage(usage) {
+  if (!usage) return;
+  console.log(
+    `[text-usage] input=${usage.input_tokens} cached=${usage.cached_input_tokens} ` +
+      `(${(usage.cache_hit_ratio * 100).toFixed(0)}%) output=${usage.output_tokens} ` +
+      `thoughts=${usage.thoughts_tokens} total=${usage.total_tokens}`,
+  );
+}
+
 export function createMessagesRouter({
   apiKey,
   model,
@@ -55,6 +67,7 @@ export function createMessagesRouter({
             fetchImpl,
             timeoutMs: MESSAGES_TIMEOUT_MS,
           });
+          logUsage(data.usage);
           res.json(data);
           return;
         } catch (e) {

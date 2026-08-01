@@ -1,13 +1,40 @@
+import { createHash } from 'node:crypto';
 import { loadStarterPacks } from './loadPacks.js';
 import { saveWorld } from '../storage/worldLibrary.js';
 import { saveScenario } from '../storage/scenarioLibrary.js';
 import { saveCharacter } from '../storage/characterLibrary.js';
 import { publishWorld, publishScenario, publishCharacter } from '../storage/shareLibrary.js';
-import { starterManifestKey } from '../storage/paths.js';
+import { starterManifestKey, worldMetaKey } from '../storage/paths.js';
 import { userProfileKey } from '../auth/users.js';
 
 export const OFFICIAL_USER_ID = 'usr_official';
 export const OFFICIAL_DISPLAY_NAME = '公式サンプル';
+
+// シード処理が書き出す内容の形が変わったら上げる。内容ハッシュはコンテンツしか見ないため、
+// コード側の出力形式を変えた場合(例: マニフェストへ新しいフィールドを足した場合)は
+// これを上げないと既存デプロイが古い形のまま再シードを飛ばしてしまう。
+export const SEED_VERSION = 1;
+
+// 書き込みを飛ばしてよいかの判定材料。ロード済みパック(=シードの入力そのもの)から
+// 作るので、content/starters 配下のどのファイルが変わっても必ず変化する。
+function fingerprintOf(packs) {
+  const hash = createHash('sha256');
+  hash.update(`v${SEED_VERSION}\n`);
+  for (const pack of packs) {
+    hash.update(
+      JSON.stringify([
+        pack.id, pack.title, pack.tagline, pack.source, pack.moods, pack.recommendedRuleset,
+        pack.worldRaw,
+        // 単数 `scenario` だけのパックも同じ形へ寄せてから混ぜる。ここで直接
+        // pack.scenarios を触ると旧形式のパックで落ちる。
+        scenariosOf(pack).map((s) => [s.id, s.title, s.raw]),
+        pack.pc.map((c) => [c.name, c.raw]),
+        pack.npc.map((c) => [c.name, c.raw]),
+      ]),
+    );
+  }
+  return hash.digest('hex');
+}
 
 // auth/identities/* を作らないので、このアカウントには誰もログインできない。
 // 公開ギャラリーの作者リンク(GET /api/users/:userId)からは通常どおり参照できる。
@@ -122,12 +149,38 @@ async function seedPack(dataStore, textStore, owner, pack, imageStore) {
   };
 }
 
-export async function seedStarters(dataStore, textStore, { packs, imageStore } = {}) {
+// 保存済みマニフェストをそのまま使ってよいか。内容ハッシュが一致していても、
+// ディスクを作り直した直後などデータ本体だけ消えている場合があるため、実体の存在を
+// 1件だけ確かめる。全パック確認しても正しいが、現実に起きるのはボリュームごと空になる
+// ケースなので、176回の書き込みを省くために1回の読み取りを払う形で足りる。
+async function reusableManifest(dataStore, storedManifest, fingerprint) {
+  if (!storedManifest || storedManifest.contentHash !== fingerprint) return null;
+  const first = storedManifest.packs?.[0];
+  if (!first) return null;
+  const world = await dataStore.get(worldMetaKey(OFFICIAL_USER_ID, first.packId));
+  return world ? storedManifest : null;
+}
+
+export async function seedStarters(dataStore, textStore, { packs, imageStore, force = false } = {}) {
   const loaded = packs ?? (await loadStarterPacks());
+  const fingerprint = fingerprintOf(loaded);
+
+  // 内容が前回と同じなら書き込みを一切行わない。publishScenario等はpublicIdを再利用して
+  // 同一バイト列を書き直すだけなので、再起動のたびに約176回のset(mkdir+write+rename)を
+  // ネットワークディスクへ投げていた。起動はlisten()前にこれを待つため、そのまま起動時間になる。
+  if (!force) {
+    const reusable = await reusableManifest(
+      dataStore,
+      await dataStore.get(starterManifestKey()),
+      fingerprint,
+    );
+    if (reusable) return reusable;
+  }
+
   const owner = await ensureOfficialUser(dataStore);
   const entries = [];
   for (const pack of loaded) entries.push(await seedPack(dataStore, textStore, owner, pack, imageStore));
-  const manifest = { packs: entries, seededAt: Date.now() };
+  const manifest = { packs: entries, seededAt: Date.now(), contentHash: fingerprint };
   await dataStore.set(starterManifestKey(), manifest);
   return manifest;
 }

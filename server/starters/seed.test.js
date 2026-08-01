@@ -140,3 +140,68 @@ describe('seedStarters', () => {
     expect(second).toMatchObject({ title: '第二話', raw: expect.stringContaining('第二話') });
   });
 });
+
+// 起動のたびに全パックを書き直しており、その待ち時間がそのまま起動時間になっていた。
+// 内容が変わっていなければ書き込みを飛ばす。飛ばしすぎ(内容が変わったのに反映されない)は
+// 直接ユーザーに見えるので、両方向を固定する。
+describe('seedStarters change detection', () => {
+  // dataStore.set を数えて「書き込みを本当に飛ばしたか」を見る。所要時間で測ると
+  // マシン負荷で揺れるうえ、飛ばせていなくても速ければ通ってしまう。
+  function countingStore(inner) {
+    const counts = { set: 0, get: 0 };
+    return {
+      store: {
+        ...inner,
+        get: (k) => { counts.get += 1; return inner.get(k); },
+        set: (k, v) => { counts.set += 1; return inner.set(k, v); },
+      },
+      counts,
+    };
+  }
+
+  it('skips every write when the content is unchanged', async () => {
+    await seedStarters(dataStore, textStore, { packs: PACKS });
+
+    const { store, counts } = countingStore(dataStore);
+    const manifest = await seedStarters(store, textStore, { packs: PACKS });
+
+    expect(counts.set).toBe(0);
+    expect(manifest.packs).toHaveLength(1);
+    expect(manifest.contentHash).toEqual(expect.any(String));
+  });
+
+  it('reseeds when any pack content changes', async () => {
+    const first = await seedStarters(dataStore, textStore, { packs: PACKS });
+
+    const edited = [{ ...PACKS[0], worldRaw: '# 別の本文' }];
+    const { store, counts } = countingStore(dataStore);
+    const second = await seedStarters(store, textStore, { packs: edited });
+
+    expect(counts.set).toBeGreaterThan(0);
+    expect(second.contentHash).not.toBe(first.contentHash);
+    const pub = await getPublicWorld(dataStore, textStore, second.packs[0].worldPublicId);
+    expect(pub.raw).toBe('# 別の本文');
+  });
+
+  it('reseeds when the stored data is gone even though the hash matches', async () => {
+    await seedStarters(dataStore, textStore, { packs: PACKS });
+    // ディスクを作り直した直後を模す。マニフェストだけ残り実体が無い状態で飛ばすと、
+    // スターター一覧が壊れたまま復旧しなくなる。
+    await dataStore.delete(worldMetaKey(OFFICIAL_USER_ID, 'test-pack'));
+
+    const { store, counts } = countingStore(dataStore);
+    await seedStarters(store, textStore, { packs: PACKS });
+
+    expect(counts.set).toBeGreaterThan(0);
+    expect(await dataStore.get(worldMetaKey(OFFICIAL_USER_ID, 'test-pack'))).not.toBeNull();
+  });
+
+  it('reseeds unconditionally when force is set', async () => {
+    await seedStarters(dataStore, textStore, { packs: PACKS });
+
+    const { store, counts } = countingStore(dataStore);
+    await seedStarters(store, textStore, { packs: PACKS, force: true });
+
+    expect(counts.set).toBeGreaterThan(0);
+  });
+});
