@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "seed": "node scripts/seedStarters.js",
+    "measure:cache": "node scripts/measureCache.js",
     "test": "vitest run"
   },
   "dependencies": {
