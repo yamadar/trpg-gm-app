@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createPersistence, resolveSqlitePath } from './createPersistence.js';
+import {
+  createPersistence,
+  resolveObjectStorageDriver,
+  resolveSqlitePath,
+} from './createPersistence.js';
 
 const resources = [];
 
@@ -24,6 +28,47 @@ afterEach(async () => {
 describe('resolveSqlitePath', () => {
   it('preserves the in-memory sentinel used by migration dry-runs', () => {
     expect(resolveSqlitePath(':memory:', '/tmp/data')).toBe(':memory:');
+  });
+});
+
+describe('object storage configuration', () => {
+  it('defaults to filesystem and rejects unknown drivers', () => {
+    expect(resolveObjectStorageDriver()).toBe('filesystem');
+    expect(() => resolveObjectStorageDriver('unknown')).toThrow(/OBJECT_STORAGE_DRIVER/);
+  });
+
+  it('requires SQLite accounting before S3 can be enabled', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'persistence-s3-guard-'));
+    try {
+      expect(() => createPersistence({
+        driver: 'filesystem',
+        dataDir: dir,
+        objectStorageDriver: 's3',
+        objectStorageBucket: 'private',
+        objectStorageRegion: 'ap-northeast-1',
+      })).toThrow(/requires DATABASE_DRIVER=sqlite/);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exposes the selected object storage driver in SQLite readiness', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'persistence-s3-'));
+    const client = { send: async () => ({}) };
+    const persistence = createPersistence({
+      driver: 'sqlite',
+      dataDir: dir,
+      objectStorageDriver: 's3',
+      objectStorageBucket: 'private',
+      objectStorageClient: client,
+    });
+    try {
+      expect(persistence.objectStorageDriver).toBe('s3');
+      expect(persistence.readiness()).toMatchObject({ ok: true, objectStorageDriver: 's3' });
+    } finally {
+      persistence.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

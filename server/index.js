@@ -151,6 +151,12 @@ export function createApp({
     dataDir,
     sqlitePath: env.SQLITE_PATH,
     mediaDir: env.MEDIA_DIR || dataDir,
+    objectStorageDriver: env.OBJECT_STORAGE_DRIVER,
+    objectStorageBucket: env.OBJECT_STORAGE_BUCKET,
+    objectStorageRegion: env.OBJECT_STORAGE_REGION,
+    objectStorageEndpoint: env.OBJECT_STORAGE_ENDPOINT,
+    objectStoragePrefix: env.OBJECT_STORAGE_PREFIX,
+    objectStorageForcePathStyle: env.OBJECT_STORAGE_FORCE_PATH_STYLE,
   });
   const { dataStore, textStore, imageStore } = persistence;
   const textModel = String(env.GEMINI_TEXT_MODEL || '').trim();
@@ -165,6 +171,7 @@ export function createApp({
   app.locals.dataStore = dataStore;
   app.locals.textStore = textStore;
   app.locals.imageStore = imageStore;
+  app.locals.objectStorage = persistence.objectStorage;
   app.locals.persistence = persistence;
 
   app.get('/live', (req, res) => {
@@ -177,6 +184,7 @@ export function createApp({
       res.status(ready ? 200 : 503).json({
         ok: ready,
         driver: state.driver,
+        objectStorageDriver: state.objectStorageDriver,
         migrationVersion: state.migrationVersion,
         expectedMigrationVersion: state.expectedMigrationVersion,
         maintenanceMode,
@@ -185,6 +193,7 @@ export function createApp({
       res.status(503).json({
         ok: false,
         driver: persistence.driver,
+        objectStorageDriver: persistence.objectStorageDriver,
         migrationVersion: null,
         expectedMigrationVersion: null,
         maintenanceMode,

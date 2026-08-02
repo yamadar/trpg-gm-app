@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
-import { createFsImageStore } from '../storage/imageStore.js';
+import { createFilesystemObjectStorage } from '../infrastructure/objectStorage/filesystemObjectStorage.js';
+import { createS3ObjectStorage } from '../infrastructure/objectStorage/s3ObjectStorage.js';
 import { openSqliteDatabase, sqliteReadiness } from '../infrastructure/sqlite/database.js';
 import { createSqliteDataStore } from '../infrastructure/sqlite/dataStore.js';
 import { createSqliteTextStore } from '../infrastructure/sqlite/textStore.js';
@@ -13,6 +14,7 @@ import { createFileJobRepository, createSqliteJobRepository } from './jobReposit
 import { createKeyedLock } from '../keyedLock.js';
 
 export const DATABASE_DRIVERS = new Set(['filesystem', 'sqlite']);
+export const OBJECT_STORAGE_DRIVERS = new Set(['filesystem', 's3']);
 
 export function resolveDatabaseDriver(value) {
   const driver = String(value || 'filesystem').trim().toLowerCase();
@@ -20,6 +22,22 @@ export function resolveDatabaseDriver(value) {
     throw new Error(`DATABASE_DRIVER must be filesystem or sqlite (got: ${value})`);
   }
   return driver;
+}
+
+export function resolveObjectStorageDriver(value) {
+  const driver = String(value || 'filesystem').trim().toLowerCase();
+  if (!OBJECT_STORAGE_DRIVERS.has(driver)) {
+    throw new Error(`OBJECT_STORAGE_DRIVER must be filesystem or s3 (got: ${value})`);
+  }
+  return driver;
+}
+
+function resolveBoolean(value, name) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  throw new Error(`${name} must be true or false (got: ${value})`);
 }
 
 export function resolveSqlitePath(value, dataDir) {
@@ -34,18 +52,40 @@ export function createPersistence({
   dataDir,
   sqlitePath,
   mediaDir = dataDir,
+  objectStorageDriver = 'filesystem',
+  objectStorageBucket,
+  objectStorageRegion,
+  objectStorageEndpoint,
+  objectStoragePrefix,
+  objectStorageForcePathStyle = false,
+  objectStorageClient,
 } = {}) {
   const selected = resolveDatabaseDriver(driver);
-  const filesystemImageStore = createFsImageStore(mediaDir);
+  const selectedObjectStorage = resolveObjectStorageDriver(objectStorageDriver);
+  if (selectedObjectStorage === 's3' && selected !== 'sqlite') {
+    throw new Error('OBJECT_STORAGE_DRIVER=s3 requires DATABASE_DRIVER=sqlite for durable media accounting');
+  }
+  const objectStorage = selectedObjectStorage === 's3'
+    ? createS3ObjectStorage({
+        bucket: objectStorageBucket,
+        region: objectStorageRegion,
+        endpoint: objectStorageEndpoint,
+        prefix: objectStoragePrefix,
+        forcePathStyle: resolveBoolean(objectStorageForcePathStyle, 'OBJECT_STORAGE_FORCE_PATH_STYLE'),
+        client: objectStorageClient,
+      })
+    : createFilesystemObjectStorage(mediaDir);
   if (selected === 'filesystem') {
     const dataStore = createFsDataStore(dataDir);
     const withTransactionLock = createKeyedLock();
     const transaction = (operation) => withTransactionLock('filesystem-transaction', operation);
     return {
       driver: selected,
+      objectStorageDriver: selectedObjectStorage,
+      objectStorage,
       dataStore,
       textStore: createFsTextStore(dataDir),
-      imageStore: filesystemImageStore,
+      imageStore: objectStorage,
       transaction,
       repositories: {
         usage: createFileUsageRepository({ dataStore, transaction }),
@@ -55,10 +95,11 @@ export function createPersistence({
       readiness: () => ({
         ok: true,
         driver: selected,
+        objectStorageDriver: selectedObjectStorage,
         migrationVersion: null,
         expectedMigrationVersion: null,
       }),
-      close() {},
+      close: () => objectStorage.close(),
     };
   }
 
@@ -67,12 +108,14 @@ export function createPersistence({
   const coordinator = createSqliteCoordinator(db);
   const storageRepository = createSqliteStorageRepository({ db, coordinator });
   const imageStore = createMeteredImageStore({
-    baseStore: filesystemImageStore,
+    baseStore: objectStorage,
     db,
     storageRepository,
   });
   return {
     driver: selected,
+    objectStorageDriver: selectedObjectStorage,
+    objectStorage,
     sqlitePath: filename,
     db,
     dataStore: createSqliteDataStore(db, { coordinator }),
@@ -85,7 +128,17 @@ export function createPersistence({
       jobs: createSqliteJobRepository({ db, coordinator }),
     },
     metrics: coordinator.snapshotMetrics,
-    readiness: () => ({ driver: selected, ...sqliteReadiness(db) }),
-    close: () => db.close(),
+    readiness: () => ({
+      driver: selected,
+      objectStorageDriver: selectedObjectStorage,
+      ...sqliteReadiness(db),
+    }),
+    close: () => {
+      try {
+        objectStorage.close();
+      } finally {
+        db.close();
+      }
+    },
   };
 }

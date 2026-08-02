@@ -42,6 +42,7 @@ describe('createApp', () => {
     expect(ready.body).toEqual({
       ok: true,
       driver: 'filesystem',
+      objectStorageDriver: 'filesystem',
       migrationVersion: null,
       expectedMigrationVersion: null,
       maintenanceMode: 'off',

@@ -31,6 +31,23 @@ services:
         value: /data/gmdesk.sqlite3
       - key: MEDIA_DIR
         value: /data
+      # S3移行完了まではfilesystem。切替runbook完了後、s3へ変更する。
+      - key: OBJECT_STORAGE_DRIVER
+        value: filesystem
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: OBJECT_STORAGE_REGION
+        sync: false
+      - key: OBJECT_STORAGE_ENDPOINT
+        sync: false
+      - key: OBJECT_STORAGE_PREFIX
+        value: gmdesk
+      - key: OBJECT_STORAGE_FORCE_PATH_STYLE
+        value: "false"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
       # 初回移行完了まではfilesystem。手順確認後、ダッシュボードでsqliteへ切り替える。
       - key: DATABASE_DRIVER
         sync: false
