@@ -1,5 +1,7 @@
 # デプロイ手順(Render)
 
+> **将来設計:** 本書は現行ファイルシステム構成の手順。SQLite/S3移行後の配備・バックアップ・PostgreSQL移行条件は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+
 Renderの **Web Service + Persistent Disk** で公開する手順。所要時間は初回で30〜60分程度。
 
 ## なぜこの構成か

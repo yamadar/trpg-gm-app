@@ -1,5 +1,7 @@
 # 状態管理・永続化
 
+> **将来設計:** 本書は現行ファイルシステム実装の仕様。SQLite/S3への移行と将来のPostgreSQL対応は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+
 ## クライアント側(IndexedDB)
 
 - ブラウザのIndexedDBでセッション跨ぎ保存する。`sessions`という1つのobject store(キー: session id)にセッション全体を保存する。
@@ -14,9 +16,9 @@
 ## サーバー側(dataStore / textStore / imageStore)
 
 - サーバーはJSON向け`dataStore`、テキスト(Markdown等)向け`textStore`、画像バイナリ向け`imageStore`という3つの抽象インターフェースを持つ。現状はいずれもローカルファイルシステム実装。
-  - `dataStore`: 将来Redis等のキーバリューストアへの差し替えを想定
-  - `textStore`: 将来S3等のクラウドストレージへの差し替えを想定
-  - `imageStore`: 画像バイナリの読み書き・ディレクトリ単位削除を担当
+  - `dataStore`: JSONの読み書きを担当。移行時は汎用KVS互換ではなく、業務操作単位のSQLite repositoryへ置き換える
+  - `textStore`: Markdown等の読み書きを担当。移行後の本文はSQLiteへ保存する
+  - `imageStore`: 画像バイナリの読み書き・ディレクトリ単位削除を担当。移行後はS3互換オブジェクトストレージへ置き換える
 - 認証機能の追加に伴い、素材ライブラリ・セッション関連のキーはすべて**ユーザー単位の名前空間`users/{userId}/...`配下**に置かれる(`server/storage/paths.js`)。認証(識別情報・セッショントークン)自体はユーザー名前空間の外側に置かれる。
 - Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**双方向同期・競合保護は実装済み**:
   - 保存可能なSessionはユーザーあたり100件、1件のJSON直列化サイズは1MiBまで。超過は書き込み前に拒否する。

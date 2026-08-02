@@ -1,5 +1,7 @@
 # アーキテクチャ
 
+> **将来設計:** 本書は現行構成の仕様。SQLite/S3への移行後の目標構成と全体再設計は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+
 ## システム構成
 
 ```
