@@ -21,9 +21,7 @@ import { createSceneImagesRouter } from './routes/sceneImages.js';
 import { createAttachmentsRouter } from './routes/attachments.js';
 import { createNovelJobRunner } from './novelJobs.js';
 import { seedStarters } from './starters/seed.js';
-import { createFsDataStore } from './storage/dataStore.js';
-import { createFsTextStore } from './storage/textStore.js';
-import { createFsImageStore } from './storage/imageStore.js';
+import { createPersistence } from './persistence/createPersistence.js';
 import { createStorageGuard, createStorageOwnerResolver } from './storage/storageGuard.js';
 import { createProviders } from './auth/providers.js';
 import { createAuthRouter } from './auth/routes.js';
@@ -137,9 +135,13 @@ export function createApp({
   app.use(securityHeaders);
   app.use(express.json({ limit: '2mb' }));
 
-  const dataStore = createFsDataStore(dataDir);
-  const textStore = createFsTextStore(dataDir);
-  const imageStore = createFsImageStore(dataDir);
+  const persistence = createPersistence({
+    driver: env.DATABASE_DRIVER,
+    dataDir,
+    sqlitePath: env.SQLITE_PATH,
+    mediaDir: env.MEDIA_DIR || dataDir,
+  });
+  const { dataStore, textStore, imageStore } = persistence;
   const textModel = String(env.GEMINI_TEXT_MODEL || '').trim();
   const geminiImageApiKey = env.GEMINI_IMAGE_API_KEY;
   const geminiImageModel = String(env.GEMINI_IMAGE_MODEL || '').trim();
@@ -151,6 +153,8 @@ export function createApp({
   }
   app.locals.dataStore = dataStore;
   app.locals.textStore = textStore;
+  app.locals.imageStore = imageStore;
+  app.locals.persistence = persistence;
 
   const providers = createProviders(env);
   const usage = createUsage({
@@ -345,11 +349,11 @@ export function createApp({
 
 if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 8787;
-  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const app = createApp();
   // server/data/ はgitignore対象でデプロイ先では空から始まりうる。冪等なので毎回走らせて復元する。
   // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
-  seedStarters(createFsDataStore(dataDir), createFsTextStore(dataDir), {
-    imageStore: createFsImageStore(dataDir),
+  seedStarters(app.locals.dataStore, app.locals.textStore, {
+    imageStore: app.locals.imageStore,
   })
     .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
     .catch((error) => console.error('starter seed failed', {
@@ -357,8 +361,16 @@ if (process.env.NODE_ENV !== 'test') {
       code: error?.code || null,
     }))
     .finally(() => {
-      createApp().listen(port, () => {
+      const server = app.listen(port, () => {
         console.log(`server listening on port ${port}`);
       });
+      const shutdown = () => {
+        server.close(() => {
+          app.locals.persistence.close();
+          process.exit(0);
+        });
+      };
+      process.once('SIGTERM', shutdown);
+      process.once('SIGINT', shutdown);
     });
 }

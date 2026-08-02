@@ -25,6 +25,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  app?.locals.persistence?.close();
   await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -88,6 +89,30 @@ describe('createApp', () => {
     const res = await request(app).get('/api/sessions').set('Cookie', cookie);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
+  });
+
+  it('runs against SQLite when DATABASE_DRIVER=sqlite', async () => {
+    app.locals.persistence.close();
+    app = createApp({
+      apiKey: 'test-key',
+      dataDir: dir,
+      fetchImpl,
+      env: testEnv({ DATABASE_DRIVER: 'sqlite' }),
+    });
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+    const saved = await request(app)
+      .put('/api/sessions/sqlite-session')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: 'SQLite session' });
+    expect(saved.status).toBe(200);
+    expect((await request(app).get('/api/sessions/sqlite-session').set('Cookie', cookie)).body)
+      .toMatchObject({ id: 'sqlite-session', title: 'SQLite session' });
+    expect(app.locals.persistence.readiness()).toMatchObject({
+      ok: true,
+      driver: 'sqlite',
+      migrationVersion: 1,
+    });
   });
 
   it('mounts the worlds route', async () => {
