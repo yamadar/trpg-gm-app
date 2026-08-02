@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
-import { sessionNovelJobKey, sessionNovelNoticeKey } from './storage/paths.js';
+import { sessionKey, sessionNovelJobKey, sessionNovelNoticeKey } from './storage/paths.js';
+import { createFileJobRepository } from './persistence/jobRepository.js';
 import {
   createNovelJobRunner,
   makeBootId,
@@ -134,6 +135,85 @@ describe('createNovelJobRunner', () => {
     expect(done.status).toBe('done');
     expect(done.error).toBeNull();
     expect(done.elapsedMs).toBeNull();
+  });
+
+  it('persists lifecycle state through the durable job repository', async () => {
+    const jobs = createFileJobRepository({ dataStore, now: () => 100 });
+    const runner = createNovelJobRunner({
+      dataStore,
+      textStore,
+      apiKey: 'k',
+      fetchImpl: okFetch(),
+      bootId: 'b1',
+      jobRepository: jobs,
+      now: () => 100,
+    });
+
+    expect(await runner.start('u1', 's1', SESSION, 'third')).toBe(true);
+    await runner.pending.get('u1/s1');
+
+    expect(await jobs.get('novel:u1:s1')).toMatchObject({
+      state: 'done',
+      attempts: 1,
+      result: { completedAt: 100 },
+    });
+  });
+
+  it('recovers an interrupted durable job and releases its storage reservation', async () => {
+    const jobs = createFileJobRepository({ dataStore });
+    await dataStore.set(sessionKey('u1', 's1'), SESSION);
+    await jobs.enqueue({
+      id: 'novel:u1:s1',
+      type: 'novelize',
+      ownerId: 'u1',
+      aggregateId: 's1',
+      payload: { userId: 'u1', sessionId: 's1', pov: 'third' },
+    }, 100);
+    await jobs.claim('novel:u1:s1', 'old-boot', { leaseMs: 100000, timestamp: 100 });
+    const release = vi.fn();
+    const reserveRecoveryStorage = vi.fn().mockResolvedValue(release);
+    const runner = createNovelJobRunner({
+      dataStore,
+      textStore,
+      apiKey: 'k',
+      fetchImpl: okFetch('再開した本文'),
+      bootId: 'new-boot',
+      jobRepository: jobs,
+      reserveRecoveryStorage,
+    });
+
+    expect(await runner.recover()).toEqual({ found: 1, started: 1, failed: 0 });
+    await runner.pending.get('u1/s1');
+
+    expect(reserveRecoveryStorage).toHaveBeenCalledWith('u1');
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(await textStore.read('users/u1/sessions/s1/novel.md')).toBe('再開した本文');
+    expect(await jobs.get('novel:u1:s1')).toMatchObject({ state: 'done', attempts: 2 });
+  });
+
+  it('fails recovery cleanly when the source session was deleted', async () => {
+    const jobs = createFileJobRepository({ dataStore });
+    await jobs.enqueue({
+      id: 'novel:u1:missing',
+      type: 'novelize',
+      ownerId: 'u1',
+      aggregateId: 'missing',
+      payload: { userId: 'u1', sessionId: 'missing', pov: 'third' },
+    }, 100);
+    const runner = createNovelJobRunner({
+      dataStore,
+      textStore,
+      apiKey: 'k',
+      fetchImpl: okFetch(),
+      bootId: 'new-boot',
+      jobRepository: jobs,
+    });
+
+    expect(await runner.recover()).toEqual({ found: 1, started: 0, failed: 1 });
+    expect(await jobs.get('novel:u1:missing')).toMatchObject({
+      state: 'failed',
+      lastErrorCode: 'source_missing',
+    });
   });
 
   it('saves the novel text and meta on success', async () => {

@@ -9,6 +9,7 @@ import { createSqliteCoordinator } from '../infrastructure/sqlite/coordinator.js
 import { createFileUsageRepository, createSqliteUsageRepository } from './usageRepository.js';
 import { createSqliteStorageRepository } from './storageRepository.js';
 import { createMeteredImageStore } from './meteredImageStore.js';
+import { createFileJobRepository, createSqliteJobRepository } from './jobRepository.js';
 import { createKeyedLock } from '../keyedLock.js';
 
 export const DATABASE_DRIVERS = new Set(['filesystem', 'sqlite']);
@@ -47,6 +48,7 @@ export function createPersistence({
       transaction,
       repositories: {
         usage: createFileUsageRepository({ dataStore, transaction }),
+        jobs: createFileJobRepository({ dataStore, transaction }),
       },
       metrics: () => ({}),
       readiness: () => ({ ok: true, driver: selected, migrationVersion: null }),
@@ -74,6 +76,7 @@ export function createPersistence({
     repositories: {
       usage: createSqliteUsageRepository({ db, coordinator }),
       storage: storageRepository,
+      jobs: createSqliteJobRepository({ db, coordinator }),
     },
     metrics: coordinator.snapshotMetrics,
     readiness: () => ({ driver: selected, ...sqliteReadiness(db) }),

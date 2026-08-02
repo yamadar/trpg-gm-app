@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createTextOperationsRouter } from './routes/textOperations.js';
 import { createSessionsRouter } from './routes/sessions.js';
@@ -19,7 +20,7 @@ import { createImportsRouter } from './routes/imports.js';
 import { createConfigRouter } from './routes/config.js';
 import { createSceneImagesRouter } from './routes/sceneImages.js';
 import { createAttachmentsRouter } from './routes/attachments.js';
-import { createNovelJobRunner } from './novelJobs.js';
+import { createNovelJobRunner, NOVEL_JOB_TIMEOUT_MS } from './novelJobs.js';
 import { seedStarters } from './starters/seed.js';
 import { createPersistence } from './persistence/createPersistence.js';
 import { createStorageGuard, createStorageOwnerResolver } from './storage/storageGuard.js';
@@ -170,7 +171,45 @@ export function createApp({
       textTokens: parseLimit(env.LIMIT_GLOBAL_TEXT_TOKENS_PER_DAY, 5_000_000),
     },
   });
-  const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, model: textModel, fetchImpl });
+  const maxUserStorageBytes = parseLimit(env.MAX_USER_STORAGE_BYTES, 256 * 1024 * 1024);
+  const minFreeStorageBytes = parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024);
+  const storageWriteHeadroomBytes = parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024);
+  const reserveRecoveryStorage = persistence.repositories.storage
+    ? async (ownerId) => {
+        await fs.mkdir(dataDir, { recursive: true });
+        const disk = await fs.statfs(dataDir);
+        const available = Number(disk.bavail) * Number(disk.bsize);
+        if (!Number.isFinite(available) || available < minFreeStorageBytes + storageWriteHeadroomBytes) {
+          return null;
+        }
+        const reservation = await persistence.repositories.storage.reserve({
+          ownerId,
+          bytes: storageWriteHeadroomBytes,
+          limitBytes: maxUserStorageBytes,
+          purpose: 'novel-recovery',
+          ttlMs: NOVEL_JOB_TIMEOUT_MS,
+        });
+        if (!reservation.ok) return null;
+        return () => {
+          void persistence.repositories.storage.release(reservation.id).catch((error) => {
+            console.error('novel recovery reservation release failed', {
+              name: error?.name || 'Error',
+              code: error?.code || null,
+            });
+          });
+        };
+      }
+    : null;
+  const novelJobs = createNovelJobRunner({
+    dataStore,
+    textStore,
+    apiKey,
+    model: textModel,
+    fetchImpl,
+    jobRepository: persistence.repositories.jobs,
+    reserveRecoveryStorage,
+  });
+  app.locals.novelJobs = novelJobs;
   const withSessionLock = createKeyedLock();
 
   // ミドルウェア順序が重要:
@@ -189,9 +228,9 @@ export function createApp({
   app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
   app.use('/api', createStorageGuard({
     dataDir,
-    maxUserBytes: parseLimit(env.MAX_USER_STORAGE_BYTES, 256 * 1024 * 1024),
-    minFreeBytes: parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024),
-    writeHeadroomBytes: parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024),
+    maxUserBytes: maxUserStorageBytes,
+    minFreeBytes: minFreeStorageBytes,
+    writeHeadroomBytes: storageWriteHeadroomBytes,
     ownerIdForRequest: createStorageOwnerResolver({ dataStore }),
     reservationManager: persistence.repositories.storage || null,
   }));
@@ -355,15 +394,28 @@ if (process.env.NODE_ENV !== 'test') {
   const app = createApp();
   // server/data/ はgitignore対象でデプロイ先では空から始まりうる。冪等なので毎回走らせて復元する。
   // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
-  seedStarters(app.locals.dataStore, app.locals.textStore, {
-    imageStore: app.locals.imageStore,
-  })
-    .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
-    .catch((error) => console.error('starter seed failed', {
-      name: error?.name || 'Error',
-      code: error?.code || null,
-    }))
-    .finally(() => {
+  (async () => {
+    try {
+      const manifest = await seedStarters(app.locals.dataStore, app.locals.textStore, {
+        imageStore: app.locals.imageStore,
+      });
+      console.log(`seeded ${manifest.packs.length} starter packs`);
+    } catch (error) {
+      console.error('starter seed failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+    try {
+      const recovery = await app.locals.novelJobs.recover();
+      if (recovery.found) console.log('novel jobs recovered', recovery);
+    } catch (error) {
+      console.error('novel job recovery failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+    {
       const server = app.listen(port, () => {
         console.log(`server listening on port ${port}`);
       });
@@ -375,5 +427,6 @@ if (process.env.NODE_ENV !== 'test') {
       };
       process.once('SIGTERM', shutdown);
       process.once('SIGINT', shutdown);
-    });
+    }
+  })();
 }
