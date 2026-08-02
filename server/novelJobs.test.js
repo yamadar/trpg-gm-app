@@ -372,6 +372,34 @@ describe('createNovelJobRunner', () => {
     expect(runner.pending.has('u1/s1')).toBe(false);
   });
 
+  it('releases retained resources after the job settles', async () => {
+    const onSettled = vi.fn();
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl: okFetch(), bootId: 'b1' });
+    expect(await runner.start('u1', 's1', SESSION, 'third', { onSettled })).toBe(true);
+    expect(onSettled).not.toHaveBeenCalled();
+
+    await runner.pending.get('u1/s1');
+    expect(onSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('immediately releases resources supplied to an ignored duplicate start', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      await gate;
+      return geminiResponse('本文');
+    });
+    const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl, bootId: 'b1' });
+    await runner.start('u1', 's1', SESSION, 'third');
+    const duplicateSettled = vi.fn();
+
+    expect(await runner.start('u1', 's1', SESSION, 'third', { onSettled: duplicateSettled })).toBe(false);
+    expect(duplicateSettled).toHaveBeenCalledTimes(1);
+
+    release();
+    await runner.pending.get('u1/s1');
+  });
+
   it('never rejects the pending promise even when a malformed log entry throws synchronously', async () => {
     const runner = createNovelJobRunner({ dataStore, textStore, apiKey: 'k', fetchImpl: okFetch(), bootId: 'b1' });
     const brokenSession = { ...SESSION, log: [null] };

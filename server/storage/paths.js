@@ -6,6 +6,14 @@ export function sessionKey(userId, sessionId) {
   return `users/${userId}/sessions/${sessionId}`;
 }
 
+export function sessionDir(userId, sessionId) {
+  return `users/${userId}/sessions/${sessionId}`;
+}
+
+export function sessionDeletionKey(userId, sessionId) {
+  return `users/${userId}/sessionDeletions/${sessionId}`;
+}
+
 export function partySessionListPrefix() {
   return 'sharedSessions';
 }

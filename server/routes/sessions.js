@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import {
   sessionKey,
+  sessionDir,
+  sessionDeletionKey,
   sessionNovelDocPath,
   sessionNovelMetaKey,
   sessionNovelNoticeKey,
   sessionListPrefix,
   sessionImagePath,
+  sessionImageDir,
   novelAttachmentDir,
 } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
@@ -13,6 +16,8 @@ import { idParamGuard } from './validateId.js';
 import { stripImageMarkers } from '../novelMarkers.js';
 import { buildIllustratedHtml } from '../illustratedNovel.js';
 import { getAttachmentCollection, topAttachmentOf } from '../storage/attachmentLibrary.js';
+import { unpublishNovel } from '../storage/shareLibrary.js';
+import { createKeyedLock } from '../keyedLock.js';
 
 // 生成後にセッションが進んでいれば、保存済みの小説は古い。
 function isStale(meta, session) {
@@ -52,24 +57,11 @@ export function createSessionsRouter({
   novelJobs,
   usage,
   now = Date.now,
+  withSessionLock = createKeyedLock(),
 }) {
   const router = Router();
   router.param('id', idParamGuard);
-  // 同じNodeプロセスへ同時に届いた条件付きPUTを直列化する。読み取りと書き込みを
-  // 別々にawaitすると、双方が同じrevisionを読んで両方成功する競合窓ができるため。
-  const sessionLocks = new Map();
   const activePlayers = new Map();
-
-  async function withSessionLock(key, operation) {
-    const previous = sessionLocks.get(key) || Promise.resolve();
-    const current = previous.catch(() => {}).then(operation);
-    sessionLocks.set(key, current);
-    try {
-      return await current;
-    } finally {
-      if (sessionLocks.get(key) === current) sessionLocks.delete(key);
-    }
-  }
 
   router.get('/sessions', asyncHandler(async (req, res) => {
     const keys = await dataStore.list(sessionListPrefix(req.userId));
@@ -141,8 +133,17 @@ export function createSessionsRouter({
     const force = req.get('X-Force-Overwrite') === 'true';
     const key = sessionKey(req.userId, req.params.id);
     const result = await withSessionLock(`user-sessions/${req.userId}`, () => withSessionLock(key, async () => {
-      const current = await dataStore.get(key);
+      const deletionKey = sessionDeletionKey(req.userId, req.params.id);
+      const [current, tombstone] = await Promise.all([
+        dataStore.get(key),
+        dataStore.get(deletionKey),
+      ]);
       const currentRevision = revisionOf(current);
+      // 削除途中で後続ストアの削除に失敗した場合、Session本体とtombstoneが一時的に
+      // 共存する。通常PUTを許すと削除処理と競合して復活するため、forceだけを復旧経路にする。
+      if (tombstone && !force) {
+        return { deleted: tombstone };
+      }
       if (!force && current && expectedRevision !== null && expectedRevision !== currentRevision) {
         return { conflict: current };
       }
@@ -165,6 +166,7 @@ export function createSessionsRouter({
         if (keys.length >= MAX_SESSIONS_PER_USER) return { tooMany: true };
       }
       await dataStore.set(key, session);
+      if (tombstone) await dataStore.delete(deletionKey);
       return { session };
     }));
     if (result.tooLarge) {
@@ -173,6 +175,14 @@ export function createSessionsRouter({
     }
     if (result.tooMany) {
       res.status(409).json({ error: 'session limit reached', code: 'SESSION_LIMIT_REACHED' });
+      return;
+    }
+    if (result.deleted) {
+      res.status(409).json({
+        error: 'session was deleted on another device',
+        code: 'SESSION_DELETED',
+        deletedAt: result.deleted.deletedAt,
+      });
       return;
     }
     if (result.conflict) {
@@ -184,6 +194,51 @@ export function createSessionsRouter({
       return;
     }
     res.json(result.session);
+  }));
+
+  router.delete('/sessions/:id', asyncHandler(async (req, res) => {
+    const key = sessionKey(req.userId, req.params.id);
+    const result = await withSessionLock(`user-sessions/${req.userId}`, () => withSessionLock(key, async () => {
+      const session = await dataStore.get(key);
+      const deletionKey = sessionDeletionKey(req.userId, req.params.id);
+      if (!session) {
+        return await dataStore.get(deletionKey) ? { alreadyDeleted: true } : { missing: true };
+      }
+      const job = await novelJobs.read(req.userId, req.params.id);
+      if (job.status === 'running') return { running: true };
+
+      // tombstoneを破壊的処理より先に確定する。後続処理が途中で失敗しても通常PUTを
+      // 拒否し、同じDELETEで安全に再試行できる。
+      await dataStore.set(deletionKey, {
+        sessionId: req.params.id,
+        deletedAt: now(),
+        revision: revisionOf(session),
+      });
+      // 公開小説は独立スナップショットだが、元セッション削除後はHomeから公開解除できない。
+      // 孤立公開物と課金不能データを残さないため、セッションと同時に解除する。
+      await unpublishNovel(dataStore, textStore, req.userId, req.params.id, imageStore);
+      await imageStore.deleteDir(sessionImageDir(req.userId, req.params.id));
+      await imageStore.deleteDir(novelAttachmentDir(req.userId, req.params.id));
+      // 現行FS adapterではこのディレクトリ配下にMarkdown、ジョブJSON、画像manifestが
+      // 同居する。ルートmetaはディレクトリ外の{id}.jsonなので別途削除する。
+      await textStore.deleteDir(sessionDir(req.userId, req.params.id));
+      await dataStore.delete(key);
+      activePlayers.delete(`${req.userId}/${req.params.id}`);
+      return { deleted: true };
+    }));
+
+    if (result.missing) {
+      res.status(404).json({ error: 'session not found' });
+      return;
+    }
+    if (result.running) {
+      res.status(409).json({
+        error: 'novel generation is running',
+        code: 'SESSION_JOB_RUNNING',
+      });
+      return;
+    }
+    res.status(204).end();
   }));
 
   router.post('/sessions/:id/presence', asyncHandler(async (req, res) => {
@@ -230,26 +285,46 @@ export function createSessionsRouter({
     const key = sessionKey(req.userId, req.params.id);
     // 別端末の最終ターンPUTと小説化POSTがほぼ同時に届いた場合、PUTの永続化中に
     // セッションを読むと一つ前のログを生成ジョブへ固定してしまう。PUTと同じロックへ
-    // 読み取りも並べ、先着した保存が完了した後の全ログを小説化対象にする。
-    const session = await withSessionLock(key, () => dataStore.get(key));
-    if (!session) {
+    // 読み取りとジョブ登録を並べ、削除がその間へ割り込む競合窓も閉じる。
+    const result = await withSessionLock(key, async () => {
+      const session = await dataStore.get(key);
+      if (!session) return { missing: true };
+      // 生成中の再要求は利用枠を消費せず、そのまま現状を返す(二重起動の抑止)。
+      const current = await novelJobs.read(req.userId, req.params.id);
+      if (current.status === 'running') return { running: true };
+      if (usage) {
+        const check = await usage.consume(req.userId, 'novelize');
+        if (!check.ok) return { rateLimited: true, resetAt: check.resetAt };
+      }
+      // HTTP応答後も小説本文・メタを書き込むため、容量予約をジョブ完了まで保持する。
+      // storageGuardを使わない単体テストではundefinedとなり、従来どおり動作する。
+      const releaseStorageReservation = req.storageReservation?.retain?.();
+      try {
+        await novelJobs.start(
+          req.userId,
+          req.params.id,
+          session,
+          req.body?.pov === 'first' ? 'first' : 'third',
+          { onSettled: releaseStorageReservation },
+        );
+      } catch (error) {
+        releaseStorageReservation?.();
+        throw error;
+      }
+      return { started: true };
+    });
+    if (result.missing) {
       res.status(404).json({ error: 'session not found' });
       return;
     }
-    // 生成中の再要求は利用枠を消費せず、そのまま現状を返す(二重起動の抑止)。
-    const current = await novelJobs.read(req.userId, req.params.id);
-    if (current.status === 'running') {
+    if (result.running) {
       res.status(202).json({ status: 'running' });
       return;
     }
-    if (usage) {
-      const check = await usage.consume(req.userId, 'novelize');
-      if (!check.ok) {
-        res.status(429).json({ error: 'daily limit reached', resetAt: check.resetAt });
-        return;
-      }
+    if (result.rateLimited) {
+      res.status(429).json({ error: 'daily limit reached', resetAt: result.resetAt });
+      return;
     }
-    await novelJobs.start(req.userId, req.params.id, session, req.body?.pov === 'first' ? 'first' : 'third');
     res.status(202).json({ status: 'running' });
   }));
 

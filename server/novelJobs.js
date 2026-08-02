@@ -164,19 +164,41 @@ export function createNovelJobRunner({
   }
 
   // ジョブをrunningで記録してからバックグラウンド実行を始める。生成の完了は待たない。
-  async function start(userId, sessionId, session, pov) {
+  async function start(userId, sessionId, session, pov, { onSettled } = {}) {
     const key = `${userId}/${sessionId}`;
+    const notifySettled = () => {
+      try {
+        onSettled?.();
+      } catch (error) {
+        console.error('novelJobs settlement callback failed', {
+          name: error?.name || 'Error',
+          code: error?.code || null,
+        });
+      }
+    };
     // 同じセッションに対する二重startで生成が2回走らないようにする
     // (利用枠の二重消費を防ぐのはルート側の責務であり、ここでは扱わない)。
-    if (pending.has(key)) return;
+    if (pending.has(key)) {
+      notifySettled();
+      return false;
+    }
     const startedAt = now();
     // 新しい生成は前回の小説を置き換える。前回分の未読フラグが残ったままだと
     // running中にunread:trueが観測され、既読化(古いnotice宛のPOST)が今回の
     // 成功時のunread:trueを上書き消去しうる。開始時点で必ず降ろしておく。
-    await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: false });
-    await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
-    const p = run(userId, sessionId, session, pov, startedAt).finally(() => pending.delete(key));
+    try {
+      await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: false });
+      await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
+    } catch (error) {
+      notifySettled();
+      throw error;
+    }
+    const p = run(userId, sessionId, session, pov, startedAt).finally(() => {
+      pending.delete(key);
+      notifySettled();
+    });
     pending.set(key, p);
+    return true;
   }
 
   return { read, start, pending, bootId };

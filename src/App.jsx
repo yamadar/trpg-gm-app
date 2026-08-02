@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useGoogleFonts, COLORS, F_MONO } from './theme.js';
-import { listSessions, getSession, saveSession, isStorageAvailable } from './storage/index.js';
+import { listSessions, getSession, saveSession, removeSession, isStorageAvailable } from './storage/index.js';
 import Home from './screens/Home.jsx';
 import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
@@ -22,6 +22,8 @@ import ConfirmModal from './components/library/ConfirmModal.jsx';
 import SessionConflictModal from './components/play/SessionConflictModal.jsx';
 import {
   getServerSession,
+  deleteServerSession,
+  forgetSessionSync,
   listServerSessions,
   putSessionToServer,
   rememberSessionSync,
@@ -261,6 +263,23 @@ function AppInner() {
     navigate({ name: 'play', sessionId: newSession.id });
   }
 
+  async function handleDeleteSession(sessionId) {
+    if (user) {
+      try {
+        await deleteServerSession(sessionId);
+      } catch (error) {
+        // 別端末で削除済みなら、残ったIndexedDBコピーの削除を続ける。
+        if (error.status !== 404) throw error;
+      }
+    }
+    if (!(await removeSession(sessionId))) {
+      throw new Error('この端末からセッションを削除できませんでした');
+    }
+    forgetSessionSync(sessionId);
+    setSessions((items) => items.filter((item) => item.id !== sessionId));
+    if (session?.id === sessionId) setSession(null);
+  }
+
   async function useRemoteProgress() {
     if (!syncConflict?.remote) return;
     setResolvingConflict(true);
@@ -373,6 +392,7 @@ function AppInner() {
                 navigate({ name: 'library', libraryTab: 'campaign', worldId: null });
               }}
               onContinue={(id) => navigate({ name: 'play', sessionId: id })}
+              onDeleteSession={handleDeleteSession}
               onNextChapter={(focus) => {
                 setCampaignFocus(focus);
                 navigate({ name: 'library', libraryTab: 'campaign', worldId: focus.worldId });

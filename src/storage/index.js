@@ -45,3 +45,13 @@ export async function saveSession(session) {
     return false;
   }
 }
+
+export async function removeSession(id) {
+  try {
+    await deleteSession(id);
+    return true;
+  } catch (e) {
+    console.error('removeSession failed', e);
+    return false;
+  }
+}

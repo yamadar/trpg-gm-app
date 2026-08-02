@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { deleteDB } from 'idb';
-import { isStorageAvailable, listSessions, getSession, saveSession } from './index.js';
+import { isStorageAvailable, listSessions, getSession, saveSession, removeSession } from './index.js';
 import * as idb from './indexedDbStore.js';
 import { DB_NAME, closeDb } from './indexedDbStore.js';
 
@@ -42,6 +42,12 @@ describe('client session storage', () => {
     expect(sessions.map((s) => s.id)).toEqual(['s2', 's1']);
   });
 
+  it('removes a session by id', async () => {
+    await saveSession({ id: 's1', title: 'Test', updatedAt: 1 });
+    expect(await removeSession('s1')).toBe(true);
+    expect(await getSession('s1')).toBeNull();
+  });
+
   it('reports storage unavailable when the ping write rejects', async () => {
     vi.spyOn(idb, 'putSession').mockRejectedValueOnce(new Error('quota exceeded'));
     expect(await isStorageAvailable()).toBe(false);
@@ -50,6 +56,11 @@ describe('client session storage', () => {
   it('saveSession returns false when the write rejects, without throwing', async () => {
     vi.spyOn(idb, 'putSession').mockRejectedValueOnce(new Error('disk full'));
     await expect(saveSession({ id: 'x', updatedAt: 1 })).resolves.toBe(false);
+  });
+
+  it('removeSession returns false when the delete rejects, without throwing', async () => {
+    vi.spyOn(idb, 'deleteSession').mockRejectedValueOnce(new Error('disk full'));
+    await expect(removeSession('x')).resolves.toBe(false);
   });
 
   it('listSessions returns an empty array when the underlying read rejects', async () => {

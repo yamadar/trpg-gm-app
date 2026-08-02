@@ -107,15 +107,12 @@ Later:
 
 #### 容量制限が実データ所有者と一致しない
 
-現行の容量ガードは主に `req.userId` を基準に予約・測定する。一方、Party 参加者の書き込み先は Party 所有者の共有データとなる。このため、実行者と課金先がずれる。
+設計レビュー時点の容量ガードは主に `req.userId` を基準に予約・測定していた。一方、Party 参加者の書き込み先は Party 所有者の共有データとなるため、実行者と課金先がずれていた。Phase 0 対策で、保存済み Party の `ownerId` 解決、公開コピーの所有者課金、Party membership index の重複除外、小説化ジョブ完了までの予約保持を追加した。
 
-加えて、次の誤差要因がある。
+残る誤差・性能要因:
 
-- 公開用コピーがユーザー使用量へ含まれない
-- HTTP 応答後に続く小説生成は予約期間外で書き込む
 - 固定ヘッドルームは実際の差分容量と一致しない
 - 更新ごとのディレクトリ再帰走査はファイル数に比例する
-- 削除 API が不足すると、上限到達後に容量を回収できない
 - 一部の利用量記録書き込みが容量ガード対象外
 
 容量制限は「リクエスト単位」ではなく「所有者別台帳 + 書き込み予約」として設計し直す。
@@ -366,6 +363,7 @@ PostgreSQL への変換を前提に、次の規約を使う。
 | `session_log_entries` | `session_id`, `seq`, `role`, `text`, `payload_json`, `created_at_ms` | 将来の差分取得用。初回移行では state JSON 内ログでも可 |
 | `novels` | `session_id`, `body_md`, `source_hash`, `source_revision`, `truncated`, `unread`, timestamps | 入力状態と生成物を関連付ける |
 | `endings` | `session_id`, `owner_id`, `ending_json`, timestamps | 終了状態 |
+| `session_tombstones` | `session_id`, `owner_id`, `deleted_revision`, `deleted_at_ms`, `expires_at_ms` | オフライン端末の遅延 PUT による復活を防止。保持期限後に削除 |
 
 初回移行では互換性を優先し、現行 Session JSON を `state_json` へ保存する。その後、ログ件数や検索要件が増えた時点で `session_log_entries` へ段階分割する。
 
@@ -676,12 +674,17 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 
 目的: 移行前に所有権と削除不能問題を塞ぐ。
 
-- Party 更新の容量課金先を Party オーナーへ変更
-- 非同期生成物も期限付き予約を保持できる方式へ変更
-- Session、シーン画像、生成物の削除経路を確認・補完
-- 本書の容量課金ポリシーを ADR と実装へ反映
-- legacy key ごとの所有者判定を一覧化
-- 全データの件数、byte 数、checksum を取得する監査スクリプトを用意
+実装状況 (2026-08-02):
+
+- [x] Party 更新の容量課金先を保存済み Party オーナーへ変更
+- [x] 公開スナップショットを公開者へ課金し、Party membership index の重複課金を除外
+- [x] 小説化ジョブ終了まで容量予約を保持
+- [x] Session の削除 UI/API、生成物・公開小説のカスケード削除、復活防止 tombstone を追加
+- [x] シーン画像の個別削除 API と参照除去を追加
+- [ ] 固定ヘッドルームを、SQLite の所有者別差分台帳と期限付き予約へ置換
+- [ ] `text-operations` を含む全書き込みの課金対象・非対象を確定し、所有者判定表を ADR 化
+- [ ] legacy key ごとの所有者判定を一覧化
+- [ ] 全データの件数、byte 数、checksum を取得する監査スクリプトを用意
 
 完了条件:
 

@@ -24,7 +24,7 @@ import { seedStarters } from './starters/seed.js';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createFsTextStore } from './storage/textStore.js';
 import { createFsImageStore } from './storage/imageStore.js';
-import { createStorageGuard } from './storage/storageGuard.js';
+import { createStorageGuard, createStorageOwnerResolver } from './storage/storageGuard.js';
 import { createProviders } from './auth/providers.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createRequireAuth, createOriginCheck } from './auth/middleware.js';
@@ -37,6 +37,7 @@ import {
 } from './campaignGeneration.js';
 import { generatePartyResolution } from './partyGeneration.js';
 import { createPartyService } from './partyService.js';
+import { createKeyedLock } from './keyedLock.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -165,6 +166,7 @@ export function createApp({
     },
   });
   const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, model: textModel, fetchImpl });
+  const withSessionLock = createKeyedLock();
 
   // ミドルウェア順序が重要:
   // 1) originCheck はセッション有無に関わらず全ミューテーションを守る
@@ -185,6 +187,7 @@ export function createApp({
     maxUserBytes: parseLimit(env.MAX_USER_STORAGE_BYTES, 256 * 1024 * 1024),
     minFreeBytes: parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024),
     writeHeadroomBytes: parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024),
+    ownerIdForRequest: createStorageOwnerResolver({ dataStore }),
   }));
 
   app.use('/api', createTextOperationsRouter({
@@ -194,7 +197,15 @@ export function createApp({
     usage,
     maxConcurrent: parseLimit(env.LIMIT_TEXT_CONCURRENT, 6),
   }));
-  app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
+  app.use('/api', createSessionsRouter({
+    dataStore,
+    textStore,
+    imageStore,
+    apiKey,
+    novelJobs,
+    usage,
+    withSessionLock,
+  }));
   const partyService = createPartyService({
     dataStore,
     usage,
@@ -219,6 +230,7 @@ export function createApp({
     geminiImageModel,
     fetchImpl,
     usage,
+    withSessionLock,
   }));
   app.use('/api', createAttachmentsRouter({ dataStore, textStore, imageStore }));
   app.use('/api', createWorldsRouter({ dataStore, textStore, imageStore }));

@@ -5,7 +5,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { createStorageGuard, userStorageBytes } from './storageGuard.js';
+import {
+  createStorageGuard,
+  createStorageOwnerResolver,
+  userStorageBytes,
+} from './storageGuard.js';
 
 let dir;
 
@@ -100,6 +104,69 @@ describe('storage guard', () => {
     expect((await request(app).post('/hold').send({ x: 3 })).status).toBe(200);
   });
 
+  it('keeps a retained reservation after the response until background work releases it', async () => {
+    const measureUser = vi.fn().mockResolvedValue(50);
+    let releaseBackground;
+    const app = express();
+    app.use(express.json());
+    app.use((req, res, next) => {
+      req.userId = 'usr_1';
+      next();
+    });
+    app.use(createStorageGuard({
+      dataDir: dir,
+      maxUserBytes: 100,
+      minFreeBytes: 0,
+      writeHeadroomBytes: 30,
+      measureUser,
+      statfs: vi.fn().mockResolvedValue({ bavail: 1_000, bsize: 1 }),
+    }));
+    app.post('/background', (req, res) => {
+      releaseBackground = req.storageReservation.retain();
+      res.json({ ownerId: req.storageReservation.ownerId });
+    });
+    app.post('/write', (req, res) => res.json({ ok: true }));
+
+    const started = await request(app).post('/background').send({ x: 1 });
+    expect(started.body.ownerId).toBe('usr_1');
+    expect((await request(app).post('/write').send({ x: 2 })).status).toBe(507);
+
+    releaseBackground();
+    await vi.waitFor(async () => {
+      expect((await request(app).post('/write').send({ x: 3 })).status).toBe(200);
+    });
+  });
+
+  it('charges a resolved data owner instead of the authenticated actor', async () => {
+    const measureUser = vi.fn(async (_dataDir, userId) => (userId === 'usr_owner' ? 90 : 0));
+    const app = appWithGuard({
+      maxUserBytes: 100,
+      writeHeadroomBytes: 20,
+      measureUser,
+      ownerIdForRequest: vi.fn().mockResolvedValue('usr_owner'),
+      statfs: vi.fn().mockResolvedValue({ bavail: 1_000, bsize: 1 }),
+    });
+    const res = await request(app).post('/party-sessions/p1/chat').send({ text: 'x' });
+    expect(res.status).toBe(507);
+    expect(measureUser).toHaveBeenCalledWith(dir, 'usr_owner');
+  });
+
+  it('resolves existing Party mutations to the Party owner', async () => {
+    const dataStore = {
+      get: vi.fn().mockResolvedValue({ id: 'p1', ownerId: 'usr_owner' }),
+    };
+    const resolveOwner = createStorageOwnerResolver({ dataStore });
+    expect(await resolveOwner({ path: '/party-sessions/p1/chat', userId: 'usr_actor' })).toBe('usr_owner');
+    expect(dataStore.get).toHaveBeenCalledWith('sharedSessions/p1');
+  });
+
+  it('uses the actor for Party creation and unknown Party IDs', async () => {
+    const dataStore = { get: vi.fn().mockResolvedValue(null) };
+    const resolveOwner = createStorageOwnerResolver({ dataStore });
+    expect(await resolveOwner({ path: '/party-sessions', userId: 'usr_actor' })).toBe('usr_actor');
+    expect(await resolveOwner({ path: '/party-sessions/missing/chat', userId: 'usr_actor' })).toBe('usr_actor');
+  });
+
   it('does not block reads, deletes, or in-memory heartbeat endpoints', async () => {
     const measureUser = vi.fn().mockResolvedValue(1_000);
     const app = appWithGuard({ maxUserBytes: 1, measureUser });
@@ -111,7 +178,7 @@ describe('storage guard', () => {
     expect(measureUser).not.toHaveBeenCalled();
   });
 
-  it('counts user files and shared party files owned by the user', async () => {
+  it('counts private files and owned Party data without double-counting membership indexes', async () => {
     await fs.mkdir(path.join(dir, 'users/usr_1/sharedSessions'), { recursive: true });
     await fs.mkdir(path.join(dir, 'sharedSessions/party_1'), { recursive: true });
     await fs.writeFile(path.join(dir, 'users/usr_1/profile.json'), '12345');
@@ -121,11 +188,24 @@ describe('storage guard', () => {
     );
     await fs.writeFile(path.join(dir, 'sharedSessions/party_1/snapshot.json'), '1234567');
     const userOnly = await userStorageBytes(dir, 'usr_1');
-    expect(userOnly).toBeGreaterThanOrEqual(12);
     expect(userOnly).toBe(
       Buffer.byteLength('12345')
-      + Buffer.byteLength(JSON.stringify({ ownerId: 'usr_1' }))
       + Buffer.byteLength('1234567'),
+    );
+  });
+
+  it('charges public snapshots to their publishing owner', async () => {
+    await fs.mkdir(path.join(dir, 'public/novels/pub_1'), { recursive: true });
+    await fs.mkdir(path.join(dir, 'public/novels/pub_other'), { recursive: true });
+    const ownMeta = JSON.stringify({ publicId: 'pub_1', ownerId: 'usr_1' });
+    const otherMeta = JSON.stringify({ publicId: 'pub_other', ownerId: 'usr_2' });
+    await fs.writeFile(path.join(dir, 'public/novels/pub_1.json'), ownMeta);
+    await fs.writeFile(path.join(dir, 'public/novels/pub_1/novel.md'), 'owned-public-text');
+    await fs.writeFile(path.join(dir, 'public/novels/pub_other.json'), otherMeta);
+    await fs.writeFile(path.join(dir, 'public/novels/pub_other/novel.md'), 'other-user-text');
+
+    expect(await userStorageBytes(dir, 'usr_1')).toBe(
+      Buffer.byteLength(ownMeta) + Buffer.byteLength('owned-public-text'),
     );
   });
 });

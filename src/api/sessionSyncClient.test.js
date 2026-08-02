@@ -5,6 +5,7 @@ import {
   getNovel,
   getIllustratedNovel,
   listNovelJobs,
+  deleteServerSession,
   SESSION_CONFLICT_EVENT,
 } from './sessionSyncClient.js';
 
@@ -87,6 +88,18 @@ describe('novelizeSession', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(novelizeSession('s1')).rejects.toThrow(
       'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。'
+    );
+  });
+});
+
+describe('deleteServerSession', () => {
+  it('DELETEs the encoded session endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal('fetch', fetchMock);
+    await deleteServerSession('s 1');
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/sessions/s%201',
+      expect.objectContaining({ method: 'DELETE' }),
     );
   });
 });

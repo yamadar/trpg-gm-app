@@ -151,6 +151,7 @@ rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。
 
 sessions/{session_id}.json          セッション本体(world/scenario/ruleset/pc/state/logを1ファイルにフラット保存)
 sessions/{session_id}/
+  images/{image_id}.png             シーン画像・登場人物ポートレート
   novel.md                         小説化(novelize)した本文
   novel.json                       小説のメタ({ turnCount, updatedAt, imageIds,
                                     truncated })。truncatedは継続リクエストの
@@ -162,6 +163,10 @@ sessions/{session_id}/
   novelNotice.json                 完了通知の未読フラグ({ unread: boolean }。
                                     実装済み2026-07-25)
   novel/attachments/...            小説添付画像。本文中の生成挿絵とは別コレクション
+
+sessionDeletions/{session_id}.json  削除済みSessionのtombstone
+                                    ({ sessionId, deletedAt, revision })。
+                                    遅延PUTによる意図しない復活を防止する
 
 sharedSessions/{session_id}.json   Partyメタ(owner/participants/pcs/settings/gmSnapshot/eventSeq等、グローバル名前空間)
 sharedSessions/{session_id}/
