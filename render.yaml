@@ -59,7 +59,19 @@ services:
         sync: false
       - key: LIMIT_MESSAGES_PER_DAY
         value: "200"
+      - key: LIMIT_TEXT_TOKENS_PER_DAY
+        value: "500000"
+      - key: LIMIT_GLOBAL_TEXT_TOKENS_PER_DAY
+        value: "5000000"
+      - key: LIMIT_TEXT_CONCURRENT
+        value: "6"
       - key: LIMIT_NOVELIZE_PER_DAY
         value: "10"
       - key: LIMIT_IMAGES_PER_DAY
         value: "30"
+      - key: MAX_USER_STORAGE_BYTES
+        value: "268435456"
+      - key: MIN_FREE_STORAGE_BYTES
+        value: "268435456"
+      - key: STORAGE_WRITE_HEADROOM_BYTES
+        value: "12582912"

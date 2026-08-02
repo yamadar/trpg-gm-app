@@ -94,6 +94,12 @@ Play画面で「この物語を終える」を確定すると(05-ui-ux.md 7章)�
 
 AI呼び出しは既存の`messages`日次利用枠に相乗りする(専用の新種別は作らない)。失敗時(上流エラー・不正なJSON・空タイトル)はエンディングの記録自体を作らず`502`を返し、Play画面・Home画面は再試行ボタンを出す(04-persistence.md・05-ui-ux.md参照)。ダイス統計(`stats`)自体はここでは生成せず、クライアントが`summarizeRolls`(`src/engine/rollStats.js`)で計算しリクエストボディに含めて送る(02-data-model.md 3.6節参照)。
 
+## 10.8 Party AI GM(実装済み2026-08-01)
+
+`server/partyGeneration.js`は一つの共有ラウンドを二段階で生成する。第一段階のJSON Schema出力は、全PCの人間/auto intent、GM専用World/Scenario、全Scene・PC state、投票結果から、`advance|decision_required`、2〜4件の中立な投票案、PCごと最大1件の判定計画、離席PCの安全なauto actionを返す。チャットは入力へ含めない。排他的決定なら描写生成せず投票へ戻る。
+
+`advance`時はコードが既存Rulesetアダプタでロール、成功度、リソース副作用を確定する。第二段階へ確定済み判定結果を渡し、global、Scene、PC状態、`all|scene|pcs` audience付き描写、PC別選択肢をJSON Schemaで得る。サーバーは既知PC/Scene、audience、判定数、auto action対象を再検証し、一つのsnapshotへ一度だけ適用する。各ラウンド解決はownerの`messages`日次利用枠を1消費し、AI失敗・不正出力・出力打ち切り時は行動を残してPartyを停止する。生成は最大120秒の同期処理。永続非同期workerと再起動後の自動解決再開は未実装。
+
 ## 11. シナリオ自動生成モード
 
 「用意されたシナリオがない」場合、ジャンル要望(冒険/推理/ホラー等)からAIにシナリオを生成させる。実装は`src/api/session.js`の`generateScenario`。
@@ -121,10 +127,10 @@ AI呼び出しは既存の`messages`日次利用枠に相乗りする(専用の�
 
 単発のシナリオ自動生成とは別に、`server/campaignGeneration.js`が章精算、次話候補、次話Scenarioの3段階を担う。毎ターンCampaignを更新せず、Session終了後だけ生成する。
 
-1. **章精算**: Campaign原典3文書、World本文、現在の正史、対象Scenario、元PCシート、最終state、番号付き`session.log`全件を入力する。structured outputで章要約、引き継ぎPC案、正史変更案を返す。各変更はkind、対象ID、内容、可視範囲、理由、根拠ログ番号を持つ。出力は未承認draftとして保存し、正史を直接変更しない。
-2. **GM承認**: UI上の変更は既定で未選択。GMが選択・編集した項目だけをサーバーへ送り、Sessionの`turn_count`/`updatedAt`とCampaignの`canonRevision`が生成時から変わっていない場合だけ`currentState`、章outcome、`carriedPc`、revisionを一括更新する。
+1. **章精算**: Campaign原典3文書、World本文、現在の正史、対象Scenario、元PCシート、最終state、番号付き`session.log`全件を入力する。Partyは全PC設定・PC別stateと、人間行動/AI同行を区別した解決ログも渡す。structured outputで章要約、Soloの引き継ぎPC案またはParty全PC案、正史変更案を返す。各変更はkind、対象ID、内容、可視範囲、理由、根拠ログ番号を持つ。出力は未承認draftとして保存し、正史を直接変更しない。
+2. **GM承認**: UI上の変更は既定で未選択。GMが選択・編集した項目だけをサーバーへ送り、Sessionの`turn_count`/`updatedAt`とCampaignの`canonRevision`が生成時から変わっていない場合だけ`currentState`、章outcome、`carriedPc`/`carriedPcs`、revisionを一括更新する。
 3. **次話候補**: Campaign原典→GM承認済み正史→人物・勢力・予定事件・未解決事項→引き継ぎPC→今回のGM要望、の優先順位をsystem指示へ明記し、異なる遊び味の候補を2〜3案structured outputで生成する。候補には生成基準revisionを付ける。未精算章がある場合は生成せず、正史revisionが変わった候補はstaleとしてScenario化しない。
-4. **Scenario生成**: 選択候補、原典、正史、引き継ぎPC、GM追加指定から、既存Scenarioと同じMarkdown形式へ展開する。前話の結果を無効化する展開、死亡者の説明なし再登場、公開済み秘密の再秘匿を禁止し、複数の解決経路とfail forwardを要求する。生成結果は保存前に編集でき、通常Scenarioへ保存後は既存Setup/Playへ合流する。
+4. **Scenario生成**: 選択候補、原典、正史、全引き継ぎPC、GM追加指定から、既存Scenarioと同じMarkdown形式へ展開する。前話の結果を無効化する展開、死亡者の説明なし再登場、公開済み秘密の再秘匿を禁止し、複数の解決経路とfail forwardを要求する。生成結果は保存前に編集でき、通常Scenarioへ保存後はSolo Setup/PlayまたはParty作成/Playへ合流する。
 
 章精算と候補生成はGemini JSON Schema、Scenario生成はMarkdown。出力上限到達をエラー扱いにし、不完全な結果を保存しない。各生成は現時点では同期HTTP(最大120秒)で、既存`messages`日次利用枠を消費する。小説化のような永続非同期ジョブ化と、モデル入力上限を超える長大ログの時系列チャンク分割は未実装。生成Scenarioメタへ`sourceCampaignId`、`sourceCampaignRevision`、`generatedFromPitchId`を保存するが、Scenario公開時はこれらCampaign由来メタを公開スナップショットへ含めない。
 

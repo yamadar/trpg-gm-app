@@ -40,6 +40,7 @@ describe('campaignGeneration', () => {
       log: [
         { role: 'gm', text: '追手が迫る。' },
         { role: 'player', text: '橋を爆破する。', roll: { check_label: '工作', roll: 12, degree: '成功' } },
+        { role: 'player', source: 'auto', characterName: 'ミナ', text: '仲間を援護する。', reason: '締切まで入力がなかった' },
       ],
     };
 
@@ -57,6 +58,7 @@ describe('campaignGeneration', () => {
     const prompt = upstreamBody.contents[0].parts[0].text;
     expect(prompt).toContain('[0] GM: 追手が迫る。');
     expect(prompt).toContain('[1] PL: 橋を爆破する。 [判定: 工作 12 成功]');
+    expect(prompt).toContain('[2] AI同行(ミナ): 仲間を援護する。 [理由: 締切まで入力がなかった]');
     expect(upstreamBody.generationConfig.responseMimeType).toBe('application/json');
   });
 

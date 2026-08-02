@@ -37,13 +37,30 @@ export function createRequireAuth({ dataStore, cookieOptions = DEFAULT_COOKIE_OP
 }
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+export const CSRF_HEADER = 'X-GMDesk-CSRF';
+export const CSRF_HEADER_VALUE = '1';
 
 export function createOriginCheck({ baseUrl }) {
   const allowed = new URL(baseUrl).origin;
   return (req, res, next) => {
-    if (MUTATING_METHODS.has(req.method) && req.headers.origin && req.headers.origin !== allowed) {
-      res.status(403).json({ error: 'origin not allowed' });
-      return;
+    if (MUTATING_METHODS.has(req.method)) {
+      if (req.headers.origin && req.headers.origin !== allowed) {
+        res.status(403).json({ error: 'origin not allowed' });
+        return;
+      }
+      const fetchSite = req.get('Sec-Fetch-Site');
+      if (fetchSite && fetchSite !== 'same-origin') {
+        res.status(403).json({ error: 'cross-site request not allowed' });
+        return;
+      }
+      // Originを送らないクライアントでも、認証Cookie付き更新は非simpleヘッダーを必須化する。
+      // ブラウザのクロスオリジンフォームはこのヘッダーを付けられず、fetchで付ければ
+      // CORS preflightが必要になるため、Origin欠落時もCookieベースCSRFを防げる。
+      const hasSessionCookie = Boolean(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
+      if (hasSessionCookie && req.get(CSRF_HEADER) !== CSRF_HEADER_VALUE) {
+        res.status(403).json({ error: 'csrf header required' });
+        return;
+      }
     }
     next();
   };

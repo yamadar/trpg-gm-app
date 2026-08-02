@@ -44,8 +44,18 @@ function createApiError(status, text) {
   return err;
 }
 
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 export async function apiFetch(url, options) {
-  const res = await fetch(url, options);
+  const normalizedOptions = options || {};
+  const method = String(normalizedOptions.method || 'GET').toUpperCase();
+  const requestOptions = MUTATING_METHODS.has(method)
+    ? {
+        ...normalizedOptions,
+        headers: { ...(normalizedOptions.headers || {}), 'X-GMDesk-CSRF': '1' },
+      }
+    : options;
+  const res = await fetch(url, requestOptions);
   if (!res.ok) {
     const t = await res.text().catch(() => '');
     throw createApiError(res.status, t);

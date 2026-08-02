@@ -7,7 +7,12 @@ import express from 'express';
 import request from 'supertest';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createAuthSession, SESSION_COOKIE, SESSION_TTL_MS } from './sessions.js';
-import { parseCookies, createRequireAuth, createOriginCheck } from './middleware.js';
+import {
+  CSRF_HEADER,
+  parseCookies,
+  createRequireAuth,
+  createOriginCheck,
+} from './middleware.js';
 
 let dir;
 let dataStore;
@@ -87,9 +92,26 @@ describe('createOriginCheck', () => {
     return app;
   }
 
-  it('allows a matching origin and requests without an origin header', async () => {
+  it('allows matching-origin and unauthenticated no-origin mutations', async () => {
     expect((await request(buildApp()).post('/x').set('Origin', 'http://localhost:5173')).status).toBe(200);
     expect((await request(buildApp()).post('/x')).status).toBe(200);
+  });
+
+  it('requires the custom CSRF header for authenticated mutations even without Origin', async () => {
+    const cookie = `${SESSION_COOKIE}=session-token`;
+    expect((await request(buildApp()).post('/x').set('Cookie', cookie)).status).toBe(403);
+    expect(
+      (await request(buildApp()).post('/x').set('Cookie', cookie).set(CSRF_HEADER, '1')).status,
+    ).toBe(200);
+  });
+
+  it('rejects cross-site Fetch Metadata even when the custom header is present', async () => {
+    const res = await request(buildApp())
+      .post('/x')
+      .set('Cookie', `${SESSION_COOKIE}=session-token`)
+      .set(CSRF_HEADER, '1')
+      .set('Sec-Fetch-Site', 'cross-site');
+    expect(res.status).toBe(403);
   });
 
   it('rejects a cross-origin mutation', async () => {

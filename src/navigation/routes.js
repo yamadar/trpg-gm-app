@@ -68,6 +68,14 @@ export function parseRoute(hash) {
     }
     case 'setup':
       return segments.length === 1 ? { name: 'setup' } : null;
+    case 'party-setup':
+      return segments.length === 1 ? { name: 'partySetup' } : null;
+    case 'party':
+      if (segments.length === 2 && isId(a)) return { name: 'party', sessionId: a };
+      if (segments.length === 4 && isId(a) && b === 'join' && isId(c)) {
+        return { name: 'partyJoin', sessionId: a, inviteToken: c };
+      }
+      return null;
     case 'play':
       return segments.length === 2 && isId(a) ? { name: 'play', sessionId: a } : null;
     default:
@@ -96,6 +104,12 @@ export function buildHash(route) {
         : `#/u/${route.userId}`;
     case 'setup':
       return '#/setup';
+    case 'partySetup':
+      return '#/party-setup';
+    case 'party':
+      return `#/party/${route.sessionId}`;
+    case 'partyJoin':
+      return `#/party/${route.sessionId}/join/${route.inviteToken}`;
     case 'play':
       return `#/play/${route.sessionId}`;
     case 'home':
@@ -124,7 +138,7 @@ export function navTabFor(route) {
 
 // 集中モード = 1つのタスクを完遂する画面。グローバルナビを出さない。
 export function isFocusRoute(route) {
-  return !!route && (route.name === 'setup' || route.name === 'play');
+  return !!route && ['setup', 'play', 'partySetup', 'party', 'partyJoin'].includes(route.name);
 }
 
 // URL だけから決まるパンくずの段。末尾の動的ラベル(World名・公開アイテム名・表示名)は

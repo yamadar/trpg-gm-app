@@ -19,7 +19,10 @@ describe('starterClient', () => {
   it('posts to the import endpoint with the pack id encoded', async () => {
     fetch.mockResolvedValue({ ok: true, json: async () => ({ world: { id: 'w' } }) });
     await importStarterPack('arkham-1920s');
-    expect(fetch).toHaveBeenCalledWith('/api/starters/arkham-1920s/import', { method: 'POST' });
+    expect(fetch).toHaveBeenCalledWith('/api/starters/arkham-1920s/import', {
+      method: 'POST',
+      headers: { 'X-GMDesk-CSRF': '1' },
+    });
   });
 
   it('surfaces API errors', async () => {

@@ -53,8 +53,11 @@ export function createAuthRouter({
       res.clearCookie(OAUTH_COOKIE, cookieOpts);
       res.cookie(SESSION_COOKIE, token, { ...cookieOpts, maxAge: SESSION_TTL_MS });
       res.redirect('/');
-    } catch (e) {
-      console.error('oauth callback failed:', e.message);
+    } catch (error) {
+      console.error('oauth callback failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
       res.clearCookie(OAUTH_COOKIE, cookieOpts);
       res.redirect('/?auth_error=1');
     }

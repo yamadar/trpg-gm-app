@@ -29,9 +29,13 @@ afterEach(async () => {
 });
 
 describe('createApp', () => {
-  it('mounts the messages route and proxies via the injected fetchImpl', async () => {
+  it('mounts fixed text operations and proxies via the injected fetchImpl', async () => {
     const { cookie } = await createTestUserSession(app.locals.dataStore);
-    const res = await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] });
+    const res = await request(app)
+      .post('/api/text-operations/summarize-world')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ input: { raw: '世界' } });
     expect(res.status).toBe(200);
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://generativelanguage.googleapis.com/v1beta/models/text-model-test:generateContent',
@@ -53,7 +57,11 @@ describe('createApp', () => {
     const { cookie } = await createTestUserSession(app.locals.dataStore);
 
     expect((await request(app).get('/api/config')).body).toEqual({ imageGen: true });
-    await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] });
+    await request(app)
+      .post('/api/text-operations/summarize-world')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ input: { raw: '世界' } });
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-custom-text:generateContent',
       expect.objectContaining({
@@ -108,15 +116,60 @@ describe('createApp', () => {
     expect(res.status).toBe(404);
   });
 
+  it('sets browser security headers without exposing Express', async () => {
+    const res = await request(app).get('/api/config');
+    expect(res.headers).not.toHaveProperty('x-powered-by');
+    expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(res.headers['content-security-policy']).toContain("script-src 'self'");
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+    expect(res.headers['permissions-policy']).toContain('camera=()');
+  });
+
+  it('returns and logs only redacted metadata for unexpected server errors', async () => {
+    const secret = 'token=SUPER_SECRET_VALUE';
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+    app.locals.dataStore.list = vi.fn().mockRejectedValue(new Error(secret));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await request(app)
+      .get(`/api/sessions?code=${encodeURIComponent(secret)}`)
+      .set('Cookie', cookie);
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({
+      error: 'internal server error',
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+    expect(res.body.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(JSON.stringify(res.body)).not.toContain(secret);
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(secret);
+    expect(errorSpy).toHaveBeenCalledWith(
+      'request failed',
+      expect.objectContaining({ requestId: res.body.requestId, path: '/api/sessions' }),
+    );
+    errorSpy.mockRestore();
+  });
+
   it('preserves a thrown error status via the global handler', async () => {
     // 既知の400経路(不正なsession body)を通し、500ではなく400が返ることを確認
-    const res = await request(app).put('/api/sessions/s1').set('Content-Type', 'application/json').send('"x"');
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+    const res = await request(app)
+      .put('/api/sessions/s1')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .set('Content-Type', 'application/json')
+      .send('"x"');
     expect(res.status).toBe(400);
   });
 
   it('rejects /api requests without a session', async () => {
     expect((await request(app).get('/api/sessions')).status).toBe(401);
-    expect((await request(app).post('/api/messages').send({ messages: [] })).status).toBe(401);
+    expect(
+      (await request(app)
+        .post('/api/text-operations/summarize-world')
+        .send({ input: { raw: '世界' } })).status,
+    ).toBe(401);
   });
 
   it('serves /api/me as null and providers list without auth', async () => {
@@ -127,7 +180,11 @@ describe('createApp', () => {
   it('keeps data separated between two users end to end', async () => {
     const a = await createTestUserSession(app.locals.dataStore);
     const b = await createTestUserSession(app.locals.dataStore);
-    await request(app).put('/api/sessions/s1').set('Cookie', a.cookie).send({ title: 'Aの卓' });
+    await request(app)
+      .put('/api/sessions/s1')
+      .set('Cookie', a.cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: 'Aの卓' });
     expect((await request(app).get('/api/sessions/s1').set('Cookie', b.cookie)).status).toBe(404);
     expect((await request(app).get('/api/sessions/s1').set('Cookie', a.cookie)).status).toBe(200);
   });
@@ -135,20 +192,33 @@ describe('createApp', () => {
   it('enforces the daily message limit via env', async () => {
     app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_MESSAGES_PER_DAY: '1' }) });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
-    expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(200);
-    expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(429);
+    const send = () => request(app)
+      .post('/api/text-operations/summarize-world')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ input: { raw: '世界' } });
+    expect((await send()).status).toBe(200);
+    expect((await send()).status).toBe(429);
   });
 
   it('LIMIT_MESSAGES_PER_DAY=0 denies all messages', async () => {
     app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_MESSAGES_PER_DAY: '0' }) });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
-    expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(429);
+    expect((await request(app)
+      .post('/api/text-operations/summarize-world')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ input: { raw: '世界' } })).status).toBe(429);
   });
 
   it('LIMIT_MESSAGES_PER_DAY="" (blank) falls back to the default limit instead of denying all', async () => {
     app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_MESSAGES_PER_DAY: '' }) });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
-    expect((await request(app).post('/api/messages').set('Cookie', cookie).send({ messages: [] })).status).toBe(200);
+    expect((await request(app)
+      .post('/api/text-operations/summarize-world')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ input: { raw: '世界' } })).status).toBe(200);
   });
 
   it('rejects cross-origin mutations', async () => {
@@ -159,6 +229,21 @@ describe('createApp', () => {
       .set('Origin', 'https://evil.example')
       .send({ title: 'x' });
     expect(res.status).toBe(403);
+  });
+
+  it('rejects authenticated no-Origin mutations without the CSRF header', async () => {
+    const { cookie } = await createTestUserSession(app.locals.dataStore);
+    const rejected = await request(app)
+      .put('/api/sessions/s1')
+      .set('Cookie', cookie)
+      .send({ title: 'x' });
+    expect(rejected.status).toBe(403);
+    const accepted = await request(app)
+      .put('/api/sessions/s1')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: 'x' });
+    expect(accepted.status).toBe(200);
   });
 
   it('serves the public gallery without auth', async () => {
@@ -173,29 +258,52 @@ describe('createApp', () => {
   it('end to end: A publishes, anonymous reads, B imports a copy', async () => {
     const a = await createTestUserSession(app.locals.dataStore);
     const b = await createTestUserSession(app.locals.dataStore);
-    await request(app).put('/api/worlds/w1').set('Cookie', a.cookie).send({ title: 'Aの世界', raw: '# 本文' });
-    const pub = await request(app).post('/api/publish/worlds/w1').set('Cookie', a.cookie);
+    await request(app)
+      .put('/api/worlds/w1')
+      .set('Cookie', a.cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: 'Aの世界', raw: '# 本文' });
+    const pub = await request(app)
+      .post('/api/publish/worlds/w1')
+      .set('Cookie', a.cookie)
+      .set('X-GMDesk-CSRF', '1');
     const { publicId } = pub.body;
     // 未認証で読める
     expect((await request(app).get(`/api/public/worlds/${publicId}`)).body.title).toBe('Aの世界');
     // Bがインポート → Bのライブラリに入る
-    const imported = await request(app).post(`/api/import/worlds/${publicId}`).set('Cookie', b.cookie);
+    const imported = await request(app)
+      .post(`/api/import/worlds/${publicId}`)
+      .set('Cookie', b.cookie)
+      .set('X-GMDesk-CSRF', '1');
     expect(imported.status).toBe(201);
     const bWorld = await request(app).get(`/api/worlds/${imported.body.id}`).set('Cookie', b.cookie);
     expect(bWorld.body.raw).toBe('# 本文');
     // Aのデータは不変・Bのインポート後にAが解除してもBのコピーは残る
-    await request(app).delete('/api/publish/worlds/w1').set('Cookie', a.cookie);
+    await request(app)
+      .delete('/api/publish/worlds/w1')
+      .set('Cookie', a.cookie)
+      .set('X-GMDesk-CSRF', '1');
     expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(404);
     expect((await request(app).get(`/api/worlds/${imported.body.id}`).set('Cookie', b.cookie)).status).toBe(200);
   });
 
   it('deleting a private item unpublishes it (cascade)', async () => {
     const { cookie } = await createTestUserSession(app.locals.dataStore);
-    await request(app).put('/api/worlds/w1').set('Cookie', cookie).send({ title: '世界', raw: '# 本文' });
-    const pub = await request(app).post('/api/publish/worlds/w1').set('Cookie', cookie);
+    await request(app)
+      .put('/api/worlds/w1')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: '世界', raw: '# 本文' });
+    const pub = await request(app)
+      .post('/api/publish/worlds/w1')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1');
     const { publicId } = pub.body;
     expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(200);
-    await request(app).delete('/api/worlds/w1').set('Cookie', cookie);
+    await request(app)
+      .delete('/api/worlds/w1')
+      .set('Cookie', cookie)
+      .set('X-GMDesk-CSRF', '1');
     expect((await request(app).get(`/api/public/worlds/${publicId}`)).status).toBe(404);
   });
 
@@ -207,10 +315,24 @@ describe('createApp', () => {
   it('?ownerId= scopes the public gallery so other users\' public items are not mixed in', async () => {
     const a = await createTestUserSession(app.locals.dataStore);
     const b = await createTestUserSession(app.locals.dataStore);
-    await request(app).put('/api/worlds/w1').set('Cookie', a.cookie).send({ title: 'Aの世界', raw: '# A' });
-    await request(app).put('/api/worlds/w1').set('Cookie', b.cookie).send({ title: 'Bの世界', raw: '# B' });
-    await request(app).post('/api/publish/worlds/w1').set('Cookie', a.cookie);
-    await request(app).post('/api/publish/worlds/w1').set('Cookie', b.cookie);
+    await request(app)
+      .put('/api/worlds/w1')
+      .set('Cookie', a.cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: 'Aの世界', raw: '# A' });
+    await request(app)
+      .put('/api/worlds/w1')
+      .set('Cookie', b.cookie)
+      .set('X-GMDesk-CSRF', '1')
+      .send({ title: 'Bの世界', raw: '# B' });
+    await request(app)
+      .post('/api/publish/worlds/w1')
+      .set('Cookie', a.cookie)
+      .set('X-GMDesk-CSRF', '1');
+    await request(app)
+      .post('/api/publish/worlds/w1')
+      .set('Cookie', b.cookie)
+      .set('X-GMDesk-CSRF', '1');
 
     const res = await request(app).get('/api/public/worlds').query({ ownerId: a.user.id });
     expect(res.status).toBe(200);

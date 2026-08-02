@@ -1,6 +1,8 @@
 # 同時参加型パーティセッション 設計
 
-2026-08-01 草案。現行の「1人プレイヤー、1AI GM、1PC」セッションを残しつつ、複数プレイヤーが同時に同じ物語へ参加するPartyモードを追加する設計。
+2026-08-01 設計、同日Partyコア実装済み。現行の「1人プレイヤー、1AI GM、1PC」セッションを残しつつ、複数プレイヤーが同時に同じ物語へ参加するPartyモードを追加した。
+
+実装範囲はPS1〜PS4とPS5のCampaign統合。共有storage/membership/invite、ロビー/PC割当、同時行動/ready/typing/カウントダウン、手動・自動離席/再入室、チャット、投票、全行動一括AI解決、コード側複数判定、PC/Scene別projection、`carriedPcs`章精算を接続済み。設計との差分として、RealtimeはWebSocketでなく1秒RESTポーリング。AI解決は永続workerでなくHTTP処理内の同期生成。event先行保存と`resolutionId`二重適用防止はあるが、サーバー再起動時のsnapshot event replay・未完了解決の自動再開は未実装。Party小説化、挿絵、Ending、専用不在中要約も後続。
 
 関連設計:
 
@@ -812,7 +814,7 @@ PC別公開範囲により途中のeventが非表示になる場合も、クラ�
 
 ### 15.5 Snapshot更新
 
-ゲームイベントを真実源とする。
+設計上はゲームイベントを真実源とする。現行実装もeventをsnapshot/sessionより先に保存するが、未反映eventを再起動時にsnapshotへ再生する処理は未実装。
 
 1. Sessionロック内で次`seq`を採番
 2. イベント保存
@@ -820,15 +822,15 @@ PC別公開範囲により途中のeventが非表示になる場合も、クラ�
 4. Sessionメタの`eventSeq`・`stateRevision`更新
 5. WebSocket配信
 
-イベント保存後に停止した場合、再起動時に`snapshot.lastEventSeq + 1`以降を再生する。snapshotが先行してイベントがない状態を作らない。
+完成形ではイベント保存後に停止した場合、再起動時に`snapshot.lastEventSeq + 1`以降を再生する。現行はsnapshotが先行してイベントがない状態を作らない順序だけを実装済み。
 
 初期ファイルストレージでは単一Expressプロセス内ロックを使用できる。複数プロセス化時は、共有ロック・transaction・pub/subを持つストレージへ置換する。
 
 ## 16. Realtime通信
 
-### 16.1 WebSocket
+### 16.1 WebSocket(設計案・未実装)
 
-PartyモードではWebSocketを使用する。
+完成形のPartyモードではWebSocketを使用する。現行実装はsnapshot/chatを1秒間隔のREST pollingで取得し、typing/presenceもREST heartbeatで送る。
 
 用途:
 
@@ -935,7 +937,7 @@ join APIは招待tokenをJSON bodyで受け取る。tokenをquery parameterや�
 
 「行動受付へ戻す」場合、元行動を初期値として残し、編集可能にする。
 
-### 19.4 サーバー再起動
+### 19.4 サーバー再起動(未実装)
 
 resolution jobへ`bootId`、`startedAt`、`updatedAt`を保存する。再起動後、異なる`bootId`で`resolving`のままなら失敗として回復UIを出す。小説化ジョブと同じ考え方。
 
@@ -1073,15 +1075,15 @@ Scene単位のGM描写を対象とする。PC別にほぼ同じ挿絵を重複�
 
 ## 24. 段階導入
 
-### PS1: 共有ルーム基盤
+### PS1: 共有ルーム基盤 — コア実装済み
 
 - Party Session storage
 - membership・invite
-- WebSocket・event seq・snapshot
+- REST polling・event seq・snapshot(WebSocketは後続)
 - ロビー・PC割当
 - 同一sceneのみ
 
-### PS2: 同時行動受付
+### PS2: 同時行動受付 — 実装済み
 
 - 行動提出・修正・ready
 - countdown・lock grace
@@ -1091,7 +1093,7 @@ Scene単位のGM描写を対象とする。PC別にほぼ同じ挿絵を重複�
 
 この時点では全PCへ同じGM地の文を表示してよい。
 
-### PS3: Party AI GM
+### PS3: Party AI GM — 実装済み
 
 - 全行動一括解決
 - 主行動・援護
@@ -1099,7 +1101,7 @@ Scene単位のGM描写を対象とする。PC別にほぼ同じ挿絵を重複�
 - 排他的行動の投票
 - AI同行制約
 
-### PS4: PC別視点・別行動
+### PS4: PC別視点・別行動 — 実装済み
 
 - PC別state・knownFacts
 - audienceフィルタ
@@ -1107,14 +1109,14 @@ Scene単位のGM描写を対象とする。PC別にほぼ同じ挿絵を重複�
 - open/character視点設定
 - グローバルビートで複数Scene一括解決
 
-### PS5: 周辺機能
+### PS5: 周辺機能 — Campaign統合のみ実装済み
 
 - Party小説化
 - Party Ending
 - Scene単位挿絵
-- Campaign `carriedPcs`・章精算統合
+- Campaign `carriedPcs`・章精算統合(実装済み)
 
-## 25. 最初の実用版
+## 25. 最初の実用版(実装済み)
 
 最初に完成させる縦断スコープ:
 
@@ -1132,7 +1134,7 @@ Scene単位のGM描写を対象とする。PC別にほぼ同じ挿絵を重複�
 - 判定は複数対応
 - ブラウザ終了後に再参加可能
 
-この縦断スコープで共有セッション基盤と進行state machineを検証する。その後、PC別視点と別行動を追加する。
+この縦断スコープに加え、PC別視点、別Scene、`open|character`公開範囲、Campaign統合まで実装した。初期案の2〜4人に対し実装上限は6人。GM地の文は全員共通だけでなく`all|scene|pcs` audienceへ拡張済み。
 
 ## 26. 完了条件
 
@@ -1146,5 +1148,5 @@ Scene単位のGM描写を対象とする。PC別にほぼ同じ挿絵を重複�
 6. 同じ世界更新から各PC視点を受け取る
 7. 排他的行動を投票で決定
 8. 手動離席・無反応・切断中PCを待たずに進行
-9. 離席者が再入室し、不在中要約から復帰
+9. 離席者が再入室し、蓄積済みPC視点ログから復帰(専用不在中要約は後続)
 10. 別行動時も単一正史と共有時間軸を維持

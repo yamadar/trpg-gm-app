@@ -17,6 +17,7 @@ export async function saveCampaign(
     worldId,
     title,
     carriedPc,
+    carriedPcs,
     chapters,
     currentState,
     directorGuide,
@@ -31,6 +32,9 @@ export async function saveCampaign(
     worldId,
     title,
     carriedPc: carriedPc ?? existing?.carriedPc ?? { raw: '', xp: 0 },
+    carriedPcs: Array.isArray(carriedPcs)
+      ? carriedPcs
+      : existing?.carriedPcs ?? (carriedPc ? [{ id: 'pc', ...carriedPc }] : []),
     chapters: Array.isArray(chapters) ? chapters : existing?.chapters ?? [],
     currentState: normalizeCampaignState(currentState ?? existing?.currentState ?? emptyCampaignState()),
     directorGuide: directorGuide === undefined ? existing?.directorGuide ?? null : directorGuide,
@@ -51,6 +55,9 @@ export async function getCampaign(dataStore, userId, worldId, id) {
   return {
     ...meta,
     carriedPc: meta.carriedPc ?? { raw: '', xp: 0 },
+    carriedPcs: Array.isArray(meta.carriedPcs)
+      ? meta.carriedPcs
+      : meta.carriedPc ? [{ id: 'pc', ...meta.carriedPc }] : [],
     chapters: Array.isArray(meta.chapters) ? meta.chapters : [],
     currentState: normalizeCampaignState(meta.currentState),
     directorGuide: meta.directorGuide ?? null,
@@ -67,6 +74,9 @@ export async function listCampaigns(dataStore, userId, worldId) {
     worldId: meta.worldId,
     title: meta.title,
     carriedPc: meta.carriedPc ?? { raw: '', xp: 0 },
+    carriedPcs: Array.isArray(meta.carriedPcs)
+      ? meta.carriedPcs
+      : meta.carriedPc ? [{ id: 'pc', ...meta.carriedPc }] : [],
     chapters: (meta.chapters || []).map(({ outcome: _outcome, ...chapter }) => chapter),
     canonRevision: meta.canonRevision ?? 0,
     rulesetId: meta.rulesetId ?? 'simple',

@@ -37,7 +37,10 @@ function singleUpload(req, res, next) {
       return;
     }
     const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-    res.status(status).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'image must be at most 10 MB' : error.message });
+    res.status(status).json({
+      error: error.code === 'LIMIT_FILE_SIZE' ? 'image must be at most 10 MB' : 'invalid image upload',
+      code: error.code === 'LIMIT_FILE_SIZE' ? 'IMAGE_TOO_LARGE' : 'INVALID_IMAGE_UPLOAD',
+    });
   });
 }
 

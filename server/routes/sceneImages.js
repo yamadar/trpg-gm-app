@@ -117,8 +117,8 @@ export function createSceneImagesRouter({
         fetchImpl,
         referenceImages,
       });
-    } catch (e) {
-      res.status(502).json({ error: `image generation failed: ${e.message}` });
+    } catch {
+      res.status(502).json({ error: 'image generation failed', code: 'IMAGE_GENERATION_FAILED' });
       return;
     }
     const imageId = newImageId();

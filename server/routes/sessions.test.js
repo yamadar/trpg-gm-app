@@ -10,7 +10,7 @@ import { createNovelJobRunner } from '../novelJobs.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
 import { createFsImageStore } from '../storage/imageStore.js';
-import { sessionImagePath, sessionNovelJobKey, sessionNovelNoticeKey } from '../storage/paths.js';
+import { sessionImagePath, sessionKey, sessionNovelJobKey, sessionNovelNoticeKey } from '../storage/paths.js';
 
 let dir;
 let dataStore;
@@ -49,7 +49,7 @@ function buildApp(opts = {}) {
     now,
   });
   app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '2mb' }));
   app.use((req, res, next) => {
     req.userId = 'usr_test';
     next();
@@ -93,6 +93,25 @@ describe('sessions routes', () => {
     const res = await request(app).get('/api/sessions');
     expect(res.status).toBe(200);
     expect(res.body.map((s) => s.id).sort()).toEqual(['s1', 's2']);
+  });
+
+  it('rejects session documents larger than one MiB', async () => {
+    const res = await request(app)
+      .put('/api/sessions/large')
+      .send({ title: 'large', payload: 'x'.repeat(1024 * 1024) });
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe('SESSION_TOO_LARGE');
+    expect(await dataStore.get(sessionKey('usr_test', 'large'))).toBeNull();
+  });
+
+  it('caps the number of stored sessions per user', async () => {
+    await Promise.all(
+      Array.from({ length: 100 }, (_, index) =>
+        dataStore.set(sessionKey('usr_test', `existing_${index}`), { id: `existing_${index}` })),
+    );
+    const res = await request(app).put('/api/sessions/one_more').send({ title: 'overflow' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('SESSION_LIMIT_REACHED');
   });
 
   it('rejects a stale device revision without overwriting server progress', async () => {
@@ -165,11 +184,15 @@ describe('sessions routes', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 500 from novelize when no API key is configured', async () => {
+  it('returns a fixed 503 from novelize when no API key is configured', async () => {
     buildApp({ apiKey: undefined });
     await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
     const res = await request(app).post('/api/sessions/s1/novelize');
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      error: 'novel generation is unavailable',
+      code: 'NOVEL_GENERATION_UNAVAILABLE',
+    });
   });
 
   it('generates and stores a novelization from the session log, retrievable via GET', async () => {
@@ -423,7 +446,8 @@ describe('sessions routes', () => {
     await waitForJob('s1');
     const jobs = await request(app).get('/api/novel-jobs');
     expect(jobs.body.s1.status).toBe('error');
-    expect(jobs.body.s1.error).toContain('boom');
+    expect(jobs.body.s1.error).toBe('小説化に失敗した。時間をおいて再試行してください。');
+    expect(JSON.stringify(jobs.body)).not.toContain('boom');
   });
 
   it('returns 429 from novelize when the daily limit is exhausted', async () => {

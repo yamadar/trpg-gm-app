@@ -77,6 +77,29 @@ function normalizePitches(items, now = Date.now()) {
   }));
 }
 
+function normalizeProposedPcs(generated, session) {
+  const sessionPcs = Array.isArray(session.pcs) ? session.pcs : [];
+  const generatedById = new Map(
+    (Array.isArray(generated.proposed_pcs ?? generated.proposedPcs)
+      ? generated.proposed_pcs ?? generated.proposedPcs
+      : []).map((pc) => [pc.id, pc]),
+  );
+  if (sessionPcs.length > 0) {
+    return sessionPcs.map((pc, index) => {
+      const proposed = generatedById.get(pc.id) || {};
+      return {
+        id: pc.id,
+        characterName: cleanText(proposed.character_name ?? proposed.characterName ?? pc.characterName, 200) || `PC ${index + 1}`,
+        raw: cleanText(proposed.raw, 30000) || pc.raw || '',
+        xp: Number.isFinite(proposed.xp)
+          ? Math.max(0, Math.round(proposed.xp))
+          : Math.max(0, Math.round(session.state?.party?.pcs?.[pc.id]?.xp ?? 0)),
+      };
+    });
+  }
+  return [];
+}
+
 function hasPendingChapter(campaign) {
   return (campaign.chapters || []).some((chapter) => chapter.status !== 'reconciled');
 }
@@ -105,9 +128,10 @@ async function consumeGeneration(usage, userId) {
   if (!usage) return { ok: true };
   try {
     return await usage.consume(userId, 'messages');
-  } catch (error) {
-    const wrapped = new Error(`usage check failed: ${error.message}`);
+  } catch {
+    const wrapped = new Error('usage check failed');
     wrapped.status = 502;
+    wrapped.code = 'USAGE_CHECK_FAILED';
     throw wrapped;
   }
 }
@@ -152,13 +176,17 @@ export function createCampaignsRouter({
   }));
 
   router.put('/worlds/:worldId/campaigns/:id', asyncHandler(async (req, res) => {
-    const { title, carriedPc, chapters } = req.body || {};
+    const { title, carriedPc, carriedPcs, chapters } = req.body || {};
     if (typeof title !== 'string' || typeof carriedPc?.raw !== 'string' || typeof carriedPc?.xp !== 'number') {
       res.status(400).json({ error: 'title and carriedPc { raw, xp } are required' });
       return;
     }
     if (chapters !== undefined && !Array.isArray(chapters)) {
       res.status(400).json({ error: 'chapters must be an array' });
+      return;
+    }
+    if (carriedPcs !== undefined && !Array.isArray(carriedPcs)) {
+      res.status(400).json({ error: 'carriedPcs must be an array' });
       return;
     }
     const lockKey = `${req.userId}/${req.params.worldId}/${req.params.id}`;
@@ -190,6 +218,7 @@ export function createCampaignsRouter({
         worldId: req.params.worldId,
         title: title.trim() || '無題のキャンペーン',
         carriedPc,
+        carriedPcs,
         chapters: mergedChapters,
         // currentState/canonRevisionは章精算acceptだけが変更する。
         currentState: existing?.currentState ?? req.body.currentState,
@@ -322,8 +351,8 @@ export function createCampaignsRouter({
     let generated;
     try {
       generated = await generator.reconcile({ campaign, sources, worldRaw: worldRaw || '', session });
-    } catch (error) {
-      res.status(502).json({ error: `campaign reconciliation failed: ${error.message}` });
+    } catch {
+      res.status(502).json({ error: 'campaign reconciliation failed', code: 'CAMPAIGN_RECONCILIATION_FAILED' });
       return;
     }
     const timestamp = now();
@@ -336,6 +365,7 @@ export function createCampaignsRouter({
       status: 'ready',
       summary: cleanText(generated.summary, 5000),
       proposedPcRaw: cleanText(generated.proposed_pc_raw ?? generated.proposedPcRaw, 30000) || session.pc?.raw || '',
+      proposedPcs: normalizeProposedPcs(generated, session),
       changes: normalizeChanges(generated.changes, timestamp),
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -407,6 +437,19 @@ export function createCampaignsRouter({
       }
       const summary = cleanText(req.body?.summary ?? draft.summary, 5000);
       const pcRaw = cleanText(req.body?.pcRaw ?? draft.proposedPcRaw, 30000) || session.pc?.raw || '';
+      const proposedPcsById = new Map((draft.proposedPcs || []).map((pc) => [pc.id, pc]));
+      const carriedPcs = (Array.isArray(req.body?.pcs) ? req.body.pcs : draft.proposedPcs || [])
+        .map((pc) => {
+          const proposed = proposedPcsById.get(pc.id);
+          if (!proposed) return null;
+          return {
+            ...proposed,
+            characterName: cleanText(pc.characterName ?? proposed.characterName, 200),
+            raw: cleanText(pc.raw ?? proposed.raw, 30000) || proposed.raw,
+            xp: Number.isFinite(pc.xp) ? Math.max(0, Math.round(pc.xp)) : proposed.xp,
+          };
+        })
+        .filter(Boolean);
       const chapter = {
         chapterId: `chapter_${session.id}`,
         sessionId: session.id,
@@ -425,6 +468,9 @@ export function createCampaignsRouter({
         ...campaign,
         chapters,
         carriedPc: { raw: pcRaw, xp: session.state?.xp || 0 },
+        carriedPcs: carriedPcs.length
+          ? carriedPcs
+          : [{ id: session.pc?.id || 'pc', characterName: session.pc?.name || '', raw: pcRaw, xp: session.state?.xp || 0 }],
         currentState: applyCampaignChanges(campaign.currentState, changes),
         canonRevision: (campaign.canonRevision ?? 0) + 1,
         rulesetId: session.rulesetId || campaign.rulesetId,
@@ -485,8 +531,8 @@ export function createCampaignsRouter({
         worldRaw: worldRaw || '',
         requestText: cleanText(req.body?.requestText, 4000),
       });
-    } catch (error) {
-      res.status(502).json({ error: `campaign pitch generation failed: ${error.message}` });
+    } catch {
+      res.status(502).json({ error: 'campaign pitch generation failed', code: 'CAMPAIGN_PITCH_GENERATION_FAILED' });
       return;
     }
     const timestamp = now();
@@ -544,8 +590,8 @@ export function createCampaignsRouter({
         pitchId: pitch.id,
         basedOnCanonRevision: campaign.canonRevision ?? 0,
       });
-    } catch (error) {
-      res.status(502).json({ error: `campaign scenario generation failed: ${error.message}` });
+    } catch {
+      res.status(502).json({ error: 'campaign scenario generation failed', code: 'CAMPAIGN_SCENARIO_GENERATION_FAILED' });
     }
   }));
 

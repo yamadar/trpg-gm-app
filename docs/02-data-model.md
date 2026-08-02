@@ -101,13 +101,14 @@ Ruleset(ルール)  … World/Scenarioとは独立したライブラリ。Sessio
                    ユーザーが独自に作成したカスタムRulesetも保存・選択できる(3.5.1節参照)
 
 Session(プレイ単位) = World + Scenario + Ruleset(埋め込みスナップショット) + PC + state
+                      SoloはPC 1体、Partyはpcs[] 2〜6体と共有state
                       ↑ 実際に保存・再開される単位
 ```
-**Campaign(連作シナリオ)実装済み(2026-07-24、プレイ結果適応型へ2026-08-01拡張)**。事前に全章を固定せず、終了したSessionの結果をGM承認済み正史へ変換してから次話を生成するオープンな連鎖。CampaignメタはWorld配下のライブラリ実体で、`campaignMetaKey`は`users/{userId}/worlds/{worldId}/campaigns/{campaignId}`へフラット化して一覧可能。既存の`carriedPc: { raw, xp }`と`chapters[]`を維持しつつ、`currentState: { canonFacts, characters, factions, timeline, openThreads }`、`canonRevision`、`rulesetId`をadditiveに持つ。章は`status: 'playing' | 'ended' | 'reconciled'`と、精算済みなら`outcome: { summary, changes }`を持つ。`carriedPc`、`currentState`、章outcome、`canonRevision + 1`は章精算案の採用時にCampaign単位ロック内で一括更新する。旧`advanceCampaignPc`は互換関数として残るが、Homeの現行フローからは呼ばれない。
+**Campaign(連作シナリオ)実装済み(2026-07-24、プレイ結果適応型・Party対応へ2026-08-01拡張)**。事前に全章を固定せず、終了したSessionの結果をGM承認済み正史へ変換してから次話を生成するオープンな連鎖。CampaignメタはWorld配下のライブラリ実体で、`campaignMetaKey`は`users/{userId}/worlds/{worldId}/campaigns/{campaignId}`へフラット化して一覧可能。既存の`carriedPc: { raw, xp }`と`chapters[]`を維持しつつ、複数PC用`carriedPcs: [{ id, characterName, raw, xp }]`、`currentState: { canonFacts, characters, factions, timeline, openThreads }`、`canonRevision`、`rulesetId`をadditiveに持つ。章は`status: 'playing' | 'ended' | 'reconciled'`と、精算済みなら`outcome: { summary, changes }`を持つ。`carriedPc`/`carriedPcs`、`currentState`、章outcome、`canonRevision + 1`は章精算案の採用時にCampaign単位ロック内で一括更新する。旧`advanceCampaignPc`は互換関数として残るが、Homeの現行フローからは呼ばれない。
 
 人間が編集する不変寄りの原典はCampaignメタと分離し、`bible.md`(前提・固定事項)、`cast.md`(主要人物・勢力と思惑)、`timeline.md`(PCが介入しない場合の予定事件)として保存する。AIが全Sessionログから作る章精算案も正史と分離し、GMが変更ごとに採用・編集・却下するまで`drafts/{sessionId}.json`へ置く。採用時は`sourceTurnCount`、`sourceSessionUpdatedAt`、`basedOnCanonRevision`を再検証し、ログまたは正史が変わった古い案を409で拒否する。次話候補は生成基準revision付きで保存し、未精算章がある場合、またはrevisionが変わった場合はScenario生成不可。生成Scenarioは通常のScenarioへ保存し、`sourceCampaignId`、`sourceCampaignRevision`、`generatedFromPitchId`をメタへ残す。
 
-素材ライブラリのCampaignタブ(`src/screens/library/CampaignTab.jsx`)は、一覧・新規作成・原典編集・現在状態・章精算レビュー・次話候補生成・Scenario生成・引き継ぎPC・改名・削除を担う。Homeの`worldId`付きSessionには「次話を作る」が出て、Sessionと章を終了状態へ同期した後、対象Campaign/Sessionを選択したCampaignタブへ遷移する。既存Campaignが無い単発Sessionから押した場合は原典未設定Campaignを互換作成する。`campaignId`付きSessionのHomeグルーピングと、削除後のdangling `campaignId`を非グループ表示へ戻す挙動は維持する。クロスWorld、構造化インベントリ、複数PCの`carriedPcs`、PC別既知情報は未実装。
+素材ライブラリのCampaignタブ(`src/screens/library/CampaignTab.jsx`)は、一覧・新規作成・原典編集・現在状態・章精算レビュー・次話候補生成・Scenario生成・引き継ぎPC・改名・削除を担う。Solo/Partyどちらで第一話・生成済み次話を始めるか選べる。Party終了時は全PC設定、PC別state、人間行動とAI同行を区別したログを章精算へ渡し、PC別シート案を編集して`carriedPcs`へ保存する。Homeの`worldId`付きSolo Sessionには「次話を作る」が出て、Sessionと章を終了状態へ同期した後、対象Campaign/Sessionを選択したCampaignタブへ遷移する。既存Campaignが無い単発Sessionから押した場合は原典未設定Campaignを互換作成する。`campaignId`付きSolo SessionのHomeグルーピングと、削除後のdangling `campaignId`を非グループ表示へ戻す挙動は維持する。クロスWorldと構造化インベントリは未実装。
 
 **セッション終了(`endedAt`)は実装済み(2026-07-25)**。セッションは任意`endedAt?: number`を持つ。Play画面で「この物語を終える」を押したとき、またはキャンペーンで「次話を作る」を実行したとき(その章を終わったとみなし、`chapters[].endedAt`と同じタイミングで設定する)に現在時刻が入る。未設定なら未完結。`endedAt`があってもセッションは継続可能(入力欄は塞がれない。エピローグの書き足しや誤操作の救済のため)で、取り消しUIは無い。Home一覧・Play画面ではこのフィールドの有無で「完結」バッジを表示する(05-ui-ux.md参照)。
 
@@ -161,6 +162,19 @@ sessions/{session_id}/
   novelNotice.json                 完了通知の未読フラグ({ unread: boolean }。
                                     実装済み2026-07-25)
   novel/attachments/...            小説添付画像。本文中の生成挿絵とは別コレクション
+
+sharedSessions/{session_id}.json   Partyメタ(owner/participants/pcs/settings/gmSnapshot/eventSeq等、グローバル名前空間)
+sharedSessions/{session_id}/
+  snapshot.json                    共有global/Scene/PC stateとaudience付き描写
+  rounds/{round_id}.json           行動、ready、締切、投票、解決ID
+  events/{seq12桁}.json            単調増加event。snapshot/sessionより先に保存
+  chat/{seq12桁}.json              AI入力から分離したPartyチャット
+  invites/{invite_id}.json         SHA-256ハッシュだけを保存する招待
+
+sharedSessions/{session_id}.jsonの`gmSnapshot`は参加者向けAPIへ返さない。終了時、ホストの`users/{ownerId}/sessions/{session_id}`へ`mode:'party'`の章精算用exportも保存するが、Solo一覧APIからは除外する。
+
+users/{user_id}/sharedSessions/{session_id}.json
+                                    Party membership一覧用index
 
 profile-image/
   manifest.json                    ユーザーが設定したプロフィール画像。最大1枚

@@ -23,6 +23,8 @@ function isStale(meta, session) {
 
 const PRESENCE_TTL_MS = 45_000;
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+const MAX_SESSIONS_PER_USER = 100;
+const MAX_SESSION_BYTES = 1024 * 1024;
 
 function revisionOf(session) {
   const revision = session?._sync?.revision;
@@ -72,7 +74,9 @@ export function createSessionsRouter({
   router.get('/sessions', asyncHandler(async (req, res) => {
     const keys = await dataStore.list(sessionListPrefix(req.userId));
     const sessions = await Promise.all(keys.map((k) => dataStore.get(k)));
-    res.json(sessions.filter(Boolean));
+    // Party終了時のCampaign章精算用exportはowner名前空間にも置くが、Solo一覧へ
+    // 二重表示しない。Party一覧は /party-sessions が担う。
+    res.json(sessions.filter((session) => session && session.mode !== 'party'));
   }));
 
   // 一覧画面が全セッションのジョブ状態を1リクエストで取れるようにする
@@ -136,7 +140,7 @@ export function createSessionsRouter({
     }
     const force = req.get('X-Force-Overwrite') === 'true';
     const key = sessionKey(req.userId, req.params.id);
-    const result = await withSessionLock(key, async () => {
+    const result = await withSessionLock(`user-sessions/${req.userId}`, () => withSessionLock(key, async () => {
       const current = await dataStore.get(key);
       const currentRevision = revisionOf(current);
       if (!force && current && expectedRevision !== null && expectedRevision !== currentRevision) {
@@ -153,9 +157,24 @@ export function createSessionsRouter({
           clientUpdatedAt: Number.isFinite(req.body.updatedAt) ? req.body.updatedAt : null,
         },
       };
+      if (Buffer.byteLength(JSON.stringify(session), 'utf8') > MAX_SESSION_BYTES) {
+        return { tooLarge: true };
+      }
+      if (!current) {
+        const keys = await dataStore.list(sessionListPrefix(req.userId));
+        if (keys.length >= MAX_SESSIONS_PER_USER) return { tooMany: true };
+      }
       await dataStore.set(key, session);
       return { session };
-    });
+    }));
+    if (result.tooLarge) {
+      res.status(413).json({ error: 'session is too large', code: 'SESSION_TOO_LARGE' });
+      return;
+    }
+    if (result.tooMany) {
+      res.status(409).json({ error: 'session limit reached', code: 'SESSION_LIMIT_REACHED' });
+      return;
+    }
     if (result.conflict) {
       res.status(409).json({
         error: 'session was updated by another device',
@@ -205,7 +224,7 @@ export function createSessionsRouter({
   // 生成は待たずに202を返す。進行状況は GET /novel-jobs で参照する。
   router.post('/sessions/:id/novelize', asyncHandler(async (req, res) => {
     if (!apiKey) {
-      res.status(500).json({ error: 'GEMINI_TEXT_API_KEY is not configured on the server' });
+      res.status(503).json({ error: 'novel generation is unavailable', code: 'NOVEL_GENERATION_UNAVAILABLE' });
       return;
     }
     const key = sessionKey(req.userId, req.params.id);

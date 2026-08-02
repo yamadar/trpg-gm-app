@@ -3,6 +3,13 @@ import { describe, it, expect } from 'vitest';
 import {
   sessionListPrefix,
   sessionKey,
+  partySessionKey,
+  partySnapshotKey,
+  partyRoundKey,
+  partyEventKey,
+  partyChatKey,
+  partyInviteKey,
+  partyMembershipKey,
   sessionNovelDocPath,
   sessionNovelMetaKey,
   worldListPrefix,
@@ -62,6 +69,16 @@ describe('storage paths', () => {
 
   it('builds a session key', () => {
     expect(sessionKey('usr_1', 's1')).toBe('users/usr_1/sessions/s1');
+  });
+
+  it('builds shared Party session, event, chat, invite and membership keys', () => {
+    expect(partySessionKey('p1')).toBe('sharedSessions/p1');
+    expect(partySnapshotKey('p1')).toBe('sharedSessions/p1/snapshot');
+    expect(partyRoundKey('p1', 'round_1')).toBe('sharedSessions/p1/rounds/round_1');
+    expect(partyEventKey('p1', 12)).toBe('sharedSessions/p1/events/000000000012');
+    expect(partyChatKey('p1', 3)).toBe('sharedSessions/p1/chat/000000000003');
+    expect(partyInviteKey('p1', 'i1')).toBe('sharedSessions/p1/invites/i1');
+    expect(partyMembershipKey('u1', 'p1')).toBe('users/u1/sharedSessions/p1');
   });
 
   it('builds session novel paths', () => {

@@ -4,6 +4,9 @@ import { listSessions, getSession, saveSession, isStorageAvailable } from './sto
 import Home from './screens/Home.jsx';
 import Setup from './screens/Setup.jsx';
 import Play from './screens/Play.jsx';
+import PartySetup from './screens/PartySetup.jsx';
+import PartyPlay from './screens/PartyPlay.jsx';
+import PartyJoin from './screens/PartyJoin.jsx';
 import Library from './screens/Library.jsx';
 import Gallery from './screens/Gallery.jsx';
 import UserPage from './screens/UserPage.jsx';
@@ -25,6 +28,7 @@ import {
   SESSION_CONFLICT_EVENT,
 } from './api/sessionSyncClient.js';
 import { reconcileServerSessions } from './api/sessionReconcile.js';
+import { listPartySessions } from './api/partyClient.js';
 
 export default function App() {
   return (
@@ -43,6 +47,7 @@ function AppInner() {
   // route オブジェクトは hash が動くたびに作り直されるため、同一性の判定には正準 hash を使う。
   const routeKey = buildHash(route);
   const [sessions, setSessions] = useState([]);
+  const [partySessions, setPartySessions] = useState([]);
   const [session, setSession] = useState(null);
   // バナーはシェルの子として全ルートに描かれるため、出しっぱなしにすると
   // 一度の失敗が以降すべての画面の先頭に居座る。「どのルートで見せたいバナーか」を
@@ -72,6 +77,7 @@ function AppInner() {
   // Homeの「次話を作る」からCampaign制作画面へ渡す選択状態。
   // reconciliation対象sessionIdもURLへ載せず、CampaignTabが章精算を開くために使う。
   const [campaignFocus, setCampaignFocus] = useState(null);
+  const [partyWizard, setPartyWizard] = useState({ seq: 0, context: null });
   const takeover = useSessionTakeover();
 
   useEffect(() => {
@@ -94,6 +100,11 @@ function AppInner() {
     setCampaignFocus(null);
     setWizard((prev) => ({ seq: prev.seq + 1, campaignContext: null, starterContext: null, ...context }));
     navigate({ name: 'setup' });
+  }
+
+  function openPartyWizard(context = null) {
+    setPartyWizard((current) => ({ seq: current.seq + 1, context }));
+    navigate({ name: 'partySetup' });
   }
 
   // 直前のルート。プレイ画面から離れたことを検知するために持つ。
@@ -134,13 +145,28 @@ function AppInner() {
       if (loading) return;
       loading = true;
       let list = await listSessions();
+      if (!user && !cancelled) setPartySessions([]);
       if (user) {
-        try {
-          const remote = await listServerSessions();
-          const { pulledIds } = await reconcileServerSessions(list, remote);
-          if (pulledIds.length > 0) list = await listSessions();
-        } catch (e) {
-          console.error('background session sync failed', e);
+        const [remoteResult, partyResult] = await Promise.allSettled([
+          listServerSessions(),
+          listPartySessions(),
+        ]);
+        if (partyResult.status === 'fulfilled') {
+          const parties = partyResult.value;
+          if (!cancelled) setPartySessions(parties);
+        } else {
+          console.error('background party session sync failed', partyResult.reason);
+        }
+        if (remoteResult.status === 'fulfilled') {
+          try {
+            const remote = remoteResult.value;
+            const { pulledIds } = await reconcileServerSessions(list, remote);
+            if (pulledIds.length > 0) list = await listSessions();
+          } catch (e) {
+            console.error('background session reconciliation failed', e);
+          }
+        } else {
+          console.error('background session sync failed', remoteResult.reason);
         }
       }
       if (cancelled) return;
@@ -337,8 +363,11 @@ function AppInner() {
           ) : (
             <Home
               sessions={sessions}
+              partySessions={partySessions}
               storageOk={storageOk}
               onNew={() => openWizard({})}
+              onNewParty={() => openPartyWizard(null)}
+              onContinueParty={(id) => navigate({ name: 'party', sessionId: id })}
               onNewCampaign={() => {
                 setCampaignFocus(null);
                 navigate({ name: 'library', libraryTab: 'campaign', worldId: null });
@@ -360,11 +389,23 @@ function AppInner() {
             starterContext={wizard.starterContext}
           />
         )}
+        {route.name === 'partySetup' && (
+          <PartySetup
+            key={partyWizard.seq}
+            initialContext={partyWizard.context}
+            onCreated={(id) => navigate({ name: 'party', sessionId: id })}
+          />
+        )}
+        {route.name === 'partyJoin' && (
+          <PartyJoin sessionId={route.sessionId} inviteToken={route.inviteToken} />
+        )}
+        {route.name === 'party' && <PartyPlay key={route.sessionId} sessionId={route.sessionId} />}
         {route.name === 'library' && (
           <Library
             route={route}
             campaignFocus={campaignFocus}
             onStartCampaignChapter={(ctx) => openWizard({ campaignContext: ctx })}
+            onStartPartyChapter={openPartyWizard}
           />
         )}
         {route.name === 'browse' && (

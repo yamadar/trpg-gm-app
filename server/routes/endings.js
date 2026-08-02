@@ -15,7 +15,7 @@ export function createEndingsRouter({ dataStore, apiKey, model, fetchImpl = fetc
 
   router.post('/sessions/:id/ending', asyncHandler(async (req, res) => {
     if (!apiKey) {
-      res.status(500).json({ error: 'GEMINI_TEXT_API_KEY is not configured on the server' });
+      res.status(503).json({ error: 'ending generation is unavailable', code: 'ENDING_GENERATION_UNAVAILABLE' });
       return;
     }
     const session = await dataStore.get(sessionKey(req.userId, req.params.id));
@@ -38,8 +38,8 @@ export function createEndingsRouter({ dataStore, apiKey, model, fetchImpl = fetc
       let check;
       try {
         check = await usage.consume(req.userId, 'messages');
-      } catch (e) {
-        res.status(502).json({ error: `usage check failed: ${e.message}` });
+      } catch {
+        res.status(502).json({ error: 'usage check failed', code: 'USAGE_CHECK_FAILED' });
         return;
       }
       if (!check.ok) {
@@ -50,8 +50,8 @@ export function createEndingsRouter({ dataStore, apiKey, model, fetchImpl = fetc
     let named;
     try {
       named = await nameEnding({ session, apiKey, model, fetchImpl });
-    } catch (e) {
-      res.status(502).json({ error: e.message });
+    } catch {
+      res.status(502).json({ error: 'ending generation failed', code: 'ENDING_GENERATION_FAILED' });
       return;
     }
     const ending = {

@@ -83,8 +83,11 @@ export function collectUnreadIds(jobs, announced, knownIds) {
 
 export default function Home({
   sessions,
+  partySessions = [],
   storageOk,
   onNew,
+  onNewParty,
+  onContinueParty,
   onNewCampaign,
   onContinue,
   onNextChapter,
@@ -790,6 +793,9 @@ export default function Home({
         <Button variant="brass" onClick={onNew} disabled={!user}>
           + 新規プレイ
         </Button>
+        <Button variant="brass" onClick={onNewParty} disabled={!user || !onNewParty}>
+          + パーティで遊ぶ
+        </Button>
         <Button variant="ghost" onClick={onNewCampaign} disabled={!user || !onNewCampaign}>
           + 新規キャンペーン
         </Button>
@@ -805,6 +811,31 @@ export default function Home({
           }}
         >
           プレイと小説化にはログインが必要です(右上からログイン)
+        </div>
+      )}
+
+      {partySessions.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.brassDark, marginBottom: 10 }}>
+            Partyセッション
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {partySessions.map((party) => (
+              <Card key={party.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontFamily: F_DISPLAY, fontSize: 14, color: COLORS.ink }}>{party.title}</div>
+                    <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, marginTop: 3 }}>
+                      {party.status === 'lobby' ? 'ロビー' : party.status === 'ended' ? '終了' : party.status === 'paused' ? '停止中' : '進行中'} / {party.playerCount}人
+                    </div>
+                  </div>
+                  <Button variant="ghost" onClick={() => onContinueParty?.(party.id)} disabled={!onContinueParty}>
+                    {party.status === 'lobby' ? 'ロビーへ' : party.status === 'ended' ? '記録を見る' : '参加する'}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 

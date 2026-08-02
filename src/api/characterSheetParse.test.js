@@ -25,22 +25,23 @@ describe('parseCharacterSheet', () => {
     expect(result).toEqual({ name: '', goal: '', bonds: '' });
   });
 
-  it('sends the raw character sheet as the user message', async () => {
+  it('sends the raw character sheet through the fixed parse operation', async () => {
     const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({ name: '', goal: '', bonds: '' }) }],
     });
     await parseCharacterSheet('PC名: キャロル');
-    expect(callTextModelMock.mock.calls[0][0].messages[0].content).toBe('PC名: キャロル');
+    expect(callTextModelMock.mock.calls[0]).toEqual([
+      'parse-character-sheet',
+      { raw: 'PC名: キャロル' },
+    ]);
   });
 
-  it('asks the model for the name in the output schema', async () => {
+  it('uses the parse-character-sheet operation name', async () => {
     const callTextModelMock = vi.spyOn(client, 'callTextModel').mockResolvedValue({
       content: [{ type: 'text', text: JSON.stringify({ name: '', goal: '', bonds: '' }) }],
     });
     await parseCharacterSheet('PC名: キャロル');
-    const schema = callTextModelMock.mock.calls[0][0].output_config.format.schema;
-    expect(schema.properties).toHaveProperty('name');
-    expect(schema.required).toContain('name');
+    expect(callTextModelMock.mock.calls[0][0]).toBe('parse-character-sheet');
   });
 
   // キャッシュの世代交代に使う。スキーマを変えたら必ず上げる。
