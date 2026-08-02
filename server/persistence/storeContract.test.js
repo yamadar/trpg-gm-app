@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createPersistence } from './createPersistence.js';
+import { createPersistence, resolveSqlitePath } from './createPersistence.js';
 
 const resources = [];
 
@@ -19,6 +19,12 @@ afterEach(async () => {
     persistence.close();
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+describe('resolveSqlitePath', () => {
+  it('preserves the in-memory sentinel used by migration dry-runs', () => {
+    expect(resolveSqlitePath(':memory:', '/tmp/data')).toBe(':memory:');
+  });
 });
 
 for (const driver of ['filesystem', 'sqlite']) {

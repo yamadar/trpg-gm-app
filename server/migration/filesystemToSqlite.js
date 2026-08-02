@@ -48,6 +48,15 @@ function jsonKey(relativePath) {
   return relativePath.slice(0, -JSON_SUFFIX.length);
 }
 
+const LEGACY_USER_DIRECTORIES = new Set(['sessions', 'worlds', 'rulesets']);
+
+function targetRelativePath(relativePath, legacyOwnerId) {
+  const [root] = relativePath.split('/');
+  return legacyOwnerId && LEGACY_USER_DIRECTORIES.has(root)
+    ? `users/${legacyOwnerId}/${relativePath}`
+    : relativePath;
+}
+
 function rootMaps(jsonEntries) {
   const parties = new Map();
   const published = new Map();
@@ -127,6 +136,19 @@ function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function canSupersedeLegacy(entry, current) {
+  const sourceUpdatedAt = Number(entry.value?.updatedAt);
+  const targetUpdatedAt = Number(current?.updatedAt);
+  return entry.legacyRemapped
+    && entry.targetKind === 'record'
+    && typeof entry.value?.id === 'string'
+    && entry.value.id.length > 0
+    && entry.value.id === current?.id
+    && Number.isFinite(sourceUpdatedAt)
+    && Number.isFinite(targetUpdatedAt)
+    && targetUpdatedAt >= sourceUpdatedAt;
+}
+
 function usageCoordinates(key) {
   let match = key.match(/^users\/([^/]+)\/usage\/(\d{4}-\d{2}-\d{2})$/);
   if (match) return { scope: 'user', ownerId: match[1], day: match[2] };
@@ -150,7 +172,10 @@ function importUsageCounters(db, key, value, timestamp) {
   }
 }
 
-export async function inspectFilesystemData(dataDir) {
+export async function inspectFilesystemData(dataDir, { legacyOwnerId = null } = {}) {
+  if (legacyOwnerId != null && !safeOwnerId(legacyOwnerId)) {
+    throw new Error('legacyOwnerId is invalid');
+  }
   const filenames = await walk(dataDir);
   const rawEntries = [];
   for (const filename of filenames) {
@@ -172,30 +197,43 @@ export async function inspectFilesystemData(dataDir) {
   const jsonEntries = rawEntries
     .filter((entry) => entry.extension === JSON_SUFFIX)
     .map((entry) => {
+      const targetPath = targetRelativePath(entry.relativePath, legacyOwnerId);
       try {
-        return { ...entry, targetKey: jsonKey(entry.relativePath), value: JSON.parse(entry.buffer.toString('utf8')) };
+        return {
+          ...entry,
+          targetPath,
+          targetKey: jsonKey(targetPath),
+          value: JSON.parse(entry.buffer.toString('utf8')),
+        };
       } catch (error) {
-        return { ...entry, targetKey: jsonKey(entry.relativePath), parseError: error.name || 'SyntaxError' };
+        return {
+          ...entry,
+          targetPath,
+          targetKey: jsonKey(targetPath),
+          parseError: error.name || 'SyntaxError',
+        };
       }
     });
   const maps = rootMaps(jsonEntries);
   const entries = rawEntries.map((entry) => {
     const parsed = entry.extension === JSON_SUFFIX
       ? jsonEntries.find((candidate) => candidate.relativePath === entry.relativePath)
-      : entry;
+      : { ...entry, targetPath: targetRelativePath(entry.relativePath, legacyOwnerId) };
     const targetKind = entry.extension === JSON_SUFFIX
       ? 'record'
       : DOCUMENT_SUFFIXES.has(entry.extension) ? 'document' : 'media';
-    const targetKey = targetKind === 'record' ? parsed.targetKey : entry.relativePath;
+    const targetKey = targetKind === 'record' ? parsed.targetKey : parsed.targetPath;
     return {
       ...parsed,
       targetKind,
       targetKey,
-      ownership: ownershipFor(entry.relativePath, maps),
+      legacyRemapped: parsed.targetPath !== entry.relativePath,
+      ownership: ownershipFor(parsed.targetPath, maps),
     };
   }).sort((a, b) => {
     const kindOrder = { record: 0, document: 1, media: 2 };
     return kindOrder[a.targetKind] - kindOrder[b.targetKind]
+      || Number(a.legacyRemapped) - Number(b.legacyRemapped)
       || a.relativePath.split('/').length - b.relativePath.split('/').length
       || a.relativePath.localeCompare(b.relativePath);
   });
@@ -215,6 +253,8 @@ export async function migrateFilesystemToSqlite({
   persistence,
   dryRun = false,
   validateOnly = false,
+  legacyOwnerId = null,
+  allowSupersededLegacy = false,
   now = Date.now,
 } = {}) {
   if (!dataDir || !persistence?.db || persistence.driver !== 'sqlite') {
@@ -222,7 +262,7 @@ export async function migrateFilesystemToSqlite({
   }
   if (dryRun && validateOnly) throw new Error('dryRun and validateOnly are mutually exclusive');
 
-  const inspected = await inspectFilesystemData(dataDir);
+  const inspected = await inspectFilesystemData(dataDir, { legacyOwnerId });
   const { db, dataStore, textStore, transaction } = persistence;
   const report = {
     mode: dryRun ? 'dry-run' : validateOnly ? 'validate-only' : 'import',
@@ -232,7 +272,9 @@ export async function migrateFilesystemToSqlite({
     totals: { files: inspected.entries.length, bytes: 0, records: 0, documents: 0, media: 0 },
     imported: 0,
     adopted: 0,
+    superseded: 0,
     retainedMedia: 0,
+    copiedMedia: 0,
     skipped: 0,
     validated: 0,
     owners: {},
@@ -316,16 +358,47 @@ export async function migrateFilesystemToSqlite({
     if (entry.targetKind === 'media') {
       if (validateOnly) {
         try {
-          const current = await fs.readFile(entry.filename);
+          const current = entry.targetKey === entry.relativePath
+            ? await fs.readFile(entry.filename)
+            : await persistence.imageStore.read(entry.targetKey);
+          if (!current) throw new Error('media_missing');
           if (sha256(current) === entry.sha256) report.validated += 1;
           else report.validationErrors.push({ sourcePath: entry.relativePath, reason: 'media_checksum_mismatch' });
         } catch {
           report.validationErrors.push({ sourcePath: entry.relativePath, reason: 'media_missing' });
         }
       } else if (dryRun) {
-        report.retainedMedia += 1;
+        if (entry.targetKey === entry.relativePath) report.retainedMedia += 1;
+        else report.copiedMedia += 1;
       } else {
         const journal = journalGet.get(entry.relativePath);
+        if (entry.targetKey !== entry.relativePath) {
+          const current = await persistence.imageStore.read(entry.targetKey);
+          const matches = current && sha256(current) === entry.sha256;
+          if (!journal && current && !matches) {
+            await quarantine(entry, 'destination_conflict', {
+              targetKind: entry.targetKind,
+              targetKey: entry.targetKey,
+            });
+            continue;
+          }
+          if (!matches) await persistence.imageStore.write(entry.targetKey, entry.buffer);
+          await transaction(() => {
+            journalUpsert.run(
+              entry.relativePath,
+              entry.sha256,
+              entry.bytes,
+              'media',
+              entry.targetKey,
+              matches ? 'adopted' : 'imported',
+              now(),
+            );
+            quarantineDelete.run(entry.relativePath);
+          });
+          if (journal?.source_sha256 === entry.sha256 && matches) report.skipped += 1;
+          else report.copiedMedia += 1;
+          continue;
+        }
         await transaction(async () => {
           await persistence.repositories.storage.setItem(
             'media',
@@ -351,19 +424,51 @@ export async function migrateFilesystemToSqlite({
     const expected = entry.targetKind === 'record' ? entry.value : entry.buffer.toString('utf8');
     const current = await existingValue(entry);
     const matches = entry.targetKind === 'record' ? sameJson(current, expected) : current === expected;
+    const journal = journalGet.get(entry.relativePath);
     if (validateOnly) {
-      if (matches) report.validated += 1;
+      if (matches || (journal?.status === 'superseded' && canSupersedeLegacy(entry, current))) {
+        report.validated += 1;
+      }
       else report.validationErrors.push({ sourcePath: entry.relativePath, reason: current === null ? 'target_missing' : 'target_mismatch' });
       continue;
     }
     if (dryRun) continue;
 
-    const journal = journalGet.get(entry.relativePath);
+    if (journal?.status === 'superseded') {
+      if (canSupersedeLegacy(entry, current)) {
+        report.skipped += 1;
+      } else {
+        await quarantine(entry, 'superseded_target_invalid', {
+          targetKind: entry.targetKind,
+          targetKey: entry.targetKey,
+        });
+      }
+      continue;
+    }
     if (journal?.source_sha256 === entry.sha256 && matches) {
       report.skipped += 1;
       continue;
     }
     if (!journal && current !== null && !matches) {
+      if (
+        allowSupersededLegacy
+        && canSupersedeLegacy(entry, current)
+      ) {
+        await transaction(() => {
+          journalUpsert.run(
+            entry.relativePath,
+            entry.sha256,
+            entry.bytes,
+            entry.targetKind,
+            entry.targetKey,
+            'superseded',
+            now(),
+          );
+          quarantineDelete.run(entry.relativePath);
+        });
+        report.superseded += 1;
+        continue;
+      }
       await quarantine(entry, 'destination_conflict', { targetKind: entry.targetKind, targetKey: entry.targetKey });
       continue;
     }

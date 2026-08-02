@@ -25,6 +25,7 @@ export function resolveDatabaseDriver(value) {
 export function resolveSqlitePath(value, dataDir) {
   const configured = String(value || '').trim();
   if (!configured) return path.join(dataDir, 'gmdesk.sqlite3');
+  if (configured === ':memory:') return configured;
   return path.isAbsolute(configured) ? configured : path.resolve(configured);
 }
 

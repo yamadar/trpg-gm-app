@@ -24,7 +24,7 @@ services:
       sizeGB: 5 # 場面挿絵PNGが増えるので、使用量を見て拡張する(縮小は不可)
     envVars:
       - key: NODE_VERSION
-        value: "24"
+        value: "24.15.0"
       - key: DATA_DIR
         value: /data
       - key: SQLITE_PATH

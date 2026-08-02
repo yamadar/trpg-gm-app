@@ -114,4 +114,83 @@ describe('filesystem to SQLite migration', () => {
       WHERE scope = 'user' AND owner_id = 'usr_1' AND day = '2026-08-02' AND kind = 'textTokens'
     `).get().used_units).toBe(1200);
   });
+
+  it('requires an explicit owner for pre-auth namespaces and remaps their media safely', async () => {
+    await write('sessions/legacy.json', JSON.stringify({ id: 'legacy', title: 'Old' }));
+    await write('sessions/legacy/novel.md', '# Old novel');
+    await write('sessions/legacy/images/img.png', Buffer.from([1, 2, 3]));
+
+    const blocked = await migrateFilesystemToSqlite({ dataDir: dir, persistence, dryRun: true });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.quarantined).toHaveLength(3);
+    expect(blocked.quarantined.every((item) => item.reason === 'unrecognized_namespace')).toBe(true);
+
+    const imported = await migrateFilesystemToSqlite({
+      dataDir: dir,
+      persistence,
+      legacyOwnerId: 'usr_1234567890abcdef',
+    });
+    expect(imported).toMatchObject({ ok: true, imported: 2, copiedMedia: 1 });
+    expect(await persistence.dataStore.get('users/usr_1234567890abcdef/sessions/legacy'))
+      .toMatchObject({ title: 'Old' });
+    expect(await persistence.textStore.read('users/usr_1234567890abcdef/sessions/legacy/novel.md'))
+      .toBe('# Old novel');
+    expect(await persistence.imageStore.read('users/usr_1234567890abcdef/sessions/legacy/images/img.png'))
+      .toEqual(Buffer.from([1, 2, 3]));
+    expect(await fs.readFile(path.join(dir, 'sessions/legacy/images/img.png')))
+      .toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  it('keeps a newer authenticated copy when superseding a legacy record is explicitly allowed', async () => {
+    const legacy = { id: 's1', title: 'Old', updatedAt: 100 };
+    const current = { id: 's1', title: 'Current', updatedAt: 200 };
+    await write('sessions/s1.json', JSON.stringify(legacy));
+    await write('users/usr_1234567890abcdef/sessions/s1.json', JSON.stringify(current));
+
+    const report = await migrateFilesystemToSqlite({
+      dataDir: dir,
+      persistence,
+      legacyOwnerId: 'usr_1234567890abcdef',
+      allowSupersededLegacy: true,
+    });
+
+    expect(report).toMatchObject({ ok: true, imported: 1, superseded: 1 });
+    expect(await persistence.dataStore.get('users/usr_1234567890abcdef/sessions/s1')).toEqual(current);
+    expect(persistence.db.prepare(`
+      SELECT status FROM migration_journal WHERE source_path = 'sessions/s1.json'
+    `).get().status).toBe('superseded');
+    expect(JSON.parse(await fs.readFile(path.join(dir, 'sessions/s1.json'), 'utf8'))).toEqual(legacy);
+
+    const second = await migrateFilesystemToSqlite({
+      dataDir: dir,
+      persistence,
+      legacyOwnerId: 'usr_1234567890abcdef',
+    });
+    expect(second).toMatchObject({ ok: true, skipped: 2 });
+    expect(await persistence.dataStore.get('users/usr_1234567890abcdef/sessions/s1')).toEqual(current);
+    const validation = await migrateFilesystemToSqlite({
+      dataDir: dir,
+      persistence,
+      legacyOwnerId: 'usr_1234567890abcdef',
+      validateOnly: true,
+    });
+    expect(validation).toMatchObject({ ok: true, validated: 2 });
+  });
+
+  it('does not supersede a newer legacy record or act without explicit approval', async () => {
+    await write('sessions/s1.json', JSON.stringify({ id: 's1', updatedAt: 300 }));
+    await write('users/usr_1234567890abcdef/sessions/s1.json', JSON.stringify({ id: 's1', updatedAt: 200 }));
+
+    const report = await migrateFilesystemToSqlite({
+      dataDir: dir,
+      persistence,
+      legacyOwnerId: 'usr_1234567890abcdef',
+      allowSupersededLegacy: true,
+    });
+    expect(report.ok).toBe(false);
+    expect(report.quarantined).toContainEqual(expect.objectContaining({
+      sourcePath: 'sessions/s1.json',
+      reason: 'destination_conflict',
+    }));
+  });
 });
