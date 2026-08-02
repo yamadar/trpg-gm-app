@@ -29,6 +29,10 @@ function loadMigrations(migrationsDir) {
   return migrations;
 }
 
+export function availableMigrationVersion(migrationsDir = DEFAULT_MIGRATIONS_DIR) {
+  return loadMigrations(migrationsDir).at(-1)?.version ?? 0;
+}
+
 export function ensureMigrationTable(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (

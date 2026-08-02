@@ -51,7 +51,12 @@ export function createPersistence({
         jobs: createFileJobRepository({ dataStore, transaction }),
       },
       metrics: () => ({}),
-      readiness: () => ({ ok: true, driver: selected, migrationVersion: null }),
+      readiness: () => ({
+        ok: true,
+        driver: selected,
+        migrationVersion: null,
+        expectedMigrationVersion: null,
+      }),
       close() {},
     };
   }

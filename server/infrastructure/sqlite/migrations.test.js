@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { openSqliteDatabase } from './database.js';
-import { currentMigrationVersion, runMigrations } from './migrations.js';
+import { availableMigrationVersion, currentMigrationVersion, runMigrations } from './migrations.js';
 
 const dirs = [];
 
@@ -16,6 +16,7 @@ describe('SQLite migrations', () => {
   it('applies numbered migrations once and records checksums', () => {
     const db = openSqliteDatabase(':memory:');
     const version = currentMigrationVersion(db);
+    expect(version).toBe(availableMigrationVersion());
     expect(version).toBeGreaterThanOrEqual(1);
     expect(runMigrations(db).currentVersion).toBe(version);
     expect(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count).toBe(version);

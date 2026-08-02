@@ -90,6 +90,15 @@ function parseLimit(value, def) {
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'off']);
+const MAINTENANCE_MODES = new Set(['off', 'read-only']);
+
+export function resolveMaintenanceMode(value) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'off';
+  if (!MAINTENANCE_MODES.has(mode)) {
+    throw new Error(`MAINTENANCE_MODE must be off or read-only (got: ${value})`);
+  }
+  return mode;
+}
 
 // セッションクッキーのSecure属性は`SECURE_COOKIES`で明示制御する。NODE_ENVは
 // npmのdevDependencies省略やライブラリ側の最適化など無関係な意味を同時に背負って
@@ -131,6 +140,7 @@ export function createApp({
   staticDir = resolveStaticDir(env.STATIC_DIR),
 } = {}) {
   const app = express();
+  const maintenanceMode = resolveMaintenanceMode(env.MAINTENANCE_MODE);
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use(securityHeaders);
@@ -156,6 +166,42 @@ export function createApp({
   app.locals.textStore = textStore;
   app.locals.imageStore = imageStore;
   app.locals.persistence = persistence;
+
+  app.get('/live', (req, res) => {
+    res.json({ ok: true });
+  });
+  app.get('/ready', (req, res) => {
+    try {
+      const state = persistence.readiness();
+      const ready = state.ok === true && maintenanceMode === 'off';
+      res.status(ready ? 200 : 503).json({
+        ok: ready,
+        driver: state.driver,
+        migrationVersion: state.migrationVersion,
+        expectedMigrationVersion: state.expectedMigrationVersion,
+        maintenanceMode,
+      });
+    } catch {
+      res.status(503).json({
+        ok: false,
+        driver: persistence.driver,
+        migrationVersion: null,
+        expectedMigrationVersion: null,
+        maintenanceMode,
+      });
+    }
+  });
+  if (maintenanceMode === 'read-only') {
+    app.use((req, res, next) => {
+      const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+      const oauthCallback = /^\/auth\/[^/]+\/callback(?:\/|$)/.test(req.path);
+      if (!mutation && !oauthCallback) return next();
+      res.status(503).json({
+        error: 'service is in read-only maintenance mode',
+        code: 'READ_ONLY_MAINTENANCE',
+      });
+    });
+  }
 
   const providers = createProviders(env);
   const usage = createUsage({

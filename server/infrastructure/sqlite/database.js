@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { currentMigrationVersion, runMigrations } from './migrations.js';
+import {
+  availableMigrationVersion,
+  currentMigrationVersion,
+  runMigrations,
+} from './migrations.js';
 
 const MIN_SQLITE_VERSION = '3.37.0';
 const require = createRequire(import.meta.url);
@@ -53,9 +57,12 @@ export function openSqliteDatabase(filename, {
 
 export function sqliteReadiness(db) {
   const row = db.prepare('SELECT 1 AS ok').get();
+  const migrationVersion = currentMigrationVersion(db);
+  const expectedMigrationVersion = availableMigrationVersion();
   return {
-    ok: Number(row?.ok) === 1,
+    ok: Number(row?.ok) === 1 && migrationVersion === expectedMigrationVersion,
     sqliteVersion: String(db.prepare('SELECT sqlite_version() AS version').get().version),
-    migrationVersion: currentMigrationVersion(db),
+    migrationVersion,
+    expectedMigrationVersion,
   };
 }

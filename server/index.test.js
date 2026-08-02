@@ -5,7 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import request from 'supertest';
-import { createApp, resolveSecureCookies, resolveStaticDir } from './index.js';
+import {
+  createApp,
+  resolveMaintenanceMode,
+  resolveSecureCookies,
+  resolveStaticDir,
+} from './index.js';
 import { createTestUserSession } from './auth/testHelpers.js';
 
 let dir;
@@ -30,6 +35,38 @@ afterEach(async () => {
 });
 
 describe('createApp', () => {
+  it('exposes separate liveness and readiness probes', async () => {
+    expect((await request(app).get('/live')).body).toEqual({ ok: true });
+    const ready = await request(app).get('/ready');
+    expect(ready.status).toBe(200);
+    expect(ready.body).toEqual({
+      ok: true,
+      driver: 'filesystem',
+      migrationVersion: null,
+      expectedMigrationVersion: null,
+      maintenanceMode: 'off',
+    });
+  });
+
+  it('marks readiness false and blocks writes during read-only maintenance', async () => {
+    app = createApp({
+      apiKey: 'test-key',
+      dataDir: dir,
+      fetchImpl,
+      env: testEnv({ MAINTENANCE_MODE: 'read-only' }),
+    });
+
+    expect((await request(app).get('/live')).status).toBe(200);
+    expect((await request(app).get('/ready')).status).toBe(503);
+    expect((await request(app).get('/api/config')).status).toBe(200);
+    const write = await request(app).post('/api/sessions');
+    expect(write.status).toBe(503);
+    expect(write.body.code).toBe('READ_ONLY_MAINTENANCE');
+    const callback = await request(app).get('/auth/google/callback');
+    expect(callback.status).toBe(503);
+    expect(callback.body.code).toBe('READ_ONLY_MAINTENANCE');
+  });
+
   it('mounts fixed text operations and proxies via the injected fetchImpl', async () => {
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     const res = await request(app)
@@ -112,7 +149,11 @@ describe('createApp', () => {
       ok: true,
       driver: 'sqlite',
       migrationVersion: expect.any(Number),
+      expectedMigrationVersion: expect.any(Number),
     });
+    const ready = await request(app).get('/ready');
+    expect(ready.status).toBe(200);
+    expect(ready.body.migrationVersion).toBe(ready.body.expectedMigrationVersion);
   });
 
   it('mounts the worlds route', async () => {
@@ -397,6 +438,17 @@ describe('resolveSecureCookies', () => {
   it('throws on an unparseable value instead of silently falling back', () => {
     expect(() => resolveSecureCookies('ture', HTTPS)).toThrow(/SECURE_COOKIES/);
     expect(() => resolveSecureCookies('production', HTTPS)).toThrow(/SECURE_COOKIES/);
+  });
+});
+
+describe('resolveMaintenanceMode', () => {
+  it('defaults to off and accepts read-only', () => {
+    expect(resolveMaintenanceMode(undefined)).toBe('off');
+    expect(resolveMaintenanceMode(' read-only ')).toBe('read-only');
+  });
+
+  it('rejects unknown modes', () => {
+    expect(() => resolveMaintenanceMode('readonly')).toThrow(/MAINTENANCE_MODE/);
   });
 });
 
