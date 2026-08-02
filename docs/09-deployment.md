@@ -1,6 +1,6 @@
 # デプロイ手順(Render)
 
-> **将来設計:** 本書は現行ファイルシステム構成の手順。SQLite/S3移行後の配備・バックアップ・PostgreSQL移行条件は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+> **現行仕様:** filesystem/SQLite並用のRender手順。初回SQLiteカットオーバーまでは`DATABASE_DRIVER=filesystem`、完了後は`sqlite`。S3とPostgreSQL移行条件は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
 
 Renderの **Web Service + Persistent Disk** で公開する手順。所要時間は初回で30〜60分程度。
 
@@ -8,7 +8,7 @@ Renderの **Web Service + Persistent Disk** で公開する手順。所要時間
 
 このアプリは以下の制約を持つため、永続ディスクを1インスタンスに接続できるPaaSが必要になる。
 
-- サーバー側の永続化(`server/storage/dataStore.js` / `textStore.js` / `imageStore.js`)は**ローカルファイルシステム実装**で、`rename`によるアトミック書き込みと`readdir`による一覧に依存している。ユーザー添付画像とプロフィール画像も同じ永続ディスクへ保存する。オブジェクトストレージへ直接置き換えることはできない。
+- JSON/Markdownは`DATABASE_DRIVER`でfilesystem/SQLiteを切替可能。SQLite DBは`/data/gmdesk.sqlite3`、画像はS3移行まで`MEDIA_DIR=/data`のローカルファイルへ保存する。
 - ユーザー添付画像は`sharp`でWebP変換する。`npm ci`が対象環境向けネイティブバイナリを導入するため、依存を本番で省略しない。
 - ディスクを共有する複数インスタンス構成は想定していない(ロック機構なし)。**必ず1インスタンスで運用する**。
 - `POST /api/text-operations/:operation`はGemini APIの応答を非ストリーミングで待つ(`server/routes/textOperations.js`・`server/textProvider.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
@@ -40,7 +40,7 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | Build Command | `npm ci && npm run build` |
 | Start Command | `NODE_ENV=production npm start` |
 | Instance Type | Starter($7/月)以上 |
-| Health Check Path | `/api/config` |
+| Health Check Path | `/ready` |
 
 > **注意**: `NODE_ENV` を**サービスの環境変数に置かないこと**。Renderの環境変数はビルドと実行の両方に適用されるが、`NODE_ENV=production` はnpmの `omit=dev` を意味するため、ビルド時の `npm ci` が `vite` を含むdevDependenciesを省略し `vite: not found` で失敗する。ランタイムにだけ渡したいので、上記のようにStart Commandへ書く。
 >
@@ -63,6 +63,10 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | `STATIC_DIR` | `dist` | ✅ ビルド済みフロントの配信元。未設定だと画面が表示されない。相対パスはリポジトリルート基準 |
 | `SECURE_COOKIES` | `true` | ✅ セッションクッキーのSecure属性。未設定でも`BASE_URL`がhttpsなら有効になるが、本番では明示する |
 | `DATA_DIR` | `/data` | ✅ ディスクのマウントパスと一致させる |
+| `DATABASE_DRIVER` | 初回移行前`filesystem`、移行後`sqlite` | ✅ |
+| `SQLITE_PATH` | `/data/gmdesk.sqlite3` | SQLite時必須 |
+| `MEDIA_DIR` | `/data` | ✅ S3移行までは永続ディスク |
+| `MAINTENANCE_MODE` | 通常`off`、移行中`read-only` | ✅ |
 | `BASE_URL` | `https://<サービス名>.onrender.com`(末尾スラッシュなし) | ✅ |
 | `GEMINI_TEXT_API_KEY` | Google AI Studioのテキスト生成用キー | ✅ |
 | `GEMINI_TEXT_MODEL` | 使用するテキスト生成モデルID | ✅ |
@@ -108,9 +112,11 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 ## 5. 動作確認
 
 ```bash
-# 1. ヘルスチェック(認証不要)
-curl https://<ドメイン>/api/config
-# => {"imageGen":true} または {"imageGen":false}
+# 1. liveness/readiness(認証不要)
+curl https://<ドメイン>/live
+# => {"ok":true}
+curl -i https://<ドメイン>/ready
+# => 200。driver、migrationVersion、expectedMigrationVersion、maintenanceModeを確認
 
 # 2. 有効なログインプロバイダ(認証不要)
 curl https://<ドメイン>/api/auth/providers
@@ -128,15 +134,96 @@ curl -i https://<ドメイン>/api/sessions
 
 ## 6. バックアップ(必須)
 
-**`DATA_DIR`が失われるとユーザー・セッション・素材データがすべて失われる。** ディスクは自動でバックアップされない。
+**`DATA_DIR`が失われるとDBと画像がすべて失われる。** Render disk snapshotだけを唯一のbackupにしない。
 
-- Renderの **Disks → Snapshots** で定期スナップショットを有効にする(プランにより可否・保持期間が異なる)
-- 併せて、Shellから手動でアーカイブを取り、外部に退避する運用を推奨する
+- SQLite稼働中DBを`cp`/`tar`で直接コピーしない。Node Online Backup APIを使う
+- 生成snapshotは`integrity_check`、`foreign_key_check`、SHA-256を自動検証する
+- 画像は別途Render disk snapshotまたは`MEDIA_DIR` archiveで保護する
+- DB snapshotと画像backupを暗号化された外部ストレージへ退避する
+- 定期的に別環境へ復元し、ログインと代表データを確認する
 
 ```bash
-# Renderダッシュボードの Shell タブから
-tar czf /tmp/gmdesk-$(date +%Y%m%d).tar.gz -C /data .
+# Render Shell。出力先は既存ファイルを既定で上書きしない
+npm run backup:sqlite -- \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --output=/tmp/gmdesk-YYYYMMDD-HHMM.sqlite3
+
+# JSON出力の integrity:"ok"、foreignKeyViolations:0、sha256 を保存
 ```
+
+filesystem運用中とSQLite初回カットオーバー前は、`MAINTENANCE_MODE=read-only`で書き込みを止めてから`/data`全体のsnapshot/archiveを作る。
+
+## 7. filesystemからSQLiteへの初回カットオーバー
+
+本番ではdual-writeせず短いmaintenance windowを使う。以下はRender Shellで実行する。事前に同じデータcopyで所要時間を測定する。
+
+### 7.1 事前確認
+
+1. Nodeを`24.15.0`、Webを1インスタンスに固定
+2. `DATABASE_DRIVER=filesystem`、`SQLITE_PATH=/data/gmdesk.sqlite3`、`MEDIA_DIR=/data`
+3. source/backup用の十分な空き容量を確認
+4. dry-runを実行
+
+```bash
+npm run migrate:sqlite -- \
+  --dry-run \
+  --data-dir=/data \
+  --report=/tmp/sqlite-dry-run.json
+```
+
+`ok:false`なら切替禁止。`quarantined`、`orphanReferences`を解消する。認証導入前のトップレベル`sessions/worlds/rulesets`がある場合だけ、所有者を確認して`--legacy-owner=usr_xxxxxxxxxxxxxxxx`を付ける。推測で割り当てない。
+
+### 7.2 書き込み停止・backup
+
+1. Render health checkを一時的に`/live`へ変更
+2. `MAINTENANCE_MODE=read-only`へ変更して再起動
+3. `/ready`が`503`、`maintenanceMode:"read-only"`、更新APIが`503 READ_ONLY_MAINTENANCE`を返すことを確認
+4. `/data`のdisk snapshot/archiveを作る
+
+`/ready`は保守モードを意図的に不健康と判定するため、`/live`への一時変更なしでRender deployしない。
+
+### 7.3 import・検証
+
+```bash
+npm run migrate:sqlite -- \
+  --confirm-offline \
+  --data-dir=/data \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --report=/tmp/sqlite-import.json
+
+npm run migrate:sqlite -- \
+  --validate-only \
+  --data-dir=/data \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --report=/tmp/sqlite-validate.json
+
+npm run backup:sqlite -- \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --output=/tmp/gmdesk-post-import.sqlite3
+```
+
+認証前データにはdry-runと同じ`--legacy-owner`を付ける。移行先に同一IDの新しい認証後コピーがあり、旧レコードを保持したまま新しい方を正とする判断を承認した場合だけ、import時に`--accept-superseded-legacy`を追加する。journalへ`superseded`が残る。
+
+合格条件:
+
+- import/validate双方`ok:true`
+- `validated == totals.files`
+- quarantine、validationErrors、orphanReferencesが0
+- backupが`integrity:"ok"`、`foreignKeyViolations:0`
+- 所有者別byteとファイル数に説明不能な差がない
+
+### 7.4 driver切替
+
+1. `DATABASE_DRIVER=sqlite`へ変更
+2. `MAINTENANCE_MODE=off`へ戻す
+3. health checkを`/ready`へ戻してdeploy
+4. `/ready`が200かつmigration版一致を確認
+5. ログイン、World/Session CRUD、画像、Party、公開/Import、小説化をsmoke test
+6. 旧ファイルを削除せずread-only backupとして保持
+
+### 7.5 rollback
+
+書き込み再開前なら`MAINTENANCE_MODE=read-only`を維持し、`DATABASE_DRIVER=filesystem`へ戻せる。SQLiteで書き込み再開後はfilesystemへ逆同期しないため、単純rollback禁止。障害調査・復元判断が終わるまで保守モードを維持する。
 
 ## 運用メモ
 

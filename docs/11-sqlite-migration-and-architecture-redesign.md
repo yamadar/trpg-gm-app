@@ -1,9 +1,9 @@
 # SQLite 移行・全体再設計計画
 
-> **文書種別:** 将来設計・移行計画  
+> **文書種別:** 実装計画・進捗・運用判断
 > **作成日:** 2026-08-02  
-> **対象:** 現行ファイルシステム実装からの移行、および将来の PostgreSQL 移行  
-> **注意:** 本書は未実装の目標設計を含む。現行仕様は [01-architecture.md](01-architecture.md)、[02-data-model.md](02-data-model.md)、[04-persistence.md](04-persistence.md)、[09-deployment.md](09-deployment.md) を正本とする。
+> **対象:** ファイルシステムからSQLiteへの切替、および将来のPostgreSQL移行
+> **実装基準日:** 2026-08-02。SQLite互換store、容量台帳、durable小説化job、移行/検証/backup CLI、readiness、保守モードまで実装済み。本番データの実カットオーバー、画像S3化、全モジュールの正規化repository化は未実施。現行仕様は [01-architecture.md](01-architecture.md)、[02-data-model.md](02-data-model.md)、[04-persistence.md](04-persistence.md)、[09-deployment.md](09-deployment.md) を正本とする。
 
 ---
 
@@ -119,7 +119,7 @@ Later:
 
 #### 長時間処理がプロセスメモリへ依存する
 
-小説生成の状態レコードはファイルへ保存されるが、実行中 Promise はメモリ内にあり、再起動後は自動再開されずエラーへ倒れる。各種ロックと容量予約もメモリ内にあり、複数プロセスでは排他が共有されない。ジョブと期限付きリースを DB に移す。
+設計レビュー時点では小説生成の実行中Promiseがメモリだけにあり、再起動後はエラーへ倒れていた。現在はFile/SQLite共通job repositoryへ最小payloadとleaseを保存し、起動時に未完了小説化を再claimする。単一インスタンス前提のため別bootのleaseを起動時にstealする。Party AI解決、Campaign生成、画像生成はまだdurable job化されていない。
 
 #### 一覧・公開検索が全件走査になる
 
@@ -628,12 +628,14 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 ### 9.3 バックアップ
 
 - 稼働中 DB の単純なファイルコピーをしない
-- SQLite Online Backup API または `VACUUM INTO` で一貫した snapshot を作る
+- `npm run backup:sqlite -- --output=...`でNode Online Backup APIの一貫したsnapshotを作る
 - snapshot を暗号化された S3 bucket へ転送する
 - 日次、週次、月次の保持数を定める
 - backup ごとに `PRAGMA integrity_check`、サイズ、checksum を記録する
 - 定期的に別環境へ復元し、件数・ログイン・代表シナリオを確認する
 - Render disk snapshot だけを唯一のバックアップにしない
+
+実装CLIは出力先の暗黙上書きを拒否し、作成後に`PRAGMA integrity_check`、`PRAGMA foreign_key_check`、byte数、SHA-256をJSON出力する。Node Online Backup API使用のためNode `>=24.15.0 <25`へ固定する。画像ファイルはこのDB snapshotに含まれないため、disk snapshot/別archiveも必須。
 
 推奨初期目標:
 
@@ -681,10 +683,11 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 - [x] 小説化ジョブ終了まで容量予約を保持
 - [x] Session の削除 UI/API、生成物・公開小説のカスケード削除、復活防止 tombstone を追加
 - [x] シーン画像の個別削除 API と参照除去を追加
-- [ ] 固定ヘッドルームを、SQLite の所有者別差分台帳と期限付き予約へ置換
-- [ ] `text-operations` を含む全書き込みの課金対象・非対象を確定し、所有者判定表を ADR 化
-- [ ] legacy key ごとの所有者判定を一覧化
-- [ ] 全データの件数、byte 数、checksum を取得する監査スクリプトを用意
+- [x] SQLiteの所有者別差分台帳、trigger、期限付き予約を実装
+- [x] Party/public/user/system/derivedの所有者判定をadapterとimporterへ実装
+- [x] legacy keyごとの所有者判定と、認証前namespace用`--legacy-owner`を実装
+- [x] 全データの件数、byte数、checksum、孤立参照を出すdry-run監査を実装
+- [ ] 所有者・課金対象表を独立ADR文書として固定
 
 完了条件:
 
@@ -695,6 +698,13 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 ### Phase 1: 永続化境界の導入
 
 目的: 挙動を変えずに、route とファイルストアを分離する。
+
+実装状況:
+
+- [x] `createPersistence`、File/SQLite adapter、transaction注入、driver feature flag
+- [x] data/text store contract、usage/job/storage repository contract
+- [x] 利用量、job、容量を業務単位repositoryへ分離
+- [ ] 全routeの直接`dataStore/textStore/imageStore`参照をモジュール別repositoryへ置換
 
 - 業務操作単位の repository interface を定義
 - 現行ファイルシステムを `File*Repository` adapter として包む
@@ -711,6 +721,15 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 
 目的: PostgreSQL と共有できる論理モデルを実装する。
 
+実装状況:
+
+- [x] checksum付き連番migration、SQLite最低version検査、WAL/FK/busy timeout/FULL同期
+- [x] `domain_records`/`documents`互換adapter、専用`usage_counters`/`jobs`/`storage_*`
+- [x] 単一coordinator、`BEGIN IMMEDIATE`、rollback/busy/transaction時間メトリクス
+- [x] Party serviceを共通transaction境界へ接続
+- [ ] auth/library/session/campaign/party/publishingを個別正規化tableへ分解
+- [ ] Session revision CASを条件付きSQL更新へ移す
+
 - versioned migration runner を作る
 - auth、library、sessions、campaigns、party、publishing、usage、jobs の順に schema 作成
 - SQLite repository adapter を実装
@@ -726,6 +745,8 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 ### Phase 3: 移行ツール
 
 目的: 再実行可能で検証可能なデータ変換を作る。
+
+実装状況: 完了。`npm run migrate:sqlite`が`--dry-run`、`--validate-only`、`--confirm-offline`、journal、quarantine、checksum、owner manifest、孤立参照検査を持つ。認証前namespaceは`--legacy-owner`必須。新しい認証後コピーと重複する旧レコードは、同一IDかつ`updatedAt`が古い場合だけ`--accept-superseded-legacy`で明示承認し、旧ファイルを残したままjournalへ`superseded`を記録する。
 
 移行ツール要件:
 
@@ -754,6 +775,8 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 
 小規模運用では dual-write より短い maintenance window を選ぶ。dual-write は新旧の部分失敗と rollback 条件を複雑にする。
 
+コード・runbookは実装済み。本番環境での実カットオーバーだけ未実施。ローカル実データ相当リハーサル結果: 413ファイル、14,338,393 byte、source checksum固定、396件import、16 media保持、旧重複1件superseded、quarantine 0、孤立参照0、validate 413/413。所要時間は1秒未満だったが、本番永続ディスクI/Oで再計測する。
+
 手順:
 
 1. 事前リハーサルで時間とエラーを測定
@@ -776,6 +799,8 @@ rollback は書き込み再開前なら設定を File adapter へ戻す。書き
 
 ### Phase 5: 画像を S3 へ移行
 
+実装状況: 未着手。現行SQLite構成でも画像は`MEDIA_DIR`上のファイルで、DBにはbyte台帳だけを持つ。
+
 1. `ObjectStorage` adapter と private bucket を用意
 2. legacy manifest から asset 行を `pending` で作る
 3. checksum を検証しながら S3 へ upload
@@ -788,6 +813,13 @@ DB 移行と画像移行を別 phase にして、障害範囲を限定する。�
 
 ### Phase 6: 永続ジョブとサーバー正本化
 
+実装状況:
+
+- [x] 小説化jobの永続enqueue/claim/complete/fail、lease所有者、起動時回復
+- [x] 回復時のSession存在確認と容量予約
+- [ ] Party AI解決、Campaign生成、画像生成、S3補償処理のjob化
+- [ ] IndexedDBをcache/draftだけへ限定するauthority整理
+
 - 小説生成、重い AI 生成、S3 補償処理を `jobs` へ移す
 - restart recovery、retry、idempotency、stale result discard を実装
 - IndexedDB を cache/draft へ限定
@@ -795,6 +827,8 @@ DB 移行と画像移行を別 phase にして、障害範囲を限定する。�
 - Party polling 負荷を測定し、必要なら単一プロセス向け SSE/WebSocket を導入
 
 ### Phase 7: 整理
+
+実装状況: 未着手。File adapterは本番切替後の期限付きrollback用に保持する。
 
 - legacy File adapter を feature flag 下で一定期間保持
 - 復元訓練完了後に通常 runtime から File adapter を外す
@@ -908,6 +942,8 @@ Redis は SQLite と PostgreSQL の代替ではない。次の用途が必要に
 
 実装は巨大な一括 PR にしない。次の単位へ分割する。
 
+現ブランチで1〜4、8、9の実行基盤、11の小説化、13のbackup/readinessを実装。5〜7の「モジュール別正規化」は互換schemaでカットオーバーした後の段階移行、10と12は未着手。
+
 1. 所有権・容量ポリシー ADR と Phase 0 修正
 2. Repository port と File adapter
 3. SQLite connection/migration 基盤
@@ -942,7 +978,18 @@ Redis は SQLite と PostgreSQL の代替ではない。次の用途が必要に
 
 ## 16. 最終受け入れ条件
 
-SQLite/S3 移行完了の定義:
+### 16.1 SQLiteカットオーバー完了
+
+- `MAINTENANCE_MODE=read-only`中に最終importとvalidate-onlyが`ok:true`
+- quarantine・孤立参照0、または全件に承認記録
+- Online Backup APIで作ったsnapshotが`integrity_check`/`foreign_key_check`合格
+- `DATABASE_DRIVER=sqlite`で`/ready`が200、migration版一致
+- 認証、代表CRUD、Session同期、Party、公開/Import、小説化のsmoke test合格
+- 容量台帳監査で`usedBytes == measuredBytes`
+- 書き込み再開前のfilesystem rollback手順確認
+- legacyファイルを削除せずread-only保持
+
+### 16.2 全体再設計・SQLite/S3移行完了
 
 - 通常リクエストが legacy data directory を読み書きしない
 - 全永続更新が repository/domain service を通る

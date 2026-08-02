@@ -157,7 +157,7 @@ sessions/{session_id}/
                                     truncated })。truncatedは継続リクエストの
                                     上限に達し末尾が欠けている可能性を表す
                                     (06-content-generation.md 10.6.1節)
-  novelJob.json                    小説化ジョブの状態(実装済み2026-07-25。
+  novelJob.json                    小説化ジョブのUI表示状態。
                                     { status: 'running'|'done'|'error',
                                       startedAt, updatedAt, error, bootId })
   novelNotice.json                 完了通知の未読フラグ({ unread: boolean }。
@@ -195,6 +195,22 @@ public/starters                      スターターパックのマニフェス�
                                      唯一この行だけは`users/{userId}/`配下ではなくグローバルなキーであり、
                                      公開ツリー`public/...`名前空間の一部(04-persistence.md参照)
 ```
+
+上記は論理key構造。filesystem driverでは拡張子付きパス、SQLite driverでは次の物理schemaへ写像する。
+
+| テーブル | 役割 |
+|---|---|
+| `domain_records` | JSONレコード。`key`、module、resource type、owner、JSON本文、logical byte、revision |
+| `documents` | Markdown/text。path、module、resource type、owner、本文、logical byte |
+| `usage_counters` | user/global・UTC日・kind単位の原子的利用量 |
+| `jobs` | durable job payload、state、attempt、lease owner/期限、結果/error code |
+| `storage_accounts` | owner別used/reserved/limit byte |
+| `storage_items` | JSON/text/mediaごとの課金byteとowner |
+| `storage_reservations` | HTTP書き込み・job回復用の期限付き容量予約 |
+| `migration_journal` / `migration_quarantine` | File→SQLite変換履歴、checksum、明示的に保留したデータ |
+| `schema_migrations` | 適用migration名・checksum・時刻 |
+
+`domain_records`/`documents`は現行key API互換の移行schema。PostgreSQL移行前にquery対象とtransaction境界が明確なモジュールから専用table/repositoryへ段階的に正規化する。`usage_counters`、`jobs`、`storage_*`は既に専用schema。
 
 **添付画像モデル(`server/storage/attachmentLibrary.js`)**
 
