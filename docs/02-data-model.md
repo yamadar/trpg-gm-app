@@ -200,17 +200,23 @@ public/starters                      スターターパックのマニフェス�
 
 | テーブル | 役割 |
 |---|---|
-| `domain_records` | JSONレコード。`key`、module、resource type、owner、JSON本文、logical byte、revision |
-| `documents` | Markdown/text。path、module、resource type、owner、本文、logical byte |
+| `auth_records` / `library_records` / `session_records` | 認証、素材、Solo集約。論理key、entity/parent/owner、title、revision、JSON payload |
+| `campaign_records` / `party_records` / `publishing_records` | Campaign、Party、公開/Import集約。同じmodule repository契約 |
+| `usage_records` / `job_records` / `system_records` | legacy表示recordとsystem領域。利用量・durable jobの正本は下記専用table |
+| `*_documents` | library/session/campaign/publishing/system別Markdown。title、owner、logical byteを通常列化 |
+| `domain_records` / `documents` | 容量triggerと期限付きrollback用atomic mirror。通常read/writeの正本ではない |
 | `usage_counters` | user/global・UTC日・kind単位の原子的利用量 |
 | `jobs` | durable job payload、state、attempt、lease owner/期限、結果/error code |
 | `storage_accounts` | owner別used/reserved/limit byte |
 | `storage_items` | JSON/text/mediaごとの課金byteとowner |
 | `storage_reservations` | HTTP書き込み・job回復用の期限付き容量予約 |
+| `media_assets` | immutable object key、SHA-256、byte、MIME、pending/ready/deleting/deleted/failed状態 |
+| `media_bindings` | APIが使う論理resource pathから現在のready assetへのbinding |
+| `object_migration_journal` | filesystem→S3 upload/adopt履歴とsource checksum |
 | `migration_journal` / `migration_quarantine` | File→SQLite変換履歴、checksum、明示的に保留したデータ |
 | `schema_migrations` | 適用migration名・checksum・時刻 |
 
-`domain_records`/`documents`は現行key API互換の移行schema。PostgreSQL移行前にquery対象とtransaction境界が明確なモジュールから専用table/repositoryへ段階的に正規化する。`usage_counters`、`jobs`、`storage_*`は既に専用schema。
+SQLite driverはmodule tableを正本とし、routeをAuth、Library、Session、Campaign、Party、Publishing/Import等の許可scopeへ接続する。key互換APIはrepository facade内だけに残す。検索・所有権・親集約・revision・時刻を通常列へ抽出し、ゲーム固有payloadはJSONで保持する段階的正規化。Sessionログ、Campaign章、Party参加者/event/chatを完全な子tableへ分ける作業は未実施。Solo Session更新だけは`session_records.revision`の条件付きUPDATEを使う。
 
 **添付画像モデル(`server/storage/attachmentLibrary.js`)**
 

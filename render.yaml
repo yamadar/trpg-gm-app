@@ -31,7 +31,7 @@ services:
         value: /data/gmdesk.sqlite3
       - key: MEDIA_DIR
         value: /data
-      # S3移行完了まではfilesystem。切替runbook完了後、s3へ変更する。
+      # S3切替runbook完了まではfilesystem。完了後、s3へ変更する。
       - key: OBJECT_STORAGE_DRIVER
         value: filesystem
       - key: OBJECT_STORAGE_BUCKET

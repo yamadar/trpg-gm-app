@@ -1,6 +1,6 @@
 # 状態管理・永続化
 
-> **現行仕様:** サーバー永続化は`DATABASE_DRIVER=filesystem|sqlite`で切替可能。初回本番カットオーバーまでは`filesystem`が既定。SQLite移行の実装状況、S3移行、将来のPostgreSQL対応は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+> **現行仕様:** 構造化データは`DATABASE_DRIVER=filesystem|sqlite`、画像は`OBJECT_STORAGE_DRIVER=filesystem|s3`で切替可能。初回本番カットオーバーまでは双方`filesystem`が既定。SQLite/S3移行状況と将来のPostgreSQL対応は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
 
 ## クライアント側(IndexedDB)
 
@@ -19,12 +19,12 @@
 
 | 設定 | JSON・Markdown | 画像 | 利用量・ジョブ・容量 |
 |---|---|---|---|
-| `DATABASE_DRIVER=filesystem` | `server/data`以下のJSON/Markdown | ローカルファイル | File repository。容量はディレクトリ実測とプロセス内予約 |
-| `DATABASE_DRIVER=sqlite` | SQLiteの`domain_records`/`documents`互換テーブル | `MEDIA_DIR`以下のローカルファイル | SQLite専用`usage_counters`、`jobs`、`storage_*`テーブル |
+| `DATABASE_DRIVER=filesystem` | `server/data`以下のJSON/Markdown | `OBJECT_STORAGE_DRIVER=filesystem`のみ | File repository。容量はディレクトリ実測とプロセス内予約 |
+| `DATABASE_DRIVER=sqlite` | module別record/document table | filesystemまたはprivate S3 | `usage_counters`、`jobs`、`storage_*`、`media_*`専用table |
 
-SQLite接続はWAL、foreign key、5秒busy timeout、`synchronous=FULL`を有効化する。連番SQL migrationはchecksum付き`schema_migrations`へ記録し、起動時のDB版がアプリ内最新migrationと不一致なら`/ready`を失敗させる。互換storeにより既存routeを一度に書き換えずカットオーバーできる一方、モジュール別の正規化repositoryへの分割は後続再設計。
+SQLite接続はWAL、foreign key、5秒busy timeout、`synchronous=FULL`を有効化する。連番SQL migrationはchecksum付き`schema_migrations`へ記録し、起動時のDB版がアプリ内最新migrationと不一致なら`/ready`を失敗させる。Auth、Library、Session、Campaign、Party、Publishing、Usage、Jobs、Systemを別table/repositoryへ分割済み。routeには必要moduleだけのscoped facadeを注入する。`domain_records`/`documents`は容量triggerとrollback用atomic mirror。各集約payloadの完全分解は行わず、entity/parent/owner/title/revision/timestampだけ通常列へ出す。
 
-画像はSQLiteへBLOB保存しない。現段階では永続ディスク上のファイルを正本とし、SQLiteの`storage_items`へ実byteと所有者を記録する。S3互換ObjectStorageへの置換は後続Phase。
+画像はSQLiteへBLOB保存しない。`FilesystemObjectStorage`と`S3ObjectStorage`が同じcontractを持つ。SQLiteの`media_assets`が物理object、`media_bindings`が既存APIの論理path、`storage_items`が課金byteを保持する。新規writeはimmutable objectを使い、upload完了まで旧bindingを維持する。削除と中断uploadは起動時reconcilerが補償する。
 
 主要設定:
 
@@ -32,10 +32,16 @@ SQLite接続はWAL、foreign key、5秒busy timeout、`synchronous=FULL`を有�
 DATABASE_DRIVER=filesystem|sqlite
 SQLITE_PATH=/data/gmdesk.sqlite3
 MEDIA_DIR=/data
+OBJECT_STORAGE_DRIVER=filesystem|s3
+OBJECT_STORAGE_BUCKET=private-bucket
+OBJECT_STORAGE_REGION=ap-northeast-1
+OBJECT_STORAGE_ENDPOINT=        # AWS S3では未設定
+OBJECT_STORAGE_PREFIX=gmdesk
+OBJECT_STORAGE_FORCE_PATH_STYLE=false
 MAINTENANCE_MODE=off|read-only
 ```
 
-`read-only`は更新メソッドとOAuth callbackを`503 READ_ONLY_MAINTENANCE`で止める。`GET /live`はプロセス生存、`GET /ready`はDB疎通・migration版・保守フラグを返す。
+`OBJECT_STORAGE_DRIVER=s3`は`DATABASE_DRIVER=sqlite`必須。credentialsはIAM roleまたは標準`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`から解決する。`read-only`は更新メソッドとOAuth callbackを`503 READ_ONLY_MAINTENANCE`で止める。`GET /live`はプロセス生存、`GET /ready`はDB疎通・migration版・object storage driver・保守フラグを返す。readinessは一時的S3障害で全APIを落とさないため外部network callを行わない。
 - 認証機能の追加に伴い、素材ライブラリ・セッション関連のキーはすべて**ユーザー単位の名前空間`users/{userId}/...`配下**に置かれる(`server/storage/paths.js`)。認証(識別情報・セッショントークン)自体はユーザー名前空間の外側に置かれる。
 - Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`・`DELETE /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**双方向同期・競合保護は実装済み**:
   - 保存可能なSessionはユーザーあたり100件、1件のJSON直列化サイズは1MiBまで。超過は書き込み前に拒否する。

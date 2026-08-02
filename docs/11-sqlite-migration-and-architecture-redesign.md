@@ -3,7 +3,7 @@
 > **文書種別:** 実装計画・進捗・運用判断
 > **作成日:** 2026-08-02  
 > **対象:** ファイルシステムからSQLiteへの切替、および将来のPostgreSQL移行
-> **実装基準日:** 2026-08-02。SQLite互換store、容量台帳、durable小説化job、移行/検証/backup CLI、readiness、保守モードまで実装済み。本番データの実カットオーバー、画像S3化、全モジュールの正規化repository化は未実施。現行仕様は [01-architecture.md](01-architecture.md)、[02-data-model.md](02-data-model.md)、[04-persistence.md](04-persistence.md)、[09-deployment.md](09-deployment.md) を正本とする。
+> **実装基準日:** 2026-08-02。SQLite互換store、モジュール別table/scoped repository、容量台帳、durable小説化job、ObjectStorage境界、画像状態機械、SQLite/S3移行・検証・backup CLI、readiness、保守モードまで実装済み。本番SQLite/S3カットオーバー、集約ごとの子tableへの完全正規化、残る非同期処理のjob化は未実施。現行仕様は [01-architecture.md](01-architecture.md)、[02-data-model.md](02-data-model.md)、[04-persistence.md](04-persistence.md)、[09-deployment.md](09-deployment.md) を正本とする。
 
 ---
 
@@ -418,20 +418,19 @@ storage_items
 
 media_assets
   id PK
+  resource_key
   owner_id
   object_key UNIQUE
   byte_size
   sha256
   mime_type
-  state           # pending / ready / deleting / deleted
+  state           # pending / ready / deleting / deleted / failed
   created_at_ms
 
-media_refs
+media_bindings
+  resource_key PK
   asset_id
-  entity_type
-  entity_id
-  role
-  position
+  updated_at_ms
 
 daily_usage
   scope_type      # user / system
@@ -535,12 +534,13 @@ idempotency_records
 - 同一画像の複数サイズは別 asset とし、派生元を記録できるようにする
 - Content-Type、最大 byte 数、画像デコード後寸法をサーバー側で検証する
 
-object key 例:
+新規書き込みのobject key:
 
 ```text
-media/{owner-id}/{asset-id}/original.png
-media/{owner-id}/{asset-id}/thumbnail.webp
+media/{owner-id}/{asset-id}.webp
 ```
+
+既存画像は移行時に従来keyを維持する。`media_bindings.resource_key`が論理API pathとimmutable physical keyの対応を持つ。
 
 ### 7.2 DB と S3 の整合性
 
@@ -548,20 +548,20 @@ DB と S3 を一つの ACID トランザクションにはできない。状態�
 
 作成:
 
-1. DB で容量予約と `media_assets(state='pending')` を作成
+1. DB で `media_assets(state='pending')` を作成
 2. transaction commit
 3. S3 へ upload
-4. DB で actual bytes を精算し `ready` へ更新
-5. 途中失敗は job で retry。期限超過 pending は S3 object を確認して補償
+4. DB transactionで`ready`化、`media_bindings`差替え、容量台帳更新、旧assetの`deleting`化
+5. upload失敗は`failed`化し旧bindingを維持。process restart時は`pending` objectを照合してactivateまたはfail
 
 削除:
 
 1. DB で参照を外し `deleting` へ更新
 2. commit
 3. S3 object を削除
-4. DB で `deleted` と容量台帳を確定
+4. DB で `deleted` を確定。容量台帳はbinding削除時点で減算済み
 
-孤立 object と孤立 DB 行を定期照合する。S3 削除は冪等に扱う。
+起動時reconcilerが`pending`/`deleting`を回復する。孤立objectのbucket全件監査とdurable retry jobは追加課題。S3削除は冪等に扱う。
 
 ### 7.3 重複排除
 
@@ -610,9 +610,12 @@ S3-compatible bucket:
 ```text
 DATABASE_DRIVER=sqlite
 SQLITE_PATH=/data/gmdesk.sqlite3
+OBJECT_STORAGE_DRIVER=s3
 OBJECT_STORAGE_BUCKET=...
 OBJECT_STORAGE_REGION=...
 OBJECT_STORAGE_ENDPOINT=...   # AWS S3 なら省略可
+OBJECT_STORAGE_PREFIX=gmdesk
+OBJECT_STORAGE_FORCE_PATH_STYLE=false
 ```
 
 SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスクへ置かない。永続ディスクが一つのインスタンスへしか接続できないため、SQLite 期間は `WEB_CONCURRENCY=1` 相当を構成上保証する。
@@ -704,7 +707,9 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 - [x] `createPersistence`、File/SQLite adapter、transaction注入、driver feature flag
 - [x] data/text store contract、usage/job/storage repository contract
 - [x] 利用量、job、容量を業務単位repositoryへ分離
-- [ ] 全routeの直接`dataStore/textStore/imageStore`参照をモジュール別repositoryへ置換
+- [x] routeへ許可moduleだけを公開するscoped repositoryを注入し、scope外アクセスを拒否
+- [x] ObjectStorageをfilesystem/S3共通契約へ分離し、routeからSDKと物理pathを隠蔽
+- [ ] route APIを汎用data/text操作から集約固有repository methodへ段階置換
 
 - 業務操作単位の repository interface を定義
 - 現行ファイルシステムを `File*Repository` adapter として包む
@@ -712,9 +717,9 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 - repository contract test を作る
 - `DATABASE_DRIVER=filesystem|sqlite` feature flag を追加
 
-完了条件:
+現段階の完了条件:
 
-- route と domain service が `dataStore/textStore/imageStore` を直接参照しない
+- route と domain service が物理filesystem、SQL、S3 SDKを直接参照しない
 - 現行 adapter で既存テストが通る
 
 ### Phase 2: SQLite schema と adapter
@@ -724,11 +729,13 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 実装状況:
 
 - [x] checksum付き連番migration、SQLite最低version検査、WAL/FK/busy timeout/FULL同期
-- [x] `domain_records`/`documents`互換adapter、専用`usage_counters`/`jobs`/`storage_*`
+- [x] auth/library/session/campaign/party/publishing/usage/job/system別record tableと、module別document table
+- [x] `domain_records`/`documents`を容量trigger・原子的rollback用mirrorとして同一transaction更新
+- [x] 専用`usage_counters`/`jobs`/`storage_*`、`media_assets`/`media_bindings`
 - [x] 単一coordinator、`BEGIN IMMEDIATE`、rollback/busy/transaction時間メトリクス
 - [x] Party serviceを共通transaction境界へ接続
-- [ ] auth/library/session/campaign/party/publishingを個別正規化tableへ分解
-- [ ] Session revision CASを条件付きSQL更新へ移す
+- [x] Session revision CASを`session_records.revision`の条件付きSQL更新へ移行
+- [ ] JSON payload内の子要素を集約固有table・FK・unique制約へ完全分解
 
 - versioned migration runner を作る
 - auth、library、sessions、campaigns、party、publishing、usage、jobs の順に schema 作成
@@ -775,7 +782,7 @@ SQLite DB を S3 マウント、NFS、複数インスタンス共有ディスク
 
 小規模運用では dual-write より短い maintenance window を選ぶ。dual-write は新旧の部分失敗と rollback 条件を複雑にする。
 
-コード・runbookは実装済み。本番環境での実カットオーバーだけ未実施。ローカル実データ相当リハーサル結果: 413ファイル、14,338,393 byte、source checksum固定、396件import、16 media保持、旧重複1件superseded、quarantine 0、孤立参照0、validate 413/413。所要時間は1秒未満だったが、本番永続ディスクI/Oで再計測する。
+コード・runbookは実装済み。本番環境での実カットオーバーだけ未実施。ローカル実データ相当リハーサル結果: 413ファイル、14,338,393 byte、source checksum `05b3bf05d31284d2487a498358d3ec281cdbec17687e86e9fcc39844b8592808`、396件import、16 media保持、旧重複1件superseded、quarantine 0、孤立参照0、validate 413/413。module auditはrecord 267件、document 130件、全moduleでnormalized/mirror件数一致、mismatch 0。Online Backupは2,252,800 byte、`integrity_check`合格、foreign key違反0。所要時間は1秒未満だったが、本番永続ディスクI/Oで再計測する。
 
 手順:
 
@@ -799,15 +806,17 @@ rollback は書き込み再開前なら設定を File adapter へ戻す。書き
 
 ### Phase 5: 画像を S3 へ移行
 
-実装状況: 未着手。現行SQLite構成でも画像は`MEDIA_DIR`上のファイルで、DBにはbyte台帳だけを持つ。
+実装状況: コード完了、本番S3カットオーバー未実施。
 
-1. `ObjectStorage` adapter と private bucket を用意
-2. legacy manifest から asset 行を `pending` で作る
-3. checksum を検証しながら S3 へ upload
-4. DB 参照を asset ID へ変換
-5. API 経由の表示と削除を検証
-6. 全参照確認後に asset を `ready` へ確定
-7. 保持期間経過後、ローカル画像を削除
+- [x] `FilesystemObjectStorage`/`S3ObjectStorage`の同一contractとcontract test
+- [x] private object、prefix namespace、pagination、checksum receipt、冪等delete
+- [x] `media_assets`/`media_bindings`/`object_migration_journal` migrationとlegacy backfill
+- [x] pending/ready/deleting/deleted/failed状態機械、置換時の旧binding維持、起動時reconcile
+- [x] `npm run migrate:media:s3`のdry-run/import/validate-only、checksum/byte検証、再実行skip
+- [x] インメモリObjectStorageによる移行contract test
+- [ ] 本番private bucket/IAM/backup policy作成
+- [ ] 本番データのoffline upload・validate・driver切替
+- [ ] 保持期限と復元訓練後のローカル画像削除
 
 DB 移行と画像移行を別 phase にして、障害範囲を限定する。過渡期は `FilesystemObjectStorage` と `S3ObjectStorage` の同じ契約を使う。
 
@@ -817,7 +826,8 @@ DB 移行と画像移行を別 phase にして、障害範囲を限定する。�
 
 - [x] 小説化jobの永続enqueue/claim/complete/fail、lease所有者、起動時回復
 - [x] 回復時のSession存在確認と容量予約
-- [ ] Party AI解決、Campaign生成、画像生成、S3補償処理のjob化
+- [x] S3 `pending`/`deleting`の起動時reconcile
+- [ ] Party AI解決、Campaign生成、画像生成、S3補償retryのdurable job化
 - [ ] IndexedDBをcache/draftだけへ限定するauthority整理
 
 - 小説生成、重い AI 生成、S3 補償処理を `jobs` へ移す
@@ -942,7 +952,7 @@ Redis は SQLite と PostgreSQL の代替ではない。次の用途が必要に
 
 実装は巨大な一括 PR にしない。次の単位へ分割する。
 
-現ブランチで1〜4、8、9の実行基盤、11の小説化、13のbackup/readinessを実装。5〜7の「モジュール別正規化」は互換schemaでカットオーバーした後の段階移行、10と12は未着手。
+現ブランチで1〜11のうち、module別table/scoped repository、Solo Session CAS、ObjectStorage/S3移行基盤、小説化job、backup/readinessまで実装。5〜7の集約内JSONを子tableへ分解する完全正規化と12のclient authority整理は段階移行。10は本番bucketへの実カットオーバーだけ未実施。
 
 1. 所有権・容量ポリシー ADR と Phase 0 修正
 2. Repository port と File adapter
@@ -990,6 +1000,8 @@ Redis は SQLite と PostgreSQL の代替ではない。次の用途が必要に
 - legacyファイルを削除せずread-only保持
 
 ### 16.2 全体再設計・SQLite/S3移行完了
+
+以下はコード実装だけでなく、本番カットオーバーと運用検証を含む最終条件。現時点では未達。
 
 - 通常リクエストが legacy data directory を読み書きしない
 - 全永続更新が repository/domain service を通る

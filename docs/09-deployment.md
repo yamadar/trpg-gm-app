@@ -1,6 +1,6 @@
 # デプロイ手順(Render)
 
-> **現行仕様:** filesystem/SQLite並用のRender手順。初回SQLiteカットオーバーまでは`DATABASE_DRIVER=filesystem`、完了後は`sqlite`。S3とPostgreSQL移行条件は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+> **現行仕様:** filesystem/SQLiteとfilesystem/S3 ObjectStorageを独立して切替できるRender手順。SQLiteとS3は別々のmaintenance windowでカットオーバーする。PostgreSQL移行条件は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
 
 Renderの **Web Service + Persistent Disk** で公開する手順。所要時間は初回で30〜60分程度。
 
@@ -8,7 +8,7 @@ Renderの **Web Service + Persistent Disk** で公開する手順。所要時間
 
 このアプリは以下の制約を持つため、永続ディスクを1インスタンスに接続できるPaaSが必要になる。
 
-- JSON/Markdownは`DATABASE_DRIVER`でfilesystem/SQLiteを切替可能。SQLite DBは`/data/gmdesk.sqlite3`、画像はS3移行まで`MEDIA_DIR=/data`のローカルファイルへ保存する。
+- JSON/Markdownは`DATABASE_DRIVER`でfilesystem/SQLiteを切替可能。SQLite DBは`/data/gmdesk.sqlite3`へ置く。画像は`OBJECT_STORAGE_DRIVER`でローカルfilesystemとprivate S3 bucketを切り替える。
 - ユーザー添付画像は`sharp`でWebP変換する。`npm ci`が対象環境向けネイティブバイナリを導入するため、依存を本番で省略しない。
 - ディスクを共有する複数インスタンス構成は想定していない(ロック機構なし)。**必ず1インスタンスで運用する**。
 - `POST /api/text-operations/:operation`はGemini APIの応答を非ストリーミングで待つ(`server/routes/textOperations.js`・`server/textProvider.js`)ため、1リクエストが数十秒に達する。短いリクエストタイムアウトを持つ実行環境では動作しない。
@@ -21,6 +21,7 @@ Renderの **Web Service + Persistent Disk** で公開する手順。所要時間
 - Geminiテキスト生成APIキー
 - 任意: Gemini画像生成APIキー(場面挿絵用。未設定なら挿絵機能はUIごと無効になる)
 - 任意: Google / Discord / X のOAuthアプリ(**最低1つは必須**。ログインしないと`/api/*`の大半が401になる)
+- S3移行時: private S3 bucket、region、書込・読取・一覧・削除権限を持つIAM資格情報
 
 ## 1. サービスを作成する
 
@@ -65,7 +66,14 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | `DATA_DIR` | `/data` | ✅ ディスクのマウントパスと一致させる |
 | `DATABASE_DRIVER` | 初回移行前`filesystem`、移行後`sqlite` | ✅ |
 | `SQLITE_PATH` | `/data/gmdesk.sqlite3` | SQLite時必須 |
-| `MEDIA_DIR` | `/data` | ✅ S3移行までは永続ディスク |
+| `MEDIA_DIR` | `/data` | filesystem ObjectStorageの保存先。S3切替後もrollback元として保持 |
+| `OBJECT_STORAGE_DRIVER` | 初回移行前`filesystem`、S3移行後`s3` | ✅ |
+| `OBJECT_STORAGE_BUCKET` | private bucket名 | S3時必須 |
+| `OBJECT_STORAGE_REGION` | 例: `ap-northeast-1` | S3時必須 |
+| `OBJECT_STORAGE_ENDPOINT` | AWS S3では未設定。S3互換サービスのendpoint | 任意 |
+| `OBJECT_STORAGE_PREFIX` | 例: `gmdesk` | 任意。bucket内namespace |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE` | AWS S3は`false` | 任意。S3互換サービス要件に合わせる |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM資格情報 | S3時必須。instance role等の標準credential chain利用時は省略 |
 | `MAINTENANCE_MODE` | 通常`off`、移行中`read-only` | ✅ |
 | `BASE_URL` | `https://<サービス名>.onrender.com`(末尾スラッシュなし) | ✅ |
 | `GEMINI_TEXT_API_KEY` | Google AI Studioのテキスト生成用キー | ✅ |
@@ -116,7 +124,7 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 curl https://<ドメイン>/live
 # => {"ok":true}
 curl -i https://<ドメイン>/ready
-# => 200。driver、migrationVersion、expectedMigrationVersion、maintenanceModeを確認
+# => 200。driver、objectStorageDriver、migrationVersion、expectedMigrationVersion、maintenanceModeを確認
 
 # 2. 有効なログインプロバイダ(認証不要)
 curl https://<ドメイン>/api/auth/providers
@@ -130,15 +138,16 @@ curl -i https://<ドメイン>/api/sessions
 # => 401 {"error":"login required"}
 ```
 
-ブラウザで開き、ログイン → World作成 → 画像添付 → セッション開始まで確認する。画像はJPEG/PNG/WebP、1枚10MBまで。ログインと添付画像が**再デプロイ後も維持される**ことも確認する(維持されない場合は`DATA_DIR`がディスクを指していない)。
+ブラウザで開き、ログイン → World作成 → 画像添付 → セッション開始まで確認する。画像はJPEG/PNG/WebP、1枚10MBまで。ログインと添付画像が**再デプロイ後も維持される**ことも確認する。filesystem時は`DATA_DIR`/`MEDIA_DIR`、S3時はbucket・prefix・IAM権限を調査する。
 
 ## 6. バックアップ(必須)
 
-**`DATA_DIR`が失われるとDBと画像がすべて失われる。** Render disk snapshotだけを唯一のbackupにしない。
+**`DATA_DIR`が失われるとSQLite DBが失われる。filesystem ObjectStorage運用中は画像も失われる。** Render disk snapshotだけを唯一のbackupにしない。
 
 - SQLite稼働中DBを`cp`/`tar`で直接コピーしない。Node Online Backup APIを使う
 - 生成snapshotは`integrity_check`、`foreign_key_check`、SHA-256を自動検証する
-- 画像は別途Render disk snapshotまたは`MEDIA_DIR` archiveで保護する
+- filesystem画像は別途Render disk snapshotまたは`MEDIA_DIR` archiveで保護する
+- S3画像はbucket versioning・保持期間・別bucket/regionへのbackup方針を設定する
 - DB snapshotと画像backupを暗号化された外部ストレージへ退避する
 - 定期的に別環境へ復元し、ログインと代表データを確認する
 
@@ -209,6 +218,7 @@ npm run backup:sqlite -- \
 - import/validate双方`ok:true`
 - `validated == totals.files`
 - quarantine、validationErrors、orphanReferencesが0
+- `moduleAudit.ok:true`かつ全moduleのnormalized/mirror件数一致、mismatchesが0
 - backupが`integrity:"ok"`、`foreignKeyViolations:0`
 - 所有者別byteとファイル数に説明不能な差がない
 
@@ -224,6 +234,62 @@ npm run backup:sqlite -- \
 ### 7.5 rollback
 
 書き込み再開前なら`MAINTENANCE_MODE=read-only`を維持し、`DATABASE_DRIVER=filesystem`へ戻せる。SQLiteで書き込み再開後はfilesystemへ逆同期しないため、単純rollback禁止。障害調査・復元判断が終わるまで保守モードを維持する。
+
+## 8. filesystem画像からS3へのカットオーバー
+
+SQLite移行と同時に実行しない。先に`DATABASE_DRIVER=sqlite`を安定稼働させる。S3 driverは画像参照と容量台帳にSQLiteの`media_assets`/`media_bindings`を使うため、filesystem DBでは起動しない。
+
+### 8.1 事前確認
+
+1. public accessを無効にしたbucketを作成し、必要ならversioningを有効化
+2. アプリ用IAMへ対象prefixのPut/Get/List/Deleteだけを付与。public ACLとbrowser向けCORSは不要
+3. `OBJECT_STORAGE_BUCKET`、`OBJECT_STORAGE_REGION`、必要ならendpoint/prefix/credentialを設定。ただし`OBJECT_STORAGE_DRIVER=filesystem`を維持
+4. dry-runを実行
+
+```bash
+npm run migrate:media:s3 -- \
+  --dry-run \
+  --media-dir=/data \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --report=/tmp/media-s3-dry-run.json
+```
+
+### 8.2 書き込み停止・移行・検証
+
+1. Render health checkを`/live`へ変更
+2. `MAINTENANCE_MODE=read-only`で再起動し、`/ready`が503、更新APIが`READ_ONLY_MAINTENANCE`を返すことを確認
+3. SQLite online backupと`MEDIA_DIR` snapshot/archiveを取得
+4. importとvalidationを実行
+
+```bash
+npm run migrate:media:s3 -- \
+  --confirm-offline \
+  --media-dir=/data \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --report=/tmp/media-s3-import.json
+
+npm run migrate:media:s3 -- \
+  --validate-only \
+  --media-dir=/data \
+  --sqlite-path=/data/gmdesk.sqlite3 \
+  --report=/tmp/media-s3-validate.json
+```
+
+合格条件:
+
+- import/validate双方`ok:true`
+- error、checksum/size mismatch、回復不能なjournal entryが0
+- 移行対象数とvalidated object数が一致
+- bucket内objectの暗号化、private設定、prefixが想定どおり
+
+### 8.3 driver切替・rollback
+
+1. `OBJECT_STORAGE_DRIVER=s3`へ変更
+2. `MAINTENANCE_MODE=off`、health checkを`/ready`へ戻してdeploy
+3. `/ready`の`objectStorageDriver:"s3"`、既存画像表示、新規upload/replace/delete、容量表示を確認
+4. 旧`MEDIA_DIR`を削除せずread-only rollback sourceとして保持
+
+S3で新規書き込みを再開した後はfilesystemへ逆同期しない。単純driver rollbackは禁止。障害時は保守モードへ戻し、journal・`media_assets`状態・bucket objectを照合して復元方針を決める。
 
 ## 運用メモ
 
