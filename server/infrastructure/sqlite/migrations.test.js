@@ -15,9 +15,9 @@ afterEach(async () => {
 describe('SQLite migrations', () => {
   it('applies numbered migrations once and records checksums', () => {
     const db = openSqliteDatabase(':memory:');
-    expect(currentMigrationVersion(db)).toBe(1);
-    expect(runMigrations(db).currentVersion).toBe(1);
-    expect(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count).toBe(1);
+    expect(currentMigrationVersion(db)).toBe(2);
+    expect(runMigrations(db).currentVersion).toBe(2);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count).toBe(2);
     db.close();
   });
 

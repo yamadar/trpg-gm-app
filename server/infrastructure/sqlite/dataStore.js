@@ -15,7 +15,8 @@ function prefixRows(db, prefix) {
   `).all(`${escaped}/%`);
 }
 
-export function createSqliteDataStore(db, { now = Date.now } = {}) {
+export function createSqliteDataStore(db, { now = Date.now, coordinator } = {}) {
+  const execute = coordinator?.run || (async (operation) => operation());
   const getStatement = db.prepare('SELECT value_json FROM domain_records WHERE key = ?');
   const setStatement = db.prepare(`
     INSERT INTO domain_records(
@@ -35,38 +36,45 @@ export function createSqliteDataStore(db, { now = Date.now } = {}) {
   return {
     async get(key) {
       assertKey(key);
-      const row = getStatement.get(key);
-      return row ? JSON.parse(row.value_json) : null;
+      return execute(() => {
+        const row = getStatement.get(key);
+        return row ? JSON.parse(row.value_json) : null;
+      });
     },
     async set(key, value) {
       assertKey(key);
-      const valueJson = JSON.stringify(value);
-      if (valueJson === undefined) throw new TypeError('storage value must be JSON serializable');
-      const classification = classifyJsonRecord(db, key, value);
-      const revision = Number.isSafeInteger(value?._sync?.revision) && value._sync.revision >= 0
-        ? value._sync.revision
-        : 0;
-      setStatement.run(
-        key,
-        classification.module,
-        classification.resourceType,
-        classification.ownerId,
-        valueJson,
-        Buffer.byteLength(valueJson, 'utf8'),
-        revision,
-        now(),
-      );
+      return execute(() => {
+        const valueJson = JSON.stringify(value);
+        if (valueJson === undefined) throw new TypeError('storage value must be JSON serializable');
+        const classification = classifyJsonRecord(db, key, value);
+        const candidateRevision = value?._sync?.revision ?? value?.revision;
+        const revision = Number.isSafeInteger(candidateRevision) && candidateRevision >= 0
+          ? candidateRevision
+          : 0;
+        setStatement.run(
+          key,
+          classification.module,
+          classification.resourceType,
+          classification.ownerId,
+          valueJson,
+          Buffer.byteLength(valueJson, 'utf8'),
+          revision,
+          now(),
+        );
+      });
     },
     async list(prefix) {
       assertKey(prefix);
-      const start = `${prefix}/`;
-      return prefixRows(db, prefix)
-        .map((row) => row.key)
-        .filter((key) => !key.slice(start.length).includes('/'));
+      return execute(() => {
+        const start = `${prefix}/`;
+        return prefixRows(db, prefix)
+          .map((row) => row.key)
+          .filter((key) => !key.slice(start.length).includes('/'));
+      });
     },
     async delete(key) {
       assertKey(key);
-      deleteStatement.run(key);
+      return execute(() => deleteStatement.run(key));
     },
   };
 }

@@ -15,53 +15,53 @@ function nextUtcMidnight(epochMs) {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
 }
 
-export function createUsage({ dataStore, limits, globalLimits = {}, now = Date.now }) {
-  // usageKeyごとに read-modify-write を直列化する(単一プロセス内)。
-  // 注: 複数インスタンス運用ではストア側のアトミック性が別途必要。
-  const locks = new Map();
-  function withKeyLock(key, fn) {
-    const prev = locks.get(key) || Promise.resolve();
-    const run = prev.then(fn, fn);
-    const tail = run.catch(() => {});
-    locks.set(key, tail);
-    tail.then(() => {
-      if (locks.get(key) === tail) locks.delete(key);
+export function createUsage({ dataStore, repository, limits, globalLimits = {}, now = Date.now }) {
+  let resolvedRepository = repository;
+  let repositoryPromise = null;
+  async function getRepository() {
+    if (resolvedRepository) return resolvedRepository;
+    repositoryPromise ||= import('../persistence/usageRepository.js').then(({ createFileUsageRepository }) => {
+      resolvedRepository = createFileUsageRepository({ dataStore });
+      return resolvedRepository;
     });
-    return run;
+    return repositoryPromise;
   }
 
-  async function consumeAtKey(key, configuredLimits, kind, units) {
+  function request(scope, ownerId, day, configuredLimits, kind, units) {
     const limit = configuredLimits[kind];
     if (typeof limit !== 'number') throw new Error(`unknown usage kind: ${kind}`);
     if (!Number.isSafeInteger(units) || units <= 0) throw new Error('usage units must be a positive integer');
-    const t = now();
-    return withKeyLock(key(t), async () => {
-      const counts = (await dataStore.get(key(t))) || {};
-      const used = counts[kind] || 0;
-      if (used + units > limit) return { ok: false, resetAt: nextUtcMidnight(t) };
-      counts[kind] = used + units;
-      await dataStore.set(key(t), counts);
-      return { ok: true };
-    });
+    return { scope, ownerId, day, kind, units, limit };
+  }
+
+  async function consumeRequests(requests, timestamp) {
+    const result = await (await getRepository()).consumeBatch(requests, timestamp);
+    return result.ok ? { ok: true } : { ok: false, resetAt: nextUtcMidnight(timestamp) };
   }
 
   return {
     async consume(userId, kind, units = 1) {
-      return consumeAtKey(
-        (t) => usageKey(userId, utcDay(t)),
-        limits,
-        kind,
-        units,
-      );
+      const timestamp = now();
+      return consumeRequests([
+        request('user', userId, utcDay(timestamp), limits, kind, units),
+      ], timestamp);
     },
 
     async consumeGlobal(kind, units = 1) {
-      return consumeAtKey(
-        (t) => globalUsageKey(utcDay(t)),
-        globalLimits,
-        kind,
-        units,
-      );
+      const timestamp = now();
+      return consumeRequests([
+        request('global', '', utcDay(timestamp), globalLimits, kind, units),
+      ], timestamp);
+    },
+
+    async reserveTextOperation(userId, tokenUnits) {
+      const timestamp = now();
+      const day = utcDay(timestamp);
+      return consumeRequests([
+        request('user', userId, day, limits, 'messages', 1),
+        request('user', userId, day, limits, 'textTokens', tokenUnits),
+        request('global', '', day, globalLimits, 'textTokens', tokenUnits),
+      ], timestamp);
     },
   };
 }

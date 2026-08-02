@@ -111,7 +111,7 @@ describe('createApp', () => {
     expect(app.locals.persistence.readiness()).toMatchObject({
       ok: true,
       driver: 'sqlite',
-      migrationVersion: 1,
+      migrationVersion: 2,
     });
   });
 

@@ -156,28 +156,22 @@ describe('POST /text-operations/:operation', () => {
   });
 
   it('charges call, user token, and global token budgets', async () => {
-    const consume = vi.fn().mockResolvedValue({ ok: true });
-    const consumeGlobal = vi.fn().mockResolvedValue({ ok: true });
-    const app = buildApp({ usage: { consume, consumeGlobal }, fetchImpl: successfulFetch() });
+    const reserveTextOperation = vi.fn().mockResolvedValue({ ok: true });
+    const app = buildApp({ usage: { reserveTextOperation }, fetchImpl: successfulFetch() });
     await request(app)
       .post('/api/text-operations/summarize-world')
       .send({ input: { raw: '世界' } });
     const reservedTokens = estimateTextOperationTokens(
       buildTextOperationRequest('summarize-world', { raw: '世界' }),
     );
-    expect(consume).toHaveBeenNthCalledWith(1, undefined, 'messages', 1);
     expect(reservedTokens).toBeGreaterThan(2000);
-    expect(consume).toHaveBeenNthCalledWith(2, undefined, 'textTokens', reservedTokens);
-    expect(consumeGlobal).toHaveBeenCalledWith('textTokens', reservedTokens);
+    expect(reserveTextOperation).toHaveBeenCalledWith(undefined, reservedTokens);
   });
 
   it('rejects exhausted budgets before calling Gemini', async () => {
     const fetchImpl = successfulFetch();
     const usage = {
-      consume: vi.fn()
-        .mockResolvedValueOnce({ ok: true })
-        .mockResolvedValueOnce({ ok: false, resetAt: 123 }),
-      consumeGlobal: vi.fn().mockResolvedValue({ ok: true }),
+      reserveTextOperation: vi.fn().mockResolvedValue({ ok: false, resetAt: 123 }),
     };
     const app = buildApp({ usage, fetchImpl });
     const res = await request(app)

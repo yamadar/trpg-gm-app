@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createUsage, globalUsageKey, usageKey } from './usage.js';
+import { createPersistence } from '../persistence/createPersistence.js';
 
 let dir;
 let dataStore;
@@ -81,6 +82,44 @@ describe('usage limits', () => {
     expect((await usage.consumeGlobal('textTokens', 2_500)).ok).toBe(true);
     expect((await usage.consumeGlobal('textTokens', 2_000)).ok).toBe(false);
     expect(await dataStore.get(globalUsageKey('2026-07-23'))).toEqual({ textTokens: 2_500 });
+  });
+
+  it('reserves user and global text-operation budgets as one batch', async () => {
+    const usage = createUsage({
+      dataStore,
+      limits: { messages: 3, textTokens: 10_000 },
+      globalLimits: { textTokens: 2_000 },
+      now: () => T0,
+    });
+    expect((await usage.reserveTextOperation('usr_1', 2_500)).ok).toBe(false);
+    expect(await dataStore.get(usageKey('usr_1', '2026-07-23'))).toBeNull();
+    expect(await dataStore.get(globalUsageKey('2026-07-23'))).toBeNull();
+  });
+
+  it('uses SQLite atomic counters under concurrent reservations', async () => {
+    const persistence = createPersistence({ driver: 'sqlite', dataDir: dir });
+    try {
+      const usage = createUsage({
+        repository: persistence.repositories.usage,
+        limits: { messages: 5, textTokens: 5_000 },
+        globalLimits: { textTokens: 5_000 },
+        now: () => T0,
+      });
+      const results = await Promise.all(
+        Array.from({ length: 20 }, () => usage.reserveTextOperation('usr_1', 1_000)),
+      );
+      expect(results.filter((result) => result.ok)).toHaveLength(5);
+      expect(persistence.db.prepare(`
+        SELECT used_units FROM usage_counters
+        WHERE scope = 'user' AND owner_id = 'usr_1' AND day = '2026-07-23' AND kind = 'textTokens'
+      `).get().used_units).toBe(5_000);
+      expect(persistence.db.prepare(`
+        SELECT used_units FROM usage_counters
+        WHERE scope = 'global' AND owner_id = '' AND day = '2026-07-23' AND kind = 'textTokens'
+      `).get().used_units).toBe(5_000);
+    } finally {
+      persistence.close();
+    }
   });
 
   it('rejects invalid usage units', async () => {

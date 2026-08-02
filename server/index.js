@@ -159,6 +159,7 @@ export function createApp({
   const providers = createProviders(env);
   const usage = createUsage({
     dataStore,
+    repository: persistence.repositories.usage,
     limits: {
       messages: parseLimit(env.LIMIT_MESSAGES_PER_DAY, 200),
       textTokens: parseLimit(env.LIMIT_TEXT_TOKENS_PER_DAY, 500_000),
@@ -212,6 +213,7 @@ export function createApp({
   }));
   const partyService = createPartyService({
     dataStore,
+    transaction: persistence.transaction,
     usage,
     generator: apiKey
       ? (args) => generatePartyResolution({
