@@ -56,6 +56,7 @@ export function createSessionsRouter({
   apiKey,
   novelJobs,
   usage,
+  sessionRepository = null,
   now = Date.now,
   withSessionLock = createKeyedLock(),
 }) {
@@ -165,7 +166,12 @@ export function createSessionsRouter({
         const keys = await dataStore.list(sessionListPrefix(req.userId));
         if (keys.length >= MAX_SESSIONS_PER_USER) return { tooMany: true };
       }
-      await dataStore.set(key, session);
+      if (current && !force && sessionRepository?.compareAndSet) {
+        const saved = await sessionRepository.compareAndSet(key, currentRevision, session);
+        if (!saved.ok) return { conflict: saved.current };
+      } else {
+        await dataStore.set(key, session);
+      }
       if (tombstone) await dataStore.delete(deletionKey);
       return { session };
     }));

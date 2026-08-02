@@ -17,6 +17,36 @@ function partyOwner(db, parts, value) {
   return row?.owner_id || null;
 }
 
+export function moduleForJsonKey(key) {
+  const parts = segments(key);
+  if (parts[0] === 'auth') return 'auth';
+  if (parts[0] === 'global' && parts[1] === 'usage') return 'usage';
+  if (parts[0] === 'sharedSessions') return 'party';
+  if (parts[0] === 'public') return 'publishing';
+  if (parts[0] !== 'users' || !parts[1]) return 'system';
+  const area = parts[2];
+  if (area === 'sharedSessions') return 'party';
+  if (area === 'usage') return 'usage';
+  if (area === 'publish') return 'publishing';
+  if (area === 'sessions') return parts.at(-1) === 'novelJob' ? 'jobs' : 'sessions';
+  if (area === 'sessionDeletions' || area === 'endings') return 'sessions';
+  if (area === 'worlds' && parts.includes('campaigns')) return 'campaigns';
+  if (area === 'worlds' || area === 'rulesets') return 'library';
+  if (area === 'profile' || area === 'profile-image') return 'auth';
+  return 'system';
+}
+
+export function moduleForDocumentPath(documentPath) {
+  const parts = segments(documentPath);
+  if (parts[0] === 'public') return 'publishing';
+  if (parts[0] === 'users' && parts[1]) {
+    if (parts[2] === 'sessions') return 'sessions';
+    if (parts[2] === 'worlds' && parts.includes('campaigns')) return 'campaigns';
+    if (parts[2] === 'worlds') return 'library';
+  }
+  return 'system';
+}
+
 export function classifyJsonRecord(db, key, value) {
   const parts = segments(key);
   if (parts[0] === 'auth') return { module: 'auth', resourceType: parts[1] || 'auth', ownerId: null };

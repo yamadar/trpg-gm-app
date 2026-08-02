@@ -159,6 +159,7 @@ export function createApp({
     objectStorageForcePathStyle: env.OBJECT_STORAGE_FORCE_PATH_STYLE,
   });
   const { dataStore, textStore, imageStore } = persistence;
+  const { scopes } = persistence;
   const textModel = String(env.GEMINI_TEXT_MODEL || '').trim();
   const geminiImageApiKey = env.GEMINI_IMAGE_API_KEY;
   const geminiImageModel = String(env.GEMINI_IMAGE_MODEL || '').trim();
@@ -256,8 +257,8 @@ export function createApp({
       }
     : null;
   const novelJobs = createNovelJobRunner({
-    dataStore,
-    textStore,
+    dataStore: scopes.sessions.dataStore,
+    textStore: scopes.sessions.textStore,
     apiKey,
     model: textModel,
     fetchImpl,
@@ -277,10 +278,14 @@ export function createApp({
   const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: secureCookies, path: '/' };
 
   app.use(createOriginCheck({ baseUrl }));
-  app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
-  app.use('/api', createPublicContentRouter({ dataStore, textStore, imageStore })); // 公開ギャラリーは認証不要
+  app.use(createAuthRouter({ dataStore: scopes.auth.dataStore, providers, baseUrl, fetchImpl, secureCookies }));
+  app.use('/api', createPublicContentRouter({
+    dataStore: scopes.publicRead.dataStore,
+    textStore: scopes.publicRead.textStore,
+    imageStore,
+  })); // 公開ギャラリーは認証不要
   app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiImageApiKey })); // 機能検出は認証不要
-  app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
+  app.use('/api', createRequireAuth({ dataStore: scopes.auth.dataStore, cookieOptions }));
   app.use('/api', createStorageGuard({
     dataDir,
     maxUserBytes: maxUserStorageBytes,
@@ -298,16 +303,17 @@ export function createApp({
     maxConcurrent: parseLimit(env.LIMIT_TEXT_CONCURRENT, 6),
   }));
   app.use('/api', createSessionsRouter({
-    dataStore,
-    textStore,
+    dataStore: scopes.sessions.dataStore,
+    textStore: scopes.sessions.textStore,
     imageStore,
     apiKey,
     novelJobs,
     usage,
+    sessionRepository: persistence.repositories.modules.sessions.records,
     withSessionLock,
   }));
   const partyService = createPartyService({
-    dataStore,
+    dataStore: scopes.party.dataStore,
     transaction: persistence.transaction,
     usage,
     generator: apiKey
@@ -321,9 +327,15 @@ export function createApp({
   });
   app.locals.partyService = partyService;
   app.use('/api', createPartySessionsRouter({ service: partyService }));
-  app.use('/api', createEndingsRouter({ dataStore, apiKey, model: textModel, fetchImpl, usage }));
+  app.use('/api', createEndingsRouter({
+    dataStore: scopes.endings.dataStore,
+    apiKey,
+    model: textModel,
+    fetchImpl,
+    usage,
+  }));
   app.use('/api', createSceneImagesRouter({
-    dataStore,
+    dataStore: scopes.sceneImages.dataStore,
     imageStore,
     geminiTextApiKey: apiKey,
     geminiTextModel: textModel,
@@ -333,12 +345,24 @@ export function createApp({
     usage,
     withSessionLock,
   }));
-  app.use('/api', createAttachmentsRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createWorldsRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createCharactersRouter({ dataStore, textStore, imageStore }));
+  app.use('/api', createAttachmentsRouter({
+    dataStore: scopes.attachments.dataStore,
+    textStore: scopes.attachments.textStore,
+    imageStore,
+  }));
+  app.use('/api', createWorldsRouter({
+    dataStore: scopes.library.dataStore,
+    textStore: scopes.library.textStore,
+    imageStore,
+  }));
+  app.use('/api', createCharactersRouter({
+    dataStore: scopes.library.dataStore,
+    textStore: scopes.library.textStore,
+    imageStore,
+  }));
   app.use('/api', createScenariosRouter({
-    dataStore,
-    textStore,
+    dataStore: scopes.library.dataStore,
+    textStore: scopes.library.textStore,
     imageStore,
     usage,
     scenarioAnalyzer: apiKey
@@ -374,15 +398,26 @@ export function createApp({
       }
     : null;
   app.use('/api', createCampaignsRouter({
-    dataStore,
-    textStore,
+    dataStore: scopes.campaigns.dataStore,
+    textStore: scopes.campaigns.textStore,
     generator: campaignGenerator,
     usage,
   }));
-  app.use('/api', createWorldContentRouter({ dataStore, textStore }));
-  app.use('/api', createRulesetsRouter({ dataStore }));
-  app.use('/api', createPublishRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createImportsRouter({ dataStore, textStore, imageStore }));
+  app.use('/api', createWorldContentRouter({
+    dataStore: scopes.worldContent.dataStore,
+    textStore: scopes.worldContent.textStore,
+  }));
+  app.use('/api', createRulesetsRouter({ dataStore: scopes.rulesets.dataStore }));
+  app.use('/api', createPublishRouter({
+    dataStore: scopes.publishing.dataStore,
+    textStore: scopes.publishing.textStore,
+    imageStore,
+  }));
+  app.use('/api', createImportsRouter({
+    dataStore: scopes.imports.dataStore,
+    textStore: scopes.imports.textStore,
+    imageStore,
+  }));
 
   // 静的配信はAPIルーターより後にマウントする。先に置くと dist/ 側の
   // ファイル名と衝突したパスがAPIより優先されてしまうため。

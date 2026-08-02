@@ -5,8 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { openSqliteDatabase } from '../infrastructure/sqlite/database.js';
 import { createSqliteCoordinator } from '../infrastructure/sqlite/coordinator.js';
-import { createSqliteDataStore } from '../infrastructure/sqlite/dataStore.js';
-import { createSqliteTextStore } from '../infrastructure/sqlite/textStore.js';
 import { createPersistence } from './createPersistence.js';
 import { createSqliteStorageRepository } from './storageRepository.js';
 

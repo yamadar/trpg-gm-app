@@ -51,6 +51,18 @@ describe('SQLite migrations', () => {
       INSERT INTO storage_items(item_type, resource_key, owner_id, charged_bytes, updated_at_ms)
       VALUES ('media', 'users/usr_owner/images/a.webp', 'usr_owner', 42, 100)
     `).run();
+    db.prepare(`
+      INSERT INTO domain_records(
+        key, module, resource_type, owner_id, value_json, logical_bytes, revision, updated_at_ms
+      ) VALUES (
+        'users/usr_owner/sessions/s1', 'sessions', 'session', 'usr_owner',
+        '{"id":"s1","title":"Before upgrade","_sync":{"revision":4}}', 68, 4, 100
+      )
+    `).run();
+    db.prepare(`
+      INSERT INTO documents(path, module, resource_type, owner_id, content, logical_bytes, updated_at_ms)
+      VALUES ('users/usr_owner/worlds/w1/world.md', 'library', 'library-document', 'usr_owner', '# World', 7, 100)
+    `).run();
 
     runMigrations(db);
     expect(db.prepare('SELECT * FROM media_assets').get()).toMatchObject({
@@ -65,6 +77,12 @@ describe('SQLite migrations', () => {
     });
     expect(db.prepare("SELECT charged_bytes FROM storage_items WHERE item_type = 'media'").get().charged_bytes)
       .toBe(42);
+    expect(db.prepare('SELECT entity_id, title, revision FROM session_records').get()).toEqual({
+      entity_id: 's1',
+      title: 'Before upgrade',
+      revision: 4,
+    });
+    expect(db.prepare('SELECT content FROM library_documents').get().content).toBe('# World');
     db.close();
   });
 });

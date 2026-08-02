@@ -504,8 +504,10 @@ export async function migrateFilesystemToSqlite({
     report[status] += 1;
   }
 
+  report.moduleAudit = dryRun ? null : await persistence.auditModules();
   report.ok = report.quarantined.length === 0
     && report.validationErrors.length === 0
-    && report.orphanReferences.length === 0;
+    && report.orphanReferences.length === 0
+    && (report.moduleAudit?.ok ?? true);
   return report;
 }

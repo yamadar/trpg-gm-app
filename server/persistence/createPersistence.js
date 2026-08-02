@@ -4,8 +4,6 @@ import { createFsTextStore } from '../storage/textStore.js';
 import { createFilesystemObjectStorage } from '../infrastructure/objectStorage/filesystemObjectStorage.js';
 import { createS3ObjectStorage } from '../infrastructure/objectStorage/s3ObjectStorage.js';
 import { openSqliteDatabase, sqliteReadiness } from '../infrastructure/sqlite/database.js';
-import { createSqliteDataStore } from '../infrastructure/sqlite/dataStore.js';
-import { createSqliteTextStore } from '../infrastructure/sqlite/textStore.js';
 import { createSqliteCoordinator } from '../infrastructure/sqlite/coordinator.js';
 import { createFileUsageRepository, createSqliteUsageRepository } from './usageRepository.js';
 import { createSqliteStorageRepository } from './storageRepository.js';
@@ -15,6 +13,11 @@ import {
   createSqliteMediaRepository,
 } from './mediaRepository.js';
 import { createManagedImageStore, reconcileMediaAssets } from './managedImageStore.js';
+import {
+  createFileModuleRepositories,
+  createScopedModuleStores,
+  createSqliteModulePersistence,
+} from './moduleRepository.js';
 import { createKeyedLock } from '../keyedLock.js';
 
 export const DATABASE_DRIVERS = new Set(['filesystem', 'sqlite']);
@@ -81,20 +84,26 @@ export function createPersistence({
     : createFilesystemObjectStorage(mediaDir);
   if (selected === 'filesystem') {
     const dataStore = createFsDataStore(dataDir);
+    const textStore = createFsTextStore(dataDir);
     const withTransactionLock = createKeyedLock();
     const transaction = (operation) => withTransactionLock('filesystem-transaction', operation);
+    const modules = createFileModuleRepositories({ dataStore, textStore, transaction });
+    const scopes = createApplicationScopes(modules);
     return {
       driver: selected,
       objectStorageDriver: selectedObjectStorage,
       objectStorage,
       dataStore,
-      textStore: createFsTextStore(dataDir),
+      textStore,
       imageStore: objectStorage,
       transaction,
       repositories: {
         usage: createFileUsageRepository({ dataStore, transaction }),
         jobs: createFileJobRepository({ dataStore, transaction }),
+        modules,
       },
+      scopes,
+      auditModules: async () => ({ ok: true, driver: 'filesystem' }),
       metrics: () => ({}),
       reconcileMedia: async () => ({ found: 0, activated: 0, failed: 0, deleted: 0 }),
       readiness: () => ({
@@ -111,6 +120,8 @@ export function createPersistence({
   const filename = resolveSqlitePath(sqlitePath, dataDir);
   const db = openSqliteDatabase(filename);
   const coordinator = createSqliteCoordinator(db);
+  const modulePersistence = createSqliteModulePersistence(db, { coordinator });
+  const scopes = createApplicationScopes(modulePersistence.modules);
   const storageRepository = createSqliteStorageRepository({ db, coordinator });
   const mediaRepository = createSqliteMediaRepository({ db, coordinator });
   const imageStore = createManagedImageStore({
@@ -124,8 +135,8 @@ export function createPersistence({
     objectStorage,
     sqlitePath: filename,
     db,
-    dataStore: createSqliteDataStore(db, { coordinator }),
-    textStore: createSqliteTextStore(db, { coordinator }),
+    dataStore: modulePersistence.dataStore,
+    textStore: modulePersistence.textStore,
     imageStore,
     transaction: coordinator.transaction,
     repositories: {
@@ -133,7 +144,10 @@ export function createPersistence({
       storage: storageRepository,
       media: mediaRepository,
       jobs: createSqliteJobRepository({ db, coordinator }),
+      modules: modulePersistence.modules,
     },
+    scopes,
+    auditModules: modulePersistence.audit,
     reconcileMedia: () => reconcileMediaAssets({ objectStorage, mediaRepository }),
     metrics: coordinator.snapshotMetrics,
     readiness: () => ({
@@ -148,5 +162,24 @@ export function createPersistence({
         db.close();
       }
     },
+  };
+}
+
+function createApplicationScopes(modules) {
+  const scope = (...names) => createScopedModuleStores(modules, names);
+  return {
+    auth: scope('auth'),
+    publicRead: scope('publishing', 'auth'),
+    sessions: scope('sessions', 'jobs', 'publishing'),
+    party: scope('party', 'auth', 'sessions', 'campaigns'),
+    endings: scope('sessions'),
+    sceneImages: scope('sessions'),
+    attachments: scope('library', 'auth'),
+    library: scope('library', 'publishing'),
+    worldContent: scope('library'),
+    rulesets: scope('library'),
+    campaigns: scope('campaigns', 'sessions', 'library'),
+    publishing: scope('publishing', 'library', 'sessions', 'auth'),
+    imports: scope('publishing', 'library', 'auth'),
   };
 }
