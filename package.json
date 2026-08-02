@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "seed": "node scripts/seedStarters.js",
+    "migrate:sqlite": "node scripts/migrate-to-sqlite.js",
     "test": "vitest run"
   },
   "dependencies": {
