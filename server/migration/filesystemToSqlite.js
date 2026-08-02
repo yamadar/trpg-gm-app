@@ -400,12 +400,18 @@ export async function migrateFilesystemToSqlite({
           continue;
         }
         await transaction(async () => {
-          await persistence.repositories.storage.setItem(
-            'media',
-            entry.targetKey,
-            entry.ownership.ownerId,
-            entry.bytes,
-          );
+          await persistence.repositories.media.adoptExisting({
+            resourceKey: entry.targetKey,
+            ownerId: entry.ownership.ownerId,
+            objectKey: entry.targetKey,
+            sha256: entry.sha256,
+            bytes: entry.bytes,
+            mimeType: entry.extension === '.png'
+              ? 'image/png'
+              : entry.extension === '.webp'
+                ? 'image/webp'
+                : 'image/jpeg',
+          });
           if (journal?.source_sha256 !== entry.sha256 || journal.status !== 'retained') {
             journalUpsert.run(
             entry.relativePath, entry.sha256, entry.bytes, 'media', entry.targetKey, 'retained', now(),

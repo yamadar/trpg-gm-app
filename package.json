@@ -12,6 +12,7 @@
     "start": "node server/index.js",
     "seed": "node scripts/seedStarters.js",
     "migrate:sqlite": "node scripts/migrate-to-sqlite.js",
+    "migrate:media:s3": "node scripts/migrate-media-to-s3.js",
     "backup:sqlite": "node scripts/backup-sqlite.js",
     "test": "vitest run"
   },

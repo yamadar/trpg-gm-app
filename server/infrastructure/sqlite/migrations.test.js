@@ -4,7 +4,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { openSqliteDatabase } from './database.js';
-import { availableMigrationVersion, currentMigrationVersion, runMigrations } from './migrations.js';
+import {
+  availableMigrationVersion,
+  currentMigrationVersion,
+  DEFAULT_MIGRATIONS_DIR,
+  runMigrations,
+} from './migrations.js';
 
 const dirs = [];
 
@@ -30,6 +35,36 @@ describe('SQLite migrations', () => {
     const db = openSqliteDatabase(':memory:', { migrationsDir: dir });
     await fs.writeFile(path.join(dir, '001_test.sql'), 'CREATE TABLE changed(id INTEGER PRIMARY KEY) STRICT;');
     expect(() => runMigrations(db, { migrationsDir: dir })).toThrow(/checksum mismatch/);
+    db.close();
+  });
+
+  it('backfills existing media ledger rows into ready assets and bindings', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sqlite-media-backfill-'));
+    dirs.push(dir);
+    const legacyMigrations = path.join(dir, 'migrations');
+    await fs.mkdir(legacyMigrations);
+    for (const name of (await fs.readdir(DEFAULT_MIGRATIONS_DIR)).filter((name) => /^00[1-5]_/.test(name))) {
+      await fs.copyFile(path.join(DEFAULT_MIGRATIONS_DIR, name), path.join(legacyMigrations, name));
+    }
+    const db = openSqliteDatabase(':memory:', { migrationsDir: legacyMigrations });
+    db.prepare(`
+      INSERT INTO storage_items(item_type, resource_key, owner_id, charged_bytes, updated_at_ms)
+      VALUES ('media', 'users/usr_owner/images/a.webp', 'usr_owner', 42, 100)
+    `).run();
+
+    runMigrations(db);
+    expect(db.prepare('SELECT * FROM media_assets').get()).toMatchObject({
+      id: 'legacy:users/usr_owner/images/a.webp',
+      object_key: 'users/usr_owner/images/a.webp',
+      state: 'ready',
+      byte_size: 42,
+    });
+    expect(db.prepare('SELECT * FROM media_bindings').get()).toMatchObject({
+      resource_key: 'users/usr_owner/images/a.webp',
+      asset_id: 'legacy:users/usr_owner/images/a.webp',
+    });
+    expect(db.prepare("SELECT charged_bytes FROM storage_items WHERE item_type = 'media'").get().charged_bytes)
+      .toBe(42);
     db.close();
   });
 });

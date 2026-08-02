@@ -451,6 +451,15 @@ if (process.env.NODE_ENV !== 'test') {
   // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
   (async () => {
     try {
+      const mediaRecovery = await app.locals.persistence.reconcileMedia();
+      if (mediaRecovery.found) console.log('media assets reconciled', mediaRecovery);
+    } catch (error) {
+      console.error('media asset reconciliation failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+    try {
       const manifest = await seedStarters(app.locals.dataStore, app.locals.textStore, {
         imageStore: app.locals.imageStore,
       });

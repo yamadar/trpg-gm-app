@@ -9,8 +9,12 @@ import { createSqliteTextStore } from '../infrastructure/sqlite/textStore.js';
 import { createSqliteCoordinator } from '../infrastructure/sqlite/coordinator.js';
 import { createFileUsageRepository, createSqliteUsageRepository } from './usageRepository.js';
 import { createSqliteStorageRepository } from './storageRepository.js';
-import { createMeteredImageStore } from './meteredImageStore.js';
 import { createFileJobRepository, createSqliteJobRepository } from './jobRepository.js';
+import {
+  createSqliteMediaOwnerResolver,
+  createSqliteMediaRepository,
+} from './mediaRepository.js';
+import { createManagedImageStore, reconcileMediaAssets } from './managedImageStore.js';
 import { createKeyedLock } from '../keyedLock.js';
 
 export const DATABASE_DRIVERS = new Set(['filesystem', 'sqlite']);
@@ -92,6 +96,7 @@ export function createPersistence({
         jobs: createFileJobRepository({ dataStore, transaction }),
       },
       metrics: () => ({}),
+      reconcileMedia: async () => ({ found: 0, activated: 0, failed: 0, deleted: 0 }),
       readiness: () => ({
         ok: true,
         driver: selected,
@@ -107,10 +112,11 @@ export function createPersistence({
   const db = openSqliteDatabase(filename);
   const coordinator = createSqliteCoordinator(db);
   const storageRepository = createSqliteStorageRepository({ db, coordinator });
-  const imageStore = createMeteredImageStore({
-    baseStore: objectStorage,
-    db,
-    storageRepository,
+  const mediaRepository = createSqliteMediaRepository({ db, coordinator });
+  const imageStore = createManagedImageStore({
+    objectStorage,
+    mediaRepository,
+    ownerForResource: createSqliteMediaOwnerResolver(db),
   });
   return {
     driver: selected,
@@ -125,8 +131,10 @@ export function createPersistence({
     repositories: {
       usage: createSqliteUsageRepository({ db, coordinator }),
       storage: storageRepository,
+      media: mediaRepository,
       jobs: createSqliteJobRepository({ db, coordinator }),
     },
+    reconcileMedia: () => reconcileMediaAssets({ objectStorage, mediaRepository }),
     metrics: coordinator.snapshotMetrics,
     readiness: () => ({
       driver: selected,
