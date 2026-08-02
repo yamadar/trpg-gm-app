@@ -137,6 +137,29 @@ describe('storage guard', () => {
     });
   });
 
+  it('uses a persistent reservation manager when configured', async () => {
+    const reservationManager = {
+      reserve: vi.fn().mockResolvedValue({ ok: true, id: 'reservation_1' }),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const app = appWithGuard({
+      maxUserBytes: 100,
+      minFreeBytes: 0,
+      writeHeadroomBytes: 20,
+      reservationManager,
+      ownerIdForRequest: vi.fn().mockResolvedValue('usr_owner'),
+      measureUser: vi.fn(() => { throw new Error('filesystem measurement must not run'); }),
+      statfs: vi.fn().mockResolvedValue({ bavail: 1_000, bsize: 1 }),
+    });
+    expect((await request(app).post('/api/value').send({ x: 1 })).status).toBe(200);
+    expect(reservationManager.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      ownerId: 'usr_owner',
+      bytes: 20,
+      limitBytes: 100,
+    }));
+    await vi.waitFor(() => expect(reservationManager.release).toHaveBeenCalledWith('reservation_1'));
+  });
+
   it('charges a resolved data owner instead of the authenticated actor', async () => {
     const measureUser = vi.fn(async (_dataDir, userId) => (userId === 'usr_owner' ? 90 : 0));
     const app = appWithGuard({

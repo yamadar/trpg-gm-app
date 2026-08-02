@@ -140,6 +140,8 @@ export function createStorageGuard({
   measureUser = userStorageBytes,
   statfs = fs.statfs,
   ownerIdForRequest = (req) => req.userId,
+  reservationManager = null,
+  reservationTtlMs = 90 * 60 * 1000,
 }) {
   const userReservations = new Map();
   let globalReservedBytes = 0;
@@ -165,19 +167,35 @@ export function createStorageGuard({
       const contentLength = Math.max(0, Number(req.get('content-length')) || 0);
       const reservedWrite = Math.max(contentLength, writeHeadroomBytes);
       const reservation = await withReservationLock(async () => {
-        const [used, disk] = await Promise.all([
-          measureUser(dataDir, ownerId),
-          statfs(dataDir),
-        ]);
-        const userReserved = userReservations.get(ownerId) || 0;
-        if (used + userReserved + reservedWrite > maxUserBytes) return { error: 'user' };
+        let persistentReservation = null;
+        if (reservationManager) {
+          persistentReservation = await reservationManager.reserve({
+            ownerId,
+            bytes: reservedWrite,
+            limitBytes: maxUserBytes,
+            purpose: 'http-write',
+            ttlMs: reservationTtlMs,
+          });
+          if (!persistentReservation.ok) return { error: 'user' };
+        } else {
+          const used = await measureUser(dataDir, ownerId);
+          const userReserved = userReservations.get(ownerId) || 0;
+          if (used + userReserved + reservedWrite > maxUserBytes) return { error: 'user' };
+        }
+        const disk = await statfs(dataDir);
         const available = Number(disk.bavail) * Number(disk.bsize);
         if (
           !Number.isFinite(available)
           || available - globalReservedBytes < minFreeBytes + reservedWrite
         ) {
+          if (persistentReservation) await reservationManager.release(persistentReservation.id);
           return { error: 'global' };
         }
+        if (persistentReservation) {
+          globalReservedBytes += reservedWrite;
+          return { ok: true, reservationId: persistentReservation.id };
+        }
+        const userReserved = userReservations.get(ownerId) || 0;
         userReservations.set(ownerId, userReserved + reservedWrite);
         globalReservedBytes += reservedWrite;
         return { ok: true };
@@ -197,12 +215,18 @@ export function createStorageGuard({
         references -= 1;
         if (references > 0) return;
         finalized = true;
-        void withReservationLock(() => {
-          const remaining = Math.max(0, (userReservations.get(ownerId) || 0) - reservedWrite);
-          if (remaining) userReservations.set(ownerId, remaining);
-          else userReservations.delete(ownerId);
+        void withReservationLock(async () => {
+          if (reservationManager) await reservationManager.release(reservation.reservationId);
+          else {
+            const remaining = Math.max(0, (userReservations.get(ownerId) || 0) - reservedWrite);
+            if (remaining) userReservations.set(ownerId, remaining);
+            else userReservations.delete(ownerId);
+          }
           globalReservedBytes = Math.max(0, globalReservedBytes - reservedWrite);
-        });
+        }).catch((error) => console.error('storage reservation release failed', {
+          name: error?.name || 'Error',
+          code: error?.code || null,
+        }));
       };
       req.storageOwnerId = ownerId;
       req.storageReservation = {

@@ -7,6 +7,8 @@ import { createSqliteDataStore } from '../infrastructure/sqlite/dataStore.js';
 import { createSqliteTextStore } from '../infrastructure/sqlite/textStore.js';
 import { createSqliteCoordinator } from '../infrastructure/sqlite/coordinator.js';
 import { createFileUsageRepository, createSqliteUsageRepository } from './usageRepository.js';
+import { createSqliteStorageRepository } from './storageRepository.js';
+import { createMeteredImageStore } from './meteredImageStore.js';
 import { createKeyedLock } from '../keyedLock.js';
 
 export const DATABASE_DRIVERS = new Set(['filesystem', 'sqlite']);
@@ -32,7 +34,7 @@ export function createPersistence({
   mediaDir = dataDir,
 } = {}) {
   const selected = resolveDatabaseDriver(driver);
-  const imageStore = createFsImageStore(mediaDir);
+  const filesystemImageStore = createFsImageStore(mediaDir);
   if (selected === 'filesystem') {
     const dataStore = createFsDataStore(dataDir);
     const withTransactionLock = createKeyedLock();
@@ -41,7 +43,7 @@ export function createPersistence({
       driver: selected,
       dataStore,
       textStore: createFsTextStore(dataDir),
-      imageStore,
+      imageStore: filesystemImageStore,
       transaction,
       repositories: {
         usage: createFileUsageRepository({ dataStore, transaction }),
@@ -55,6 +57,12 @@ export function createPersistence({
   const filename = resolveSqlitePath(sqlitePath, dataDir);
   const db = openSqliteDatabase(filename);
   const coordinator = createSqliteCoordinator(db);
+  const storageRepository = createSqliteStorageRepository({ db, coordinator });
+  const imageStore = createMeteredImageStore({
+    baseStore: filesystemImageStore,
+    db,
+    storageRepository,
+  });
   return {
     driver: selected,
     sqlitePath: filename,
@@ -65,6 +73,7 @@ export function createPersistence({
     transaction: coordinator.transaction,
     repositories: {
       usage: createSqliteUsageRepository({ db, coordinator }),
+      storage: storageRepository,
     },
     metrics: coordinator.snapshotMetrics,
     readiness: () => ({ driver: selected, ...sqliteReadiness(db) }),

@@ -15,6 +15,30 @@ function prefixRows(db, prefix) {
   `).all(`${escaped}/%`);
 }
 
+function reassignAggregateOwnership(db, key, value, timestamp) {
+  const publicMatch = key.match(/^public\/([^/]+)\/([^/]+)$/);
+  const partyMatch = key.match(/^sharedSessions\/([^/]+)$/);
+  const ownerId = value?.ownerId;
+  if (typeof ownerId !== 'string' || !ownerId) return;
+  const prefix = publicMatch
+    ? `public/${publicMatch[1]}/${publicMatch[2]}`
+    : partyMatch ? `sharedSessions/${partyMatch[1]}` : null;
+  if (!prefix) return;
+  const escaped = prefix.replace(/[\\%_]/g, '\\$&');
+  db.prepare(`
+    UPDATE domain_records SET owner_id = ?, updated_at_ms = ?
+    WHERE key LIKE ? ESCAPE '\\' AND key <> ?
+  `).run(ownerId, timestamp, `${escaped}/%`, key);
+  db.prepare(`
+    UPDATE documents SET owner_id = ?, updated_at_ms = ?
+    WHERE path LIKE ? ESCAPE '\\'
+  `).run(ownerId, timestamp, `${escaped}/%`);
+  db.prepare(`
+    UPDATE storage_items SET owner_id = ?, updated_at_ms = ?
+    WHERE item_type = 'media' AND resource_key LIKE ? ESCAPE '\\'
+  `).run(ownerId, timestamp, `${escaped}/%`);
+}
+
 export function createSqliteDataStore(db, { now = Date.now, coordinator } = {}) {
   const execute = coordinator?.run || (async (operation) => operation());
   const getStatement = db.prepare('SELECT value_json FROM domain_records WHERE key = ?');
@@ -51,6 +75,7 @@ export function createSqliteDataStore(db, { now = Date.now, coordinator } = {}) 
         const revision = Number.isSafeInteger(candidateRevision) && candidateRevision >= 0
           ? candidateRevision
           : 0;
+        const timestamp = now();
         setStatement.run(
           key,
           classification.module,
@@ -59,8 +84,9 @@ export function createSqliteDataStore(db, { now = Date.now, coordinator } = {}) 
           valueJson,
           Buffer.byteLength(valueJson, 'utf8'),
           revision,
-          now(),
+          timestamp,
         );
+        reassignAggregateOwnership(db, key, value, timestamp);
       });
     },
     async list(prefix) {

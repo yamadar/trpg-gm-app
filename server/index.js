@@ -193,6 +193,7 @@ export function createApp({
     minFreeBytes: parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024),
     writeHeadroomBytes: parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024),
     ownerIdForRequest: createStorageOwnerResolver({ dataStore }),
+    reservationManager: persistence.repositories.storage || null,
   }));
 
   app.use('/api', createTextOperationsRouter({

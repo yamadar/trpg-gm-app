@@ -42,6 +42,14 @@ describe('filesystem to SQLite migration', () => {
     expect(await persistence.dataStore.get('users/usr_1/worlds/w1')).toEqual({ id: 'w1', title: 'World' });
     expect(await persistence.textStore.read('users/usr_1/worlds/w1/world.md')).toBe('# World');
     expect(persistence.db.prepare('SELECT COUNT(*) AS count FROM migration_journal').get().count).toBe(4);
+    const audit = await persistence.repositories.storage.audit();
+    expect(audit).toContainEqual(expect.objectContaining({
+      ownerId: 'usr_1',
+      usedBytes: expect.any(Number),
+      measuredBytes: expect.any(Number),
+    }));
+    expect(audit.find((item) => item.ownerId === 'usr_1').usedBytes)
+      .toBe(audit.find((item) => item.ownerId === 'usr_1').measuredBytes);
   });
 
   it('is idempotent and skips unchanged journal entries', async () => {

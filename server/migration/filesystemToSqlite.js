@@ -326,12 +326,22 @@ export async function migrateFilesystemToSqlite({
         report.retainedMedia += 1;
       } else {
         const journal = journalGet.get(entry.relativePath);
+        await transaction(async () => {
+          await persistence.repositories.storage.setItem(
+            'media',
+            entry.targetKey,
+            entry.ownership.ownerId,
+            entry.bytes,
+          );
+          if (journal?.source_sha256 !== entry.sha256 || journal.status !== 'retained') {
+            journalUpsert.run(
+            entry.relativePath, entry.sha256, entry.bytes, 'media', entry.targetKey, 'retained', now(),
+            );
+          }
+        });
         if (journal?.source_sha256 === entry.sha256 && journal.status === 'retained') {
           report.skipped += 1;
         } else {
-          await transaction(() => journalUpsert.run(
-            entry.relativePath, entry.sha256, entry.bytes, 'media', entry.targetKey, 'retained', now(),
-          ));
           report.retainedMedia += 1;
         }
       }
