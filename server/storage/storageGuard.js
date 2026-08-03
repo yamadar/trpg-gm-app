@@ -216,13 +216,16 @@ export function createStorageGuard({
         if (references > 0) return;
         finalized = true;
         void withReservationLock(async () => {
-          if (reservationManager) await reservationManager.release(reservation.reservationId);
-          else {
-            const remaining = Math.max(0, (userReservations.get(ownerId) || 0) - reservedWrite);
-            if (remaining) userReservations.set(ownerId, remaining);
-            else userReservations.delete(ownerId);
+          try {
+            if (reservationManager) await reservationManager.release(reservation.reservationId);
+          } finally {
+            if (!reservationManager) {
+              const remaining = Math.max(0, (userReservations.get(ownerId) || 0) - reservedWrite);
+              if (remaining) userReservations.set(ownerId, remaining);
+              else userReservations.delete(ownerId);
+            }
+            globalReservedBytes = Math.max(0, globalReservedBytes - reservedWrite);
           }
-          globalReservedBytes = Math.max(0, globalReservedBytes - reservedWrite);
         }).catch((error) => console.error('storage reservation release failed', {
           name: error?.name || 'Error',
           code: error?.code || null,

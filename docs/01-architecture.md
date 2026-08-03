@@ -107,4 +107,4 @@ Express routes / domain services
 - **本番挙動を左右する設定は`NODE_ENV`ではなく専用の環境変数に分離している**(`resolveSecureCookies`/`resolveStaticDir`、`server/index.js`)。`NODE_ENV`はnpmのdevDependencies省略(`omit=dev`)やライブラリ側の最適化など無関係な意味を同時に背負うため、ビルド都合の変更でセッションクッキーのSecure属性が黙って外れる事故を避ける狙いがある。
   - `SECURE_COOKIES`: セッションクッキーのSecure属性。`true`/`false`(`1`/`0`・`yes`/`no`・`on`/`off`も可)。未設定時は`BASE_URL`のスキームから決まる(Secure属性付きクッキーはHTTPSでしか保存されないため、https=有効・http=無効以外に妥当な既定値がない)。解釈できない値は起動時に例外にする(タイプミスで黙ってSecureが外れる方が危険なため)。
   - `STATIC_DIR`: 上記の静的配信元。
-- 具体的なデプロイ手順(Render)と本番運用上の注意は[09-deployment.md](09-deployment.md)、Blueprint定義はリポジトリ直下の`render.yaml`にある。
+- 具体的なデプロイ手順(Render)と本番運用上の注意は[12-deployment.md](12-deployment.md)、Blueprint定義はリポジトリ直下の`render.yaml`にある。

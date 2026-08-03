@@ -160,6 +160,35 @@ describe('storage guard', () => {
     await vi.waitFor(() => expect(reservationManager.release).toHaveBeenCalledWith('reservation_1'));
   });
 
+  it('releases local capacity when persistent reservation release fails', async () => {
+    const releaseError = new Error('database unavailable');
+    const reservationManager = {
+      reserve: vi.fn().mockResolvedValue({ ok: true, id: 'reservation_1' }),
+      release: vi.fn().mockRejectedValue(releaseError),
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const app = appWithGuard({
+      maxUserBytes: 100,
+      minFreeBytes: 0,
+      writeHeadroomBytes: 20,
+      reservationManager,
+      statfs: vi.fn().mockResolvedValue({ bavail: 30, bsize: 1 }),
+    });
+
+    try {
+      expect((await request(app).post('/api/value').send({ x: 1 })).status).toBe(200);
+      await vi.waitFor(() => expect(consoleError).toHaveBeenCalledWith(
+        'storage reservation release failed',
+        expect.any(Object),
+      ));
+
+      expect((await request(app).post('/api/value').send({ x: 2 })).status).toBe(200);
+      await vi.waitFor(() => expect(consoleError).toHaveBeenCalledTimes(2));
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('charges a resolved data owner instead of the authenticated actor', async () => {
     const measureUser = vi.fn(async (_dataDir, userId) => (userId === 'usr_owner' ? 90 : 0));
     const app = appWithGuard({

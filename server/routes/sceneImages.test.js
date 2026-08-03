@@ -164,6 +164,13 @@ describe('DELETE /sessions/:id/images/:imageId', () => {
     });
     await imageStore.write(sessionImagePath('usr_test', 's1', 'img_target'), Buffer.from([1]));
     await imageStore.write(sessionImagePath('usr_test', 's1', 'img_other'), Buffer.from([2]));
+    const filesystemImageStore = imageStore;
+    const read = vi.fn(() => { throw new Error('DELETE must not read image bytes'); });
+    imageStore = {
+      ...filesystemImageStore,
+      read,
+      stat: vi.fn(filesystemImageStore.stat.bind(filesystemImageStore)),
+    };
     buildApp({ now: () => 20 });
 
     const res = await request(app).delete('/api/sessions/s1/images/img_target');
@@ -178,8 +185,9 @@ describe('DELETE /sessions/:id/images/:imageId', () => {
     });
     expect(res.body.session.log[0].image).toBeUndefined();
     expect(res.body.session.log[1].image.imageId).toBe('img_other');
-    expect(await imageStore.read(sessionImagePath('usr_test', 's1', 'img_target'))).toBeNull();
-    expect(await imageStore.read(sessionImagePath('usr_test', 's1', 'img_other'))).not.toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    expect(await filesystemImageStore.read(sessionImagePath('usr_test', 's1', 'img_target'))).toBeNull();
+    expect(await filesystemImageStore.read(sessionImagePath('usr_test', 's1', 'img_other'))).not.toBeNull();
     expect((await dataStore.get(sessionNovelMetaKey('usr_test', 's1'))).imageIds).toEqual([null, 'img_other']);
   });
 

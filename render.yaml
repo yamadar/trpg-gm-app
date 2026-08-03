@@ -1,6 +1,6 @@
 # Render Blueprint (https://render.com/docs/blueprint-spec)
 # Renderダッシュボードの Blueprints から、このファイルを含むリポジトリを指定して適用する。
-# 手順の全体は docs/09-deployment.md を参照。
+# 手順の全体は docs/12-deployment.md を参照。
 services:
   - type: web
     name: trpg-gm-app

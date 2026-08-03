@@ -154,8 +154,8 @@ export function createSceneImagesRouter({
     const result = await withSessionLock(key, async () => {
       const session = await dataStore.get(key);
       if (!session) return { missingSession: true };
-      const image = await imageStore.read(sessionImagePath(req.userId, req.params.id, req.params.imageId));
-      if (!image) return { missingImage: true };
+      const imageMetadata = await imageStore.stat(sessionImagePath(req.userId, req.params.id, req.params.imageId));
+      if (!imageMetadata) return { missingImage: true };
 
       let changed = false;
       const log = (session.log || []).map((entry) => {

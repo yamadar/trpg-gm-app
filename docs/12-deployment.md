@@ -1,4 +1,4 @@
-# デプロイ手順(Render)
+# 12. デプロイ手順(Render)
 
 > **現行仕様:** filesystem/SQLiteとfilesystem/S3 ObjectStorageを独立して切替できるRender手順。SQLiteとS3は別々のmaintenance windowでカットオーバーする。PostgreSQL移行条件は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
 

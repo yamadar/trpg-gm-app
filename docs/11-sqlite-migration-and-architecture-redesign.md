@@ -3,7 +3,7 @@
 > **文書種別:** 実装計画・進捗・運用判断
 > **作成日:** 2026-08-02  
 > **対象:** ファイルシステムからSQLiteへの切替、および将来のPostgreSQL移行
-> **実装基準日:** 2026-08-02。SQLite互換store、モジュール別table/scoped repository、容量台帳、durable小説化job、ObjectStorage境界、画像状態機械、SQLite/S3移行・検証・backup CLI、readiness、保守モードまで実装済み。本番SQLite/S3カットオーバー、集約ごとの子tableへの完全正規化、残る非同期処理のjob化は未実施。現行仕様は [01-architecture.md](01-architecture.md)、[02-data-model.md](02-data-model.md)、[04-persistence.md](04-persistence.md)、[09-deployment.md](09-deployment.md) を正本とする。
+> **実装基準日:** 2026-08-02。SQLite互換store、モジュール別table/scoped repository、容量台帳、durable小説化job、ObjectStorage境界、画像状態機械、SQLite/S3移行・検証・backup CLI、readiness、保守モードまで実装済み。本番SQLite/S3カットオーバー、集約ごとの子tableへの完全正規化、残る非同期処理のjob化は未実施。現行仕様は [01-architecture.md](01-architecture.md)、[02-data-model.md](02-data-model.md)、[04-persistence.md](04-persistence.md)、[12-deployment.md](12-deployment.md) を正本とする。
 
 ---
 
