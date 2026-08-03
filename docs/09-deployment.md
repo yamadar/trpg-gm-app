@@ -325,7 +325,7 @@ S3で新規書き込みを再開した後はfilesystemへ逆同期しない。�
 | サーバーが起動せず`SECURE_COOKIES must be one of ...` | `SECURE_COOKIES`の値がタイプミス。受け付けるのは`true`/`false`・`1`/`0`・`yes`/`no`・`on`/`off`(大文字小文字は不問)。Secureが黙って無効化されるのを防ぐため起動時に停止する仕様 |
 | APIのURLでHTMLが返る | SPAフォールバックの除外条件から外れている。`/api/`・`/auth/`配下は除外される(`server/index.js`) |
 | テキスト生成が`ai_service_unavailable`で失敗 | `GEMINI_TEXT_API_KEY`が未設定。画像用キーとは別に設定する |
-| テキスト生成が「AIサービス側の利用枠」で失敗 | Geminiプロジェクト側のクォータ・請求設定・前払いクレジット・モデル別レート制限を確認する。ユーザー単位の日次上限とは別枠なので、新規ユーザー作成や日付変更では解消しない |
+| テキスト生成が「AIサービス側の利用枠」Sで失敗 | Geminiプロジェクト側のクォータ・請求設定・前払いクレジット・モデル別レート制限を確認する。ユーザー単位の日次上限とは別枠なので、新規ユーザー作成や日付変更では解消しない |
 | サーバーが起動せず`GEMINI_TEXT_MODEL must be configured`で失敗 | `GEMINI_TEXT_API_KEY`に対応する`GEMINI_TEXT_MODEL`が未設定 |
 | サーバーが起動せず`GEMINI_IMAGE_MODEL must be configured`で失敗 | `GEMINI_IMAGE_API_KEY`に対応する`GEMINI_IMAGE_MODEL`が未設定 |
 | 画像生成のUIが出ない | `GEMINI_IMAGE_API_KEY`が未設定(`GET /api/config`が`imageGen:false`を返す) |
