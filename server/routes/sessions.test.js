@@ -10,7 +10,16 @@ import { createNovelJobRunner } from '../novelJobs.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsTextStore } from '../storage/textStore.js';
 import { createFsImageStore } from '../storage/imageStore.js';
-import { sessionImagePath, sessionKey, sessionNovelJobKey, sessionNovelNoticeKey } from '../storage/paths.js';
+import {
+  endingKey,
+  sessionImagePath,
+  sessionDeletionKey,
+  sessionKey,
+  sessionNovelDocPath,
+  sessionNovelJobKey,
+  sessionNovelMetaKey,
+  sessionNovelNoticeKey,
+} from '../storage/paths.js';
 
 let dir;
 let dataStore;
@@ -93,6 +102,106 @@ describe('sessions routes', () => {
     const res = await request(app).get('/api/sessions');
     expect(res.status).toBe(200);
     expect(res.body.map((s) => s.id).sort()).toEqual(['s1', 's2']);
+  });
+
+  it('deletes a session and its generated artifacts while preserving the ending record', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' });
+    await textStore.write(sessionNovelDocPath('usr_test', 's1'), '小説本文');
+    await dataStore.set(sessionNovelMetaKey('usr_test', 's1'), { imageIds: ['img_a'] });
+    await imageStore.write(sessionImagePath('usr_test', 's1', 'img_a'), Buffer.from([1, 2, 3]));
+    await dataStore.set(endingKey('usr_test', 's1'), { sessionId: 's1', endingTitle: '記録' });
+
+    const res = await request(app).delete('/api/sessions/s1');
+    expect(res.status).toBe(204);
+    expect(await dataStore.get(sessionKey('usr_test', 's1'))).toBeNull();
+    expect(await textStore.read(sessionNovelDocPath('usr_test', 's1'))).toBeNull();
+    expect(await dataStore.get(sessionNovelMetaKey('usr_test', 's1'))).toBeNull();
+    expect(await imageStore.read(sessionImagePath('usr_test', 's1', 'img_a'))).toBeNull();
+    expect(await dataStore.get(endingKey('usr_test', 's1'))).toMatchObject({ endingTitle: '記録' });
+    expect(await dataStore.get(sessionDeletionKey('usr_test', 's1'))).toMatchObject({
+      sessionId: 's1',
+      revision: 1,
+    });
+  });
+
+  it('returns 404 when deleting an unknown session', async () => {
+    expect((await request(app).delete('/api/sessions/missing')).status).toBe(404);
+  });
+
+  it('accepts repeated deletion when a tombstone already exists', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' });
+    expect((await request(app).delete('/api/sessions/s1')).status).toBe(204);
+    expect((await request(app).delete('/api/sessions/s1')).status).toBe(204);
+  });
+
+  it('blocks stale devices from recreating a deleted session', async () => {
+    await request(app)
+      .put('/api/sessions/s1')
+      .set('If-Match', '"0"')
+      .send({ title: 'A' });
+    await request(app).delete('/api/sessions/s1');
+
+    const stale = await request(app)
+      .put('/api/sessions/s1')
+      .set('If-Match', '"1"')
+      .send({ title: 'stale copy' });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('SESSION_DELETED');
+    expect(await dataStore.get(sessionKey('usr_test', 's1'))).toBeNull();
+  });
+
+  it('keeps a tombstone and blocks PUT when cascading deletion fails partway', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' });
+    const originalDeleteDir = textStore.deleteDir.bind(textStore);
+    textStore.deleteDir = vi.fn().mockRejectedValueOnce(new Error('disk failure'));
+
+    expect((await request(app).delete('/api/sessions/s1')).status).toBe(500);
+    expect(await dataStore.get(sessionDeletionKey('usr_test', 's1'))).toMatchObject({
+      sessionId: 's1',
+      revision: 1,
+    });
+    expect(await dataStore.get(sessionKey('usr_test', 's1'))).not.toBeNull();
+
+    const stale = await request(app).put('/api/sessions/s1').send({ title: 'stale copy' });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('SESSION_DELETED');
+
+    textStore.deleteDir = originalDeleteDir;
+    expect((await request(app).delete('/api/sessions/s1')).status).toBe(204);
+  });
+
+  it('allows an explicit force overwrite to recreate a deleted session', async () => {
+    await request(app).put('/api/sessions/s1').send({ title: 'A' });
+    await request(app).delete('/api/sessions/s1');
+
+    const recreated = await request(app)
+      .put('/api/sessions/s1')
+      .set('X-Force-Overwrite', 'true')
+      .send({ title: 'recreated' });
+    expect(recreated.status).toBe(200);
+    expect(recreated.body.title).toBe('recreated');
+    expect(await dataStore.get(sessionDeletionKey('usr_test', 's1'))).toBeNull();
+  });
+
+  it('rejects deletion while novel generation is running', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    buildApp({
+      fetchImpl: vi.fn().mockImplementation(async () => {
+        await gate;
+        return geminiResponse('本文');
+      }),
+    });
+    await request(app).put('/api/sessions/s1').send({ title: 'A', log: [] });
+    expect((await request(app).post('/api/sessions/s1/novelize')).status).toBe(202);
+
+    const blocked = await request(app).delete('/api/sessions/s1');
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('SESSION_JOB_RUNNING');
+
+    release();
+    await waitForJob('s1');
+    expect((await request(app).delete('/api/sessions/s1')).status).toBe(204);
   });
 
   it('rejects session documents larger than one MiB', async () => {

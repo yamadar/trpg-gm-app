@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
-import { sessionKey, sessionImagePath } from '../storage/paths.js';
+import { sessionKey, sessionImagePath, sessionNovelMetaKey } from '../storage/paths.js';
 import { analyzeScene } from '../sceneAnalysis.js';
 import { buildImagePrompt, buildPortraitPrompt } from '../imagePrompt.js';
 import { generateImage } from '../imageProvider.js';
+import { createKeyedLock } from '../keyedLock.js';
 
 const IMAGE_ID_RE = /^img_[A-Za-z0-9-]+$/;
 
@@ -21,6 +22,8 @@ export function createSceneImagesRouter({
   geminiImageModel,
   fetchImpl = fetch,
   usage,
+  now = Date.now,
+  withSessionLock = createKeyedLock(),
 }) {
   const router = Router();
   router.param('id', idParamGuard);
@@ -140,6 +143,78 @@ export function createSceneImagesRouter({
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
     res.send(buf);
+  }));
+
+  router.delete('/sessions/:id/images/:imageId', asyncHandler(async (req, res) => {
+    if (!IMAGE_ID_RE.test(req.params.imageId)) {
+      res.status(400).json({ error: 'invalid imageId' });
+      return;
+    }
+    const key = sessionKey(req.userId, req.params.id);
+    const result = await withSessionLock(key, async () => {
+      const session = await dataStore.get(key);
+      if (!session) return { missingSession: true };
+      const imageMetadata = await imageStore.stat(sessionImagePath(req.userId, req.params.id, req.params.imageId));
+      if (!imageMetadata) return { missingImage: true };
+
+      let changed = false;
+      const log = (session.log || []).map((entry) => {
+        if (entry?.image?.imageId !== req.params.imageId) return entry;
+        changed = true;
+        const { image: _removedImage, ...rest } = entry;
+        return rest;
+      });
+      const appearances = Object.fromEntries(
+        Object.entries(session.appearances || {}).map(([name, appearance]) => {
+          if (appearance?.imageId !== req.params.imageId) return [name, appearance];
+          changed = true;
+          const { imageId: _removedImageId, ...rest } = appearance;
+          return [name, rest];
+        }),
+      );
+      const timestamp = now();
+      const currentRevision = Number.isSafeInteger(session?._sync?.revision)
+        ? session._sync.revision
+        : 0;
+      const updated = changed
+        ? {
+            ...session,
+            log,
+            appearances,
+            updatedAt: timestamp,
+            _sync: {
+              ...(session._sync || {}),
+              revision: currentRevision + 1,
+              updatedAt: timestamp,
+              updatedByDeviceId: 'server-image-delete',
+              clientUpdatedAt: session?._sync?.clientUpdatedAt ?? session.updatedAt ?? null,
+            },
+          }
+        : session;
+      if (changed) await dataStore.set(key, updated);
+
+      const novelMeta = await dataStore.get(sessionNovelMetaKey(req.userId, req.params.id));
+      if (Array.isArray(novelMeta?.imageIds) && novelMeta.imageIds.includes(req.params.imageId)) {
+        await dataStore.set(sessionNovelMetaKey(req.userId, req.params.id), {
+          ...novelMeta,
+          imageIds: novelMeta.imageIds.map((id) => id === req.params.imageId ? null : id),
+          updatedAt: timestamp,
+        });
+      }
+      // 参照を先に外す。削除失敗時は孤立画像が残るだけで、画面上の壊れた参照は残らない。
+      await imageStore.delete(sessionImagePath(req.userId, req.params.id, req.params.imageId));
+      return { session: updated };
+    });
+
+    if (result.missingSession) {
+      res.status(404).json({ error: 'session not found' });
+      return;
+    }
+    if (result.missingImage) {
+      res.status(404).json({ error: 'image not found' });
+      return;
+    }
+    res.json({ session: result.session });
   }));
 
   return router;

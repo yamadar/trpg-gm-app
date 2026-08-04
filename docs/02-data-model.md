@@ -151,17 +151,22 @@ rulesets/{ruleset_id}.json          独立ライブラリ、worldと無関係。
 
 sessions/{session_id}.json          セッション本体(world/scenario/ruleset/pc/state/logを1ファイルにフラット保存)
 sessions/{session_id}/
+  images/{image_id}.png             シーン画像・登場人物ポートレート
   novel.md                         小説化(novelize)した本文
   novel.json                       小説のメタ({ turnCount, updatedAt, imageIds,
                                     truncated })。truncatedは継続リクエストの
                                     上限に達し末尾が欠けている可能性を表す
                                     (06-content-generation.md 10.6.1節)
-  novelJob.json                    小説化ジョブの状態(実装済み2026-07-25。
+  novelJob.json                    小説化ジョブのUI表示状態。
                                     { status: 'running'|'done'|'error',
                                       startedAt, updatedAt, error, bootId })
   novelNotice.json                 完了通知の未読フラグ({ unread: boolean }。
                                     実装済み2026-07-25)
   novel/attachments/...            小説添付画像。本文中の生成挿絵とは別コレクション
+
+sessionDeletions/{session_id}.json  削除済みSessionのtombstone
+                                    ({ sessionId, deletedAt, revision })。
+                                    遅延PUTによる意図しない復活を防止する
 
 sharedSessions/{session_id}.json   Partyメタ(owner/participants/pcs/settings/gmSnapshot/eventSeq等、グローバル名前空間)
 sharedSessions/{session_id}/
@@ -190,6 +195,28 @@ public/starters                      スターターパックのマニフェス�
                                      唯一この行だけは`users/{userId}/`配下ではなくグローバルなキーであり、
                                      公開ツリー`public/...`名前空間の一部(04-persistence.md参照)
 ```
+
+上記は論理key構造。filesystem driverでは拡張子付きパス、SQLite driverでは次の物理schemaへ写像する。
+
+| テーブル | 役割 |
+|---|---|
+| `auth_records` / `library_records` / `session_records` | 認証、素材、Solo集約。論理key、entity/parent/owner、title、revision、JSON payload |
+| `campaign_records` / `party_records` / `publishing_records` | Campaign、Party、公開/Import集約。同じmodule repository契約 |
+| `usage_records` / `job_records` / `system_records` | legacy表示recordとsystem領域。利用量・durable jobの正本は下記専用table |
+| `*_documents` | library/session/campaign/publishing/system別Markdown。title、owner、logical byteを通常列化 |
+| `domain_records` / `documents` | 容量triggerと期限付きrollback用atomic mirror。通常read/writeの正本ではない |
+| `usage_counters` | user/global・UTC日・kind単位の原子的利用量 |
+| `jobs` | durable job payload、state、attempt、lease owner/期限、結果/error code |
+| `storage_accounts` | owner別used/reserved/limit byte |
+| `storage_items` | JSON/text/mediaごとの課金byteとowner |
+| `storage_reservations` | HTTP書き込み・job回復用の期限付き容量予約 |
+| `media_assets` | immutable object key、SHA-256、byte、MIME、pending/ready/deleting/deleted/failed状態 |
+| `media_bindings` | APIが使う論理resource pathから現在のready assetへのbinding |
+| `object_migration_journal` | filesystem→S3 upload/adopt履歴とsource checksum |
+| `migration_journal` / `migration_quarantine` | File→SQLite変換履歴、checksum、明示的に保留したデータ |
+| `schema_migrations` | 適用migration名・checksum・時刻 |
+
+SQLite driverはmodule tableを正本とし、routeをAuth、Library、Session、Campaign、Party、Publishing/Import等の許可scopeへ接続する。key互換APIはrepository facade内だけに残す。検索・所有権・親集約・revision・時刻を通常列へ抽出し、ゲーム固有payloadはJSONで保持する段階的正規化。Sessionログ、Campaign章、Party参加者/event/chatを完全な子tableへ分ける作業は未実施。Solo Session更新だけは`session_records.revision`の条件付きUPDATEを使う。
 
 **添付画像モデル(`server/storage/attachmentLibrary.js`)**
 

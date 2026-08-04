@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createTextOperationsRouter } from './routes/textOperations.js';
 import { createSessionsRouter } from './routes/sessions.js';
@@ -19,12 +20,10 @@ import { createImportsRouter } from './routes/imports.js';
 import { createConfigRouter } from './routes/config.js';
 import { createSceneImagesRouter } from './routes/sceneImages.js';
 import { createAttachmentsRouter } from './routes/attachments.js';
-import { createNovelJobRunner } from './novelJobs.js';
+import { createNovelJobRunner, NOVEL_JOB_TIMEOUT_MS } from './novelJobs.js';
 import { seedStarters } from './starters/seed.js';
-import { createFsDataStore } from './storage/dataStore.js';
-import { createFsTextStore } from './storage/textStore.js';
-import { createFsImageStore } from './storage/imageStore.js';
-import { createStorageGuard } from './storage/storageGuard.js';
+import { createPersistence } from './persistence/createPersistence.js';
+import { createStorageGuard, createStorageOwnerResolver } from './storage/storageGuard.js';
 import { createProviders } from './auth/providers.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createRequireAuth, createOriginCheck } from './auth/middleware.js';
@@ -37,6 +36,7 @@ import {
 } from './campaignGeneration.js';
 import { generatePartyResolution } from './partyGeneration.js';
 import { createPartyService } from './partyService.js';
+import { createKeyedLock } from './keyedLock.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -90,6 +90,15 @@ function parseLimit(value, def) {
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'off']);
+const MAINTENANCE_MODES = new Set(['off', 'read-only']);
+
+export function resolveMaintenanceMode(value) {
+  const mode = String(value ?? '').trim().toLowerCase() || 'off';
+  if (!MAINTENANCE_MODES.has(mode)) {
+    throw new Error(`MAINTENANCE_MODE must be off or read-only (got: ${value})`);
+  }
+  return mode;
+}
 
 // セッションクッキーのSecure属性は`SECURE_COOKIES`で明示制御する。NODE_ENVは
 // npmのdevDependencies省略やライブラリ側の最適化など無関係な意味を同時に背負って
@@ -131,14 +140,26 @@ export function createApp({
   staticDir = resolveStaticDir(env.STATIC_DIR),
 } = {}) {
   const app = express();
+  const maintenanceMode = resolveMaintenanceMode(env.MAINTENANCE_MODE);
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
   app.use(securityHeaders);
   app.use(express.json({ limit: '2mb' }));
 
-  const dataStore = createFsDataStore(dataDir);
-  const textStore = createFsTextStore(dataDir);
-  const imageStore = createFsImageStore(dataDir);
+  const persistence = createPersistence({
+    driver: env.DATABASE_DRIVER,
+    dataDir,
+    sqlitePath: env.SQLITE_PATH,
+    mediaDir: env.MEDIA_DIR || dataDir,
+    objectStorageDriver: env.OBJECT_STORAGE_DRIVER,
+    objectStorageBucket: env.OBJECT_STORAGE_BUCKET,
+    objectStorageRegion: env.OBJECT_STORAGE_REGION,
+    objectStorageEndpoint: env.OBJECT_STORAGE_ENDPOINT,
+    objectStoragePrefix: env.OBJECT_STORAGE_PREFIX,
+    objectStorageForcePathStyle: env.OBJECT_STORAGE_FORCE_PATH_STYLE,
+  });
+  const { dataStore, textStore, imageStore } = persistence;
+  const { scopes } = persistence;
   const textModel = String(env.GEMINI_TEXT_MODEL || '').trim();
   const geminiImageApiKey = env.GEMINI_IMAGE_API_KEY;
   const geminiImageModel = String(env.GEMINI_IMAGE_MODEL || '').trim();
@@ -150,10 +171,52 @@ export function createApp({
   }
   app.locals.dataStore = dataStore;
   app.locals.textStore = textStore;
+  app.locals.imageStore = imageStore;
+  app.locals.objectStorage = persistence.objectStorage;
+  app.locals.persistence = persistence;
+
+  app.get('/live', (req, res) => {
+    res.json({ ok: true });
+  });
+  app.get('/ready', (req, res) => {
+    try {
+      const state = persistence.readiness();
+      const ready = state.ok === true && maintenanceMode === 'off';
+      res.status(ready ? 200 : 503).json({
+        ok: ready,
+        driver: state.driver,
+        objectStorageDriver: state.objectStorageDriver,
+        migrationVersion: state.migrationVersion,
+        expectedMigrationVersion: state.expectedMigrationVersion,
+        maintenanceMode,
+      });
+    } catch {
+      res.status(503).json({
+        ok: false,
+        driver: persistence.driver,
+        objectStorageDriver: persistence.objectStorageDriver,
+        migrationVersion: null,
+        expectedMigrationVersion: null,
+        maintenanceMode,
+      });
+    }
+  });
+  if (maintenanceMode === 'read-only') {
+    app.use((req, res, next) => {
+      const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+      const oauthCallback = /^\/auth\/[^/]+\/callback(?:\/|$)/.test(req.path);
+      if (!mutation && !oauthCallback) return next();
+      res.status(503).json({
+        error: 'service is in read-only maintenance mode',
+        code: 'READ_ONLY_MAINTENANCE',
+      });
+    });
+  }
 
   const providers = createProviders(env);
   const usage = createUsage({
     dataStore,
+    repository: persistence.repositories.usage,
     limits: {
       messages: parseLimit(env.LIMIT_MESSAGES_PER_DAY, 200),
       textTokens: parseLimit(env.LIMIT_TEXT_TOKENS_PER_DAY, 500_000),
@@ -164,7 +227,46 @@ export function createApp({
       textTokens: parseLimit(env.LIMIT_GLOBAL_TEXT_TOKENS_PER_DAY, 5_000_000),
     },
   });
-  const novelJobs = createNovelJobRunner({ dataStore, textStore, apiKey, model: textModel, fetchImpl });
+  const maxUserStorageBytes = parseLimit(env.MAX_USER_STORAGE_BYTES, 256 * 1024 * 1024);
+  const minFreeStorageBytes = parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024);
+  const storageWriteHeadroomBytes = parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024);
+  const reserveRecoveryStorage = persistence.repositories.storage
+    ? async (ownerId) => {
+        await fs.mkdir(dataDir, { recursive: true });
+        const disk = await fs.statfs(dataDir);
+        const available = Number(disk.bavail) * Number(disk.bsize);
+        if (!Number.isFinite(available) || available < minFreeStorageBytes + storageWriteHeadroomBytes) {
+          return null;
+        }
+        const reservation = await persistence.repositories.storage.reserve({
+          ownerId,
+          bytes: storageWriteHeadroomBytes,
+          limitBytes: maxUserStorageBytes,
+          purpose: 'novel-recovery',
+          ttlMs: NOVEL_JOB_TIMEOUT_MS,
+        });
+        if (!reservation.ok) return null;
+        return () => {
+          void persistence.repositories.storage.release(reservation.id).catch((error) => {
+            console.error('novel recovery reservation release failed', {
+              name: error?.name || 'Error',
+              code: error?.code || null,
+            });
+          });
+        };
+      }
+    : null;
+  const novelJobs = createNovelJobRunner({
+    dataStore: scopes.sessions.dataStore,
+    textStore: scopes.sessions.textStore,
+    apiKey,
+    model: textModel,
+    fetchImpl,
+    jobRepository: persistence.repositories.jobs,
+    reserveRecoveryStorage,
+  });
+  app.locals.novelJobs = novelJobs;
+  const withSessionLock = createKeyedLock();
 
   // ミドルウェア順序が重要:
   // 1) originCheck はセッション有無に関わらず全ミューテーションを守る
@@ -176,15 +278,21 @@ export function createApp({
   const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: secureCookies, path: '/' };
 
   app.use(createOriginCheck({ baseUrl }));
-  app.use(createAuthRouter({ dataStore, providers, baseUrl, fetchImpl, secureCookies }));
-  app.use('/api', createPublicContentRouter({ dataStore, textStore, imageStore })); // 公開ギャラリーは認証不要
+  app.use(createAuthRouter({ dataStore: scopes.auth.dataStore, providers, baseUrl, fetchImpl, secureCookies }));
+  app.use('/api', createPublicContentRouter({
+    dataStore: scopes.publicRead.dataStore,
+    textStore: scopes.publicRead.textStore,
+    imageStore,
+  })); // 公開ギャラリーは認証不要
   app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiImageApiKey })); // 機能検出は認証不要
-  app.use('/api', createRequireAuth({ dataStore, cookieOptions }));
+  app.use('/api', createRequireAuth({ dataStore: scopes.auth.dataStore, cookieOptions }));
   app.use('/api', createStorageGuard({
     dataDir,
-    maxUserBytes: parseLimit(env.MAX_USER_STORAGE_BYTES, 256 * 1024 * 1024),
-    minFreeBytes: parseLimit(env.MIN_FREE_STORAGE_BYTES, 256 * 1024 * 1024),
-    writeHeadroomBytes: parseLimit(env.STORAGE_WRITE_HEADROOM_BYTES, 12 * 1024 * 1024),
+    maxUserBytes: maxUserStorageBytes,
+    minFreeBytes: minFreeStorageBytes,
+    writeHeadroomBytes: storageWriteHeadroomBytes,
+    ownerIdForRequest: createStorageOwnerResolver({ dataStore }),
+    reservationManager: persistence.repositories.storage || null,
   }));
 
   app.use('/api', createTextOperationsRouter({
@@ -194,9 +302,19 @@ export function createApp({
     usage,
     maxConcurrent: parseLimit(env.LIMIT_TEXT_CONCURRENT, 6),
   }));
-  app.use('/api', createSessionsRouter({ dataStore, textStore, imageStore, apiKey, novelJobs, usage }));
+  app.use('/api', createSessionsRouter({
+    dataStore: scopes.sessions.dataStore,
+    textStore: scopes.sessions.textStore,
+    imageStore,
+    apiKey,
+    novelJobs,
+    usage,
+    sessionRepository: persistence.repositories.modules.sessions.records,
+    withSessionLock,
+  }));
   const partyService = createPartyService({
-    dataStore,
+    dataStore: scopes.party.dataStore,
+    transaction: persistence.transaction,
     usage,
     generator: apiKey
       ? (args) => generatePartyResolution({
@@ -209,9 +327,15 @@ export function createApp({
   });
   app.locals.partyService = partyService;
   app.use('/api', createPartySessionsRouter({ service: partyService }));
-  app.use('/api', createEndingsRouter({ dataStore, apiKey, model: textModel, fetchImpl, usage }));
+  app.use('/api', createEndingsRouter({
+    dataStore: scopes.endings.dataStore,
+    apiKey,
+    model: textModel,
+    fetchImpl,
+    usage,
+  }));
   app.use('/api', createSceneImagesRouter({
-    dataStore,
+    dataStore: scopes.sceneImages.dataStore,
     imageStore,
     geminiTextApiKey: apiKey,
     geminiTextModel: textModel,
@@ -219,13 +343,26 @@ export function createApp({
     geminiImageModel,
     fetchImpl,
     usage,
+    withSessionLock,
   }));
-  app.use('/api', createAttachmentsRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createWorldsRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createCharactersRouter({ dataStore, textStore, imageStore }));
+  app.use('/api', createAttachmentsRouter({
+    dataStore: scopes.attachments.dataStore,
+    textStore: scopes.attachments.textStore,
+    imageStore,
+  }));
+  app.use('/api', createWorldsRouter({
+    dataStore: scopes.library.dataStore,
+    textStore: scopes.library.textStore,
+    imageStore,
+  }));
+  app.use('/api', createCharactersRouter({
+    dataStore: scopes.library.dataStore,
+    textStore: scopes.library.textStore,
+    imageStore,
+  }));
   app.use('/api', createScenariosRouter({
-    dataStore,
-    textStore,
+    dataStore: scopes.library.dataStore,
+    textStore: scopes.library.textStore,
     imageStore,
     usage,
     scenarioAnalyzer: apiKey
@@ -261,15 +398,26 @@ export function createApp({
       }
     : null;
   app.use('/api', createCampaignsRouter({
-    dataStore,
-    textStore,
+    dataStore: scopes.campaigns.dataStore,
+    textStore: scopes.campaigns.textStore,
     generator: campaignGenerator,
     usage,
   }));
-  app.use('/api', createWorldContentRouter({ dataStore, textStore }));
-  app.use('/api', createRulesetsRouter({ dataStore }));
-  app.use('/api', createPublishRouter({ dataStore, textStore, imageStore }));
-  app.use('/api', createImportsRouter({ dataStore, textStore, imageStore }));
+  app.use('/api', createWorldContentRouter({
+    dataStore: scopes.worldContent.dataStore,
+    textStore: scopes.worldContent.textStore,
+  }));
+  app.use('/api', createRulesetsRouter({ dataStore: scopes.rulesets.dataStore }));
+  app.use('/api', createPublishRouter({
+    dataStore: scopes.publishing.dataStore,
+    textStore: scopes.publishing.textStore,
+    imageStore,
+  }));
+  app.use('/api', createImportsRouter({
+    dataStore: scopes.imports.dataStore,
+    textStore: scopes.imports.textStore,
+    imageStore,
+  }));
 
   // 静的配信はAPIルーターより後にマウントする。先に置くと dist/ 側の
   // ファイル名と衝突したパスがAPIより優先されてしまうため。
@@ -333,20 +481,51 @@ export function createApp({
 
 if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 8787;
-  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const app = createApp();
   // server/data/ はgitignore対象でデプロイ先では空から始まりうる。冪等なので毎回走らせて復元する。
   // 失敗してもアプリ自体は動くべきなので、ログだけ出して起動を続ける。
-  seedStarters(createFsDataStore(dataDir), createFsTextStore(dataDir), {
-    imageStore: createFsImageStore(dataDir),
-  })
-    .then((m) => console.log(`seeded ${m.packs.length} starter packs`))
-    .catch((error) => console.error('starter seed failed', {
-      name: error?.name || 'Error',
-      code: error?.code || null,
-    }))
-    .finally(() => {
-      createApp().listen(port, () => {
+  (async () => {
+    try {
+      const mediaRecovery = await app.locals.persistence.reconcileMedia();
+      if (mediaRecovery.found) console.log('media assets reconciled', mediaRecovery);
+    } catch (error) {
+      console.error('media asset reconciliation failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+    try {
+      const manifest = await seedStarters(app.locals.dataStore, app.locals.textStore, {
+        imageStore: app.locals.imageStore,
+      });
+      console.log(`seeded ${manifest.packs.length} starter packs`);
+    } catch (error) {
+      console.error('starter seed failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+    try {
+      const recovery = await app.locals.novelJobs.recover();
+      if (recovery.found) console.log('novel jobs recovered', recovery);
+    } catch (error) {
+      console.error('novel job recovery failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+    {
+      const server = app.listen(port, () => {
         console.log(`server listening on port ${port}`);
       });
-    });
+      const shutdown = () => {
+        server.close(() => {
+          app.locals.persistence.close();
+          process.exit(0);
+        });
+      };
+      process.once('SIGTERM', shutdown);
+      process.once('SIGINT', shutdown);
+    }
+  })();
 }

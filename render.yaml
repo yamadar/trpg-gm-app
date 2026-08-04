@@ -1,6 +1,6 @@
 # Render Blueprint (https://render.com/docs/blueprint-spec)
 # Renderダッシュボードの Blueprints から、このファイルを含むリポジトリを指定して適用する。
-# 手順の全体は docs/09-deployment.md を参照。
+# 手順の全体は docs/12-deployment.md を参照。
 services:
   - type: web
     name: trpg-gm-app
@@ -15,9 +15,8 @@ services:
     # アプリ自身の挙動はNODE_ENVではなくSECURE_COOKIES/STATIC_DIRで決まるので、
     # ここに置いても設定が隠れることはない。
     startCommand: NODE_ENV=production npm start
-    healthCheckPath: /api/config # 認証不要で200を返すエンドポイント
-    # ファイルシステムを唯一の永続層として使う設計(server/storage/*)のため、
-    # 複数インスタンスでのディスク共有はできない。必ず1インスタンスで運用する。
+    healthCheckPath: /ready
+    # SQLiteとローカル画像を単一永続ディスクへ置くため、必ず1インスタンスで運用する。
     numInstances: 1
     disk:
       name: gmdesk-data
@@ -25,9 +24,35 @@ services:
       sizeGB: 5 # 場面挿絵PNGが増えるので、使用量を見て拡張する(縮小は不可)
     envVars:
       - key: NODE_VERSION
-        value: "20"
+        value: "24.15.0"
       - key: DATA_DIR
         value: /data
+      - key: SQLITE_PATH
+        value: /data/gmdesk.sqlite3
+      - key: MEDIA_DIR
+        value: /data
+      # S3切替runbook完了まではfilesystem。完了後、s3へ変更する。
+      - key: OBJECT_STORAGE_DRIVER
+        value: filesystem
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: OBJECT_STORAGE_REGION
+        sync: false
+      - key: OBJECT_STORAGE_ENDPOINT
+        sync: false
+      - key: OBJECT_STORAGE_PREFIX
+        value: gmdesk
+      - key: OBJECT_STORAGE_FORCE_PATH_STYLE
+        value: "false"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      # 初回移行完了まではfilesystem。手順確認後、ダッシュボードでsqliteへ切り替える。
+      - key: DATABASE_DRIVER
+        sync: false
+      - key: MAINTENANCE_MODE
+        value: "off"
       # ビルド済みフロントの配信元。相対パスはリポジトリルート基準で解決される。
       - key: STATIC_DIR
         value: dist

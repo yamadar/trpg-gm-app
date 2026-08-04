@@ -1,5 +1,7 @@
 # 状態管理・永続化
 
+> **現行仕様:** 構造化データは`DATABASE_DRIVER=filesystem|sqlite`、画像は`OBJECT_STORAGE_DRIVER=filesystem|s3`で切替可能。初回本番カットオーバーまでは双方`filesystem`が既定。SQLite/S3移行状況と将来のPostgreSQL対応は[11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md)を参照。
+
 ## クライアント側(IndexedDB)
 
 - ブラウザのIndexedDBでセッション跨ぎ保存する。`sessions`という1つのobject store(キー: session id)にセッション全体を保存する。
@@ -11,18 +13,43 @@
 - `localStorage`はセッション本体には使わず、端末ID(`trpg-gm-device-id`)とセッション別の既知サーバーrevision(`trpg-gm-session-sync`)だけに使う。サーバーから取得したセッションにも`_sync`メタを埋め、localStorage消去時のrevision復元に使う。
 - スキーマバージョン管理: session内に`schema_version`を持たせ、将来の移行に対応(未実装、Phase以降で必要になれば追加)。
 
-## サーバー側(dataStore / textStore / imageStore)
+## サーバー側(persistence factory / repository)
 
-- サーバーはJSON向け`dataStore`、テキスト(Markdown等)向け`textStore`、画像バイナリ向け`imageStore`という3つの抽象インターフェースを持つ。現状はいずれもローカルファイルシステム実装。
-  - `dataStore`: 将来Redis等のキーバリューストアへの差し替えを想定
-  - `textStore`: 将来S3等のクラウドストレージへの差し替えを想定
-  - `imageStore`: 画像バイナリの読み書き・ディレクトリ単位削除を担当
+`server/persistence/createPersistence.js`が永続化実装を組み立て、routeへ`dataStore`、`textStore`、`imageStore`、transaction、repositoryを注入する。
+
+| 設定 | JSON・Markdown | 画像 | 利用量・ジョブ・容量 |
+|---|---|---|---|
+| `DATABASE_DRIVER=filesystem` | `server/data`以下のJSON/Markdown | `OBJECT_STORAGE_DRIVER=filesystem`のみ | File repository。容量はディレクトリ実測とプロセス内予約 |
+| `DATABASE_DRIVER=sqlite` | module別record/document table | filesystemまたはprivate S3 | `usage_counters`、`jobs`、`storage_*`、`media_*`専用table |
+
+SQLite接続はWAL、foreign key、5秒busy timeout、`synchronous=FULL`を有効化する。連番SQL migrationはchecksum付き`schema_migrations`へ記録し、起動時のDB版がアプリ内最新migrationと不一致なら`/ready`を失敗させる。Auth、Library、Session、Campaign、Party、Publishing、Usage、Jobs、Systemを別table/repositoryへ分割済み。routeには必要moduleだけのscoped facadeを注入する。`domain_records`/`documents`は容量triggerとrollback用atomic mirror。各集約payloadの完全分解は行わず、entity/parent/owner/title/revision/timestampだけ通常列へ出す。
+
+画像はSQLiteへBLOB保存しない。`FilesystemObjectStorage`と`S3ObjectStorage`が同じcontractを持つ。SQLiteの`media_assets`が物理object、`media_bindings`が既存APIの論理path、`storage_items`が課金byteを保持する。新規writeはimmutable objectを使い、upload完了まで旧bindingを維持する。削除と中断uploadは起動時reconcilerが補償する。
+
+主要設定:
+
+```text
+DATABASE_DRIVER=filesystem|sqlite
+SQLITE_PATH=/data/gmdesk.sqlite3
+MEDIA_DIR=/data
+OBJECT_STORAGE_DRIVER=filesystem|s3
+OBJECT_STORAGE_BUCKET=private-bucket
+OBJECT_STORAGE_REGION=ap-northeast-1
+OBJECT_STORAGE_ENDPOINT=        # AWS S3では未設定
+OBJECT_STORAGE_PREFIX=gmdesk
+OBJECT_STORAGE_FORCE_PATH_STYLE=false
+MAINTENANCE_MODE=off|read-only
+```
+
+`OBJECT_STORAGE_DRIVER=s3`は`DATABASE_DRIVER=sqlite`必須。credentialsはIAM roleまたは標準`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`から解決する。`read-only`は更新メソッドとOAuth callbackを`503 READ_ONLY_MAINTENANCE`で止める。`GET /live`はプロセス生存、`GET /ready`はDB疎通・migration版・object storage driver・保守フラグを返す。readinessは一時的S3障害で全APIを落とさないため外部network callを行わない。
 - 認証機能の追加に伴い、素材ライブラリ・セッション関連のキーはすべて**ユーザー単位の名前空間`users/{userId}/...`配下**に置かれる(`server/storage/paths.js`)。認証(識別情報・セッショントークン)自体はユーザー名前空間の外側に置かれる。
-- Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**双方向同期・競合保護は実装済み**:
+- Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`・`DELETE /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**双方向同期・競合保護は実装済み**:
   - 保存可能なSessionはユーザーあたり100件、1件のJSON直列化サイズは1MiBまで。超過は書き込み前に拒否する。
   - 新規開始・毎ターン・完結等の更新時、IndexedDB保存後に`putSessionToServer`(`src/api/sessionSyncClient.js`)でサーバーへ同期する。同一セッションのクライアントPUTはキューで直列化する。Play画面は毎ターンのPUT完了まで次の入力を有効化せず、同期失敗時はローカル進捗を残したままクラウド未保存の警告を表示する。別端末へ移った直後の小説化が未送信ログを取りこぼさないための完了境界でもある。Home画面の小説化も、カードに表示中のセッション全体をPUTしてから生成開始を要求する。
   - ログイン時、`useSessionTakeover`がローカル/サーバー一覧を突き合わせる。Home表示中も15秒間隔で同じ照合を行う。サーバーだけにあるセッション、またはローカル未変更でサーバーrevisionが新しいセッションはIndexedDBへ自動取得する。ローカルだけ/ローカル変更済みのセッションは従来どおりアカウント保存確認対象にする。`#/play/:sessionId`直アクセスもIndexedDBに無ければサーバー取得へフォールバックする。
   - サーバー保存セッションは`_sync: { revision, updatedAt, updatedByDeviceId, clientUpdatedAt }`を持つ。クライアントは`If-Match: "{knownRevision}"`と`X-Device-Id`を付けてPUTする。既知revisionと現行revisionが違えば`409 { code: "SESSION_CONFLICT", current }`を返し、保存済み進捗を変更しない。UIは両端末のターン数と上書き警告を出し、「別端末の進捗を使う」か「この端末で上書き」を選ばせる。明示上書き時だけ`X-Force-Overwrite: true`を送る。
+  - Homeの削除操作は確認後にサーバーとIndexedDBのSessionを削除する。サーバー側はSession本体、生成小説、ジョブ・通知、シーン画像、小説添付、公開小説をカスケード削除するが、エンディング記録は履歴として残す。小説化ジョブ実行中は`409 { code: "SESSION_JOB_RUNNING" }`で拒否する。
+  - 削除時は`users/{userId}/sessionDeletions/{id}`へtombstoneを保存する。遅延した通常PUTによる復活は`409 { code: "SESSION_DELETED" }`で拒否し、同じDELETEの再送は`204`とする。ユーザーが競合解決画面から明示上書きしたPUTだけ再作成を許可し、tombstoneを削除する。
   - `POST /api/sessions/:id/presence`を15秒間隔で呼び、45秒以内に別端末のハートビートがあればPlay画面へ同時プレイ警告を表示する。離脱時は`DELETE /api/sessions/:id/presence`で端末在席を解除する。在席情報はプロセスメモリ上の短期情報で、セッション進捗自体はrevision付きdataStoreへ永続化する。
 - World/Character/Scenario/Campaign/Rulesetについては、`server/storage/paths.js`のキー生成関数(`users/{userId}/worlds/{worldId}/...`等)を使った**保存API・素材ライブラリUIが両方稼働している**(データモデルは[02-data-model.md](02-data-model.md)の3.5節のフォルダ構造に対応)。Campaignメタ・章精算案・次話候補は`dataStore`、原典3文書は`textStore`へ分離する。フロントエンドの`src/screens/Library.jsx`からこれらのAPIを呼び出し、CRUDとCampaign制作フローが完結する。
 - World・Scenarioのメタ情報は`moods`(雰囲気タグ)フィールドを持つ(`server/storage/worldLibrary.js`・`scenarioLibrary.js`)。値は`server/storage/moods.js`の`MOODS`(固定8種: ホラー/冒険/ミステリー/日常/SF/ファンタジー/コメディ/シリアス)の部分集合の配列で、`PUT /api/worlds/:id`・`PUT /api/worlds/:worldId/scenarios/:id`のボディに`moods`があれば`isValidMoods`で検証し、語彙外の値を含む場合`400`(`moods must be an array of known mood labels`)を返す。省略時・未設定時は`[]`。フロントエンドの語彙定義は`src/constants/moods.js`にサーバーと同内容で複製されている(`server/storage/slugify.js`↔`src/utils/slugify.js`と同じ前例)。
@@ -73,7 +100,8 @@ Phase 2で追加された「公開ギャラリー」機能は、ユーザー名�
 
 - **auth**: `GET /auth/:provider/start`(OAuth開始・PKCEのcode_verifier発行・stateをクッキーに保持してプロバイダへリダイレクト)、`GET /auth/:provider/callback`(コールバック。state検証・コード交換・プロフィール取得・ユーザー作成/取得・セッション発行後`/`へリダイレクト)、`POST /auth/logout`(セッション破棄)。いずれも認証不要。
 - **me / providers**: `GET /api/auth/providers`(有効な(クライアントID/シークレットが設定された)プロバイダ名の一覧。認証不要)、`GET /api/me`(ログイン中ユーザー情報。未ログイン時は`user: null`。認証不要)、`PATCH /api/me`(`displayName`/`avatarUrl`/`bio`の更新。`bio`は最大500字の文字列)、`GET/POST/DELETE /api/me/profile-image`(添付プロフィール画像の取得・置換・削除。POSTはmultipartの`file`)。更新系はログイン必須。
-- **sessions**: `GET /api/sessions`(一覧)、`GET /api/sessions/:id`、`PUT /api/sessions/:id`、`POST /api/sessions/:id/novelize`(ログのAI小説化を**バックグラウンドジョブとして開始**し、生成完了を待たず`202 { status: 'running' }`を返す。小説化対象セッションの読み取りは同じセッションのPUTロックへ並べるため、先着して永続化中の別端末ターンを待ってから全ログのスナップショットを作る。生成中や本文保存中にログが更新された場合は、最新ログへ切り替えて最大2回自動生成し直す。更新が続いて上限を超えた場合は旧本文を完了扱いにせずエラーへ倒す。ジョブの実体は`server/novelJobs.js`の`createNovelJobRunner`で、状態は`users/{userId}/sessions/{id}/novelJob`キー(`dataStore`)に`{ status, startedAt, updatedAt, error, bootId }`として永続化されるため、リロードやサーバー再起動を跨いでも進行状況が失われない。既にジョブが`running`中の再要求は日次利用枠を消費せず、そのまま`202`を返す(二重起動の抑止))、`GET /api/novel-jobs`(ログイン中ユーザーの全セッション分のジョブ状態を`{ [sessionId]: { status, error, hasNovel, stale, truncated, unread } }`形式で一括返却。ホーム画面が一覧表示のためにセッションごとポーリングしなくて済むようにするための集約エンドポイント。`status`は`idle`/`running`/`done`/`error`のいずれかで、永続化された生データをそのまま返すのではなく`resolveJobStatus`で読み取り時点の実態に解決してから返す: `running`のまま記録されたジョブが起動時と異なる`bootId`(サーバー再起動で実行主体が消えた)、または`NOVEL_JOB_TIMEOUT_MS`(80分。自動再生成を含む最悪ケース)を超えて`running`のままなら`error`に倒す。これによりUIが「小説化中…」のまま永久に固まることを防いでいる。`unread`は完了通知をユーザーがまだ受け取っていないかを表すフラグで、`users/{userId}/sessions/{id}/novelNotice`キーに実体を持つ。生成成功時に`true`が立ち、`POST /api/sessions/:id/novel/seen`で`false`に降ろす。レコードが無い(この機能の投入以前に生成された小説)は`false`として扱い、投入直後に過去の全小説が一斉に未読化されることを避ける)、`POST /api/sessions/:id/novel/seen`(完了通知を受け取ったことを記録し、`novelNotice`を`{ unread: false }`にする。冪等で既に既読でも成功し`200 { ok: true }`を返す。セッションが無ければ`404`)、`GET /api/sessions/:id/novel`(小説本文+鮮度フラグ`stale`を返す)、`GET /api/sessions/:id/novel/illustrated`(挿絵マーカーを画像のdata URLに置き換え、タイトル・本文をHTMLエスケープした自己完結HTMLを`{ html }`で返す。小説が未生成なら`404`)
+- **sessions**: `GET /api/sessions`(一覧)、`GET /api/sessions/:id`、`PUT /api/sessions/:id`、`DELETE /api/sessions/:id`(Sessionと生成物・公開小説を削除し、復活防止tombstoneを作る。エンディング記録は保持)、`POST /api/sessions/:id/novelize`(ログのAI小説化を**バックグラウンドジョブとして開始**し、生成完了を待たず`202 { status: 'running' }`を返す。小説化対象セッションの読み取りは同じセッションのPUT/DELETEロックへ並べるため、先着して永続化中の別端末ターンを待ってから全ログのスナップショットを作る。生成中や本文保存中にログが更新された場合は、最新ログへ切り替えて最大2回自動生成し直す。更新が続いて上限を超えた場合は旧本文を完了扱いにせずエラーへ倒す。ジョブの実体は`server/novelJobs.js`の`createNovelJobRunner`で、状態は`users/{userId}/sessions/{id}/novelJob`キー(`dataStore`)に`{ status, startedAt, updatedAt, error, bootId }`として永続化されるため、リロードやサーバー再起動を跨いでも進行状況が失われない。既にジョブが`running`中の再要求は日次利用枠を消費せず、そのまま`202`を返す(二重起動の抑止))、`GET /api/novel-jobs`(ログイン中ユーザーの全セッション分のジョブ状態を`{ [sessionId]: { status, error, hasNovel, stale, truncated, unread } }`形式で一括返却。ホーム画面が一覧表示のためにセッションごとポーリングしなくて済むようにするための集約エンドポイント。`status`は`idle`/`running`/`done`/`error`のいずれかで、永続化された生データをそのまま返すのではなく`resolveJobStatus`で読み取り時点の実態に解決してから返す: 起動時はdurable repositoryから未完了jobを回復する。回復対象の無い旧表示レコードで`bootId`が異なる場合、または`NOVEL_JOB_TIMEOUT_MS`(80分。自動再生成を含む最悪ケース)を超えた場合だけ`error`に倒す。これによりUIが「小説化中…」のまま永久に固まることを防いでいる。`unread`は完了通知をユーザーがまだ受け取っていないかを表すフラグで、`users/{userId}/sessions/{id}/novelNotice`キーに実体を持つ。生成成功時に`true`が立ち、`POST /api/sessions/:id/novel/seen`で`false`に降ろす。レコードが無い(この機能の投入以前に生成された小説)は`false`として扱い、投入直後に過去の全小説が一斉に未読化されることを避ける)、`POST /api/sessions/:id/novel/seen`(完了通知を受け取ったことを記録し、`novelNotice`を`{ unread: false }`にする。冪等で既に既読でも成功し`200 { ok: true }`を返す。セッションが無ければ`404`)、`GET /api/sessions/:id/novel`(小説本文+鮮度フラグ`stale`を返す)、`GET /api/sessions/:id/novel/illustrated`(挿絵マーカーを画像のdata URLに置き換え、タイトル・本文をHTMLエスケープした自己完結HTMLを`{ html }`で返す。小説が未生成なら`404`)
+  - `DELETE /api/sessions/:id/images/:imageId`はシーン画像を削除し、Sessionログ・登場人物レジストリの参照を除去する。小説メタの`imageIds`は挿絵番号との位置対応を壊さないよう該当要素を`null`へ置換する。更新済みSessionを返し、PUT/DELETEと同じSessionロックで直列化する。
 - **endings(エンディング記録、`server/routes/endings.js`、実装済み2026-07-25)**: `POST /api/sessions/:id/ending`(完結済み(`session.endedAt`あり)セッションのエンディングを記録。ボディ`{ stats }`はクライアントが`summarizeRolls`で集計した統計をそのまま渡す。セッションが無ければ`404`、`endedAt`が無ければ`400`。日次利用枠`messages`種別を1消費した上でGeminiを1回呼び、structured outputsで`{ ending_title, summary }`を得て(06-content-generation.md参照)、セッション由来フィールドと受け取った`stats`を合成した記録を`users/{userId}/endings/{sessionId}`へ保存し、その記録オブジェクトそのものを`201`で返す(ラップせず`ending`本体)。AI呼び出し失敗時は記録を作らず`502`(利用枠は既に消費済み)。`GET /api/endings`(呼び出しユーザー自身の記録一覧を`endedAt`降順で返す)、`PATCH /api/endings/:id`(ボディ`{ endingTitle }`で改名)、`DELETE /api/endings/:id`(記録の削除、成功時`204`)。`:id`はいずれも`sessionId`(1セッションにつき記録は1つのため、記録専用のIDは無い)。データモデルは02-data-model.md 3.6節参照。
 - **worlds**: `GET /api/worlds`、`GET /api/worlds/:id`、`PUT /api/worlds/:id`、`DELETE /api/worlds/:id`(関連するCharacter/Scenario/region/categoryをカスケード削除)
 - **worldContent**: `GET/PUT /api/worlds/:worldId/source`、`GET/PUT/DELETE /api/worlds/:worldId/regions/:region`、`GET /api/worlds/:worldId/regions`(一覧)、`GET/PUT/DELETE /api/worlds/:worldId/categories/:category`、`GET /api/worlds/:worldId/categories`(一覧)。region/category一覧は`{ id, title }[]`、個別取得は`{ id, title, raw }`、PUTは`{ title, raw }`を扱う。`title`を持たない旧Markdownは先頭見出し、先頭本文、IDの順で表示名を補完する。
@@ -91,7 +119,14 @@ Phase 2で追加された「公開ギャラリー」機能は、ユーザー名�
 - **publish(公開/解除、`server/routes/publish.js`)**: `POST /api/publish/worlds/:worldId`・`POST /api/publish/worlds/:worldId/characters/:kind/:name`・`POST /api/publish/worlds/:worldId/scenarios/:scenarioId`・`POST /api/publish/sessions/:sessionId/novel`(公開または再公開し、成功時`{ publicId }`を返す。対象素材が存在しなければ`404`、小説が未生成なら`409`)。対応する`DELETE /api/publish/worlds/:worldId`等(公開解除、成功時`204`)。`GET /api/publish/worlds`・`GET /api/publish/worlds/:worldId/characters/:kind`・`GET /api/publish/worlds/:worldId/scenarios`・`GET /api/publish/sessions`(呼び出しユーザー自身の公開状態マップ`{ 素材名: publicId }`を返す)。**すべて認証必須**(`requireAuth`より後にマウント。`req.userId`所有の素材のみ操作可能)。
 - **import(コピー取り込み、`server/routes/imports.js`)**: `POST /api/import/worlds/:publicId`(公開Worldをregion/categoryごと自分のライブラリへ独立コピーとして保存し`201`で保存結果を返す。存在しなければ`404`)、`POST /api/import/characters/:publicId`・`POST /api/import/scenarios/:publicId`(ボディに`targetWorldId`必須。欠落/不正なIDは`400`、取り込み先Worldが存在しなければ`404`)、`POST /api/starters/:packId/import`(スターターパックの一括インポート。マニフェストの`packId`に対応するWorld・Scenario・PC×2・NPC×2を1呼び出しでまとめてコピーし`201`で`{ world, scenario, pcs, npcs }`を返す。未知の`packId`は`404`、パック内のいずれかの公開素材が欠けていれば途中まで書いた分を残したまま`500`)。**認証必須**。インポートは公開ツリーからの独立コピーであり、以後公開元が解除・削除されても取り込んだコピーには影響しない(Characterはインポート時`revealed: false`にリセットされる)。
   - World・Character・Scenarioの添付画像も説明・トップ指定ごとコピーする。以後公開元を再公開・解除・削除しても、取り込んだ画像へ影響しない。
-- **認証必須・利用制限**: 上記の`sessions`/`party-sessions`/`endings`/`worlds`/`worldContent`/`characters`/`scenarios`/`campaigns`/`rulesets`/`publish`/`import`および`POST /api/text-operations/:operation`は`createRequireAuth`ミドルウェア(`server/auth/middleware.js`)を通り、有効なセッションクッキーがなければ`401`を返す(`/auth/*`・`GET /api/auth/providers`・`GET /api/me`・`GET /api/public/*`・`GET /api/users/*`・`GET /api/starters`のみ例外)。操作別テキスト生成は固定allowlist・入力上限・推定入力+要求出力tokenの日次ユーザー/全体予算・同時実行上限を強制する。Party AI解決・`POST /api/sessions/:id/novelize`・`POST /api/sessions/:id/ending`・Campaignの3種の生成POSTもユーザー単位の日次回数制限に達すると`429 { error: 'daily limit reached', resetAt }`を返す(`server/auth/usage.js`。Party/Campaign生成は`messages`種別に相乗りし、Partyはownerへ課金)。Gemini側の`429`は共有APIキー側の制限として`502 { error: 'ai_service_rate_limited', upstreamStatus: 429 }`へ固定変換する。認証済みミューテーション(POST/PUT/PATCH/DELETE)は`X-GMDesk-CSRF: 1`を必須とし、不一致Originとcross-siteのFetch Metadataを`403`で拒否する。さらに`createStorageGuard`がDELETE、短期presence/typing、永続化しないtext-operations以外の更新前に、ユーザー所有領域の総容量、同時書き込み予約、ディスク空き容量を検査する。既定上限はユーザー256MiB、空き256MiB、1書き込み12MiB。
+- **認証必須・利用制限**: `sessions`、素材、Party、Campaign、公開/Import、AI生成の更新APIは`createRequireAuth`を通る。`/auth/*`、認証情報、公開読み取り、starter読み取りだけを例外とする。
+  - AI操作はallowlist、入力上限、ユーザー/全体の日次枠、同時実行上限を強制する。Party/Campaignは`messages`、小説化/Ending/画像は各kindでownerへ課金する。Geminiの`429`は共有キー側制限を示す固定`502 ai_service_rate_limited`へ変換する。
+  - 認証済みミューテーションは`X-GMDesk-CSRF: 1`、同一Origin、Fetch Metadataを検証する。
+  - `createStorageGuard`はDELETE、短期presence/typing、永続化しないtext-operation以外の更新前に所有者容量、予約、ディスク空きを検査する。Partyは保存済みowner、公開snapshotは公開者へ課金し、派生membership indexは重複課金しない。既定上限はユーザー256MiB、最低空き256MiB、1書き込み12MiB。
+
+SQLite driverでは上記末尾の「全走査」は使わない。`storage_items`更新triggerが`storage_accounts.used_bytes`を原子的に精算し、`storage_reservations`が期限付き予約を保持する。JSON/MarkdownはUTF-8論理byte、画像は実byteで課金し、Party/public配下はroot所有者へ帰属させる。filesystem driverだけが移行前互換としてディレクトリ実測とプロセス内予約を継続する。
+
+小説化は表示用`novelJob`レコードとは別にdurable `jobs` repositoryへ最小payload、attempt、lease owner、lease期限を保存する。起動時、単一インスタンス前提で旧bootのqueued/runningジョブをclaimし直し、最新Sessionを読み直して生成を再開する。削除済みSession、容量予約失敗、破損payloadは失敗状態へ確定する。filesystem/SQLite双方が同じjob repository契約を持つ。
 
 ### 入力堅牢化(FX3で追加)
 

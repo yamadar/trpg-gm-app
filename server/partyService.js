@@ -174,6 +174,7 @@ async function consumeUsage(usage, userId) {
 
 export function createPartyService({
   dataStore,
+  transaction = (operation) => operation(),
   generator = null,
   usage = null,
   now = Date.now,
@@ -186,7 +187,7 @@ export function createPartyService({
 
   async function withLock(sessionId, operation) {
     const previous = locks.get(sessionId) || Promise.resolve();
-    const current = previous.catch(() => {}).then(operation);
+    const current = previous.catch(() => {}).then(() => transaction(operation));
     locks.set(sessionId, current);
     try {
       return await current;

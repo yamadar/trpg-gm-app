@@ -333,14 +333,9 @@ export function createTextOperationsRouter({
     try {
       if (usage) {
         const reservedTokens = estimateTextOperationTokens(request);
-        const checks = [
-          await usage.consume(req.userId, 'messages', 1),
-          await usage.consume(req.userId, 'textTokens', reservedTokens),
-          await usage.consumeGlobal('textTokens', reservedTokens),
-        ];
-        const denied = checks.find((check) => !check.ok);
-        if (denied) {
-          res.status(429).json({ error: 'daily limit reached', resetAt: denied.resetAt });
+        const reservation = await usage.reserveTextOperation(req.userId, reservedTokens);
+        if (!reservation.ok) {
+          res.status(429).json({ error: 'daily limit reached', resetAt: reservation.resetAt });
           return;
         }
       }

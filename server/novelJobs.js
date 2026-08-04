@@ -22,6 +22,11 @@ export const NOVEL_JOB_TIMEOUT_MS =
     (NOVELIZE_MAX_CONTINUATIONS + 1) *
     (NOVELIZE_MAX_SESSION_REFRESHES + 1) +
   300000;
+const NOVEL_JOB_TYPE = 'novelize';
+
+function persistentJobId(userId, sessionId) {
+  return `novel:${userId}:${sessionId}`;
+}
 
 function novelSourceHash(session) {
   return crypto
@@ -68,6 +73,8 @@ export function createNovelJobRunner({
   fetchImpl = fetch,
   bootId = makeBootId(),
   now = Date.now,
+  jobRepository = null,
+  reserveRecoveryStorage = null,
 }) {
   // 実行中Promiseの控え。テストの待ち合わせに使う(二重起動の抑止は永続レコード側で行う)。
   const pending = new Map();
@@ -142,6 +149,7 @@ export function createNovelJobRunner({
       // 一斉に未読になってしまう。成功時に立てて受け取り時に降ろす形にする。
       await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: true });
       await write(userId, sessionId, { status: 'done', startedAt, updatedAt: now(), error: null, bootId });
+      return true;
     } catch {
       try {
         await write(userId, sessionId, {
@@ -160,24 +168,179 @@ export function createNovelJobRunner({
           code: writeErr?.code || null,
         });
       }
+      return false;
     }
   }
 
+  function notifySettled(callback) {
+    try {
+      callback?.();
+    } catch (error) {
+      console.error('novelJobs settlement callback failed', {
+        name: error?.name || 'Error',
+        code: error?.code || null,
+      });
+    }
+  }
+
+  function launch({ userId, sessionId, session, pov, startedAt, jobId, onSettled }) {
+    const key = `${userId}/${sessionId}`;
+    const promise = (async () => {
+      const ok = await run(userId, sessionId, session, pov, startedAt);
+      if (!jobRepository || !jobId) return;
+      try {
+        if (ok) {
+          await jobRepository.complete(jobId, bootId, { completedAt: now() }, now());
+        } else {
+          await jobRepository.fail(jobId, bootId, 'generation_failed', now());
+        }
+      } catch (error) {
+        console.error('novelJobs durable state update failed', {
+          name: error?.name || 'Error',
+          code: error?.code || null,
+        });
+      }
+    })().finally(() => {
+      pending.delete(key);
+      notifySettled(onSettled);
+    });
+    pending.set(key, promise);
+    return promise;
+  }
+
   // ジョブをrunningで記録してからバックグラウンド実行を始める。生成の完了は待たない。
-  async function start(userId, sessionId, session, pov) {
+  async function start(userId, sessionId, session, pov, { onSettled } = {}) {
     const key = `${userId}/${sessionId}`;
     // 同じセッションに対する二重startで生成が2回走らないようにする
     // (利用枠の二重消費を防ぐのはルート側の責務であり、ここでは扱わない)。
-    if (pending.has(key)) return;
+    if (pending.has(key)) {
+      notifySettled(onSettled);
+      return false;
+    }
     const startedAt = now();
+    const jobId = persistentJobId(userId, sessionId);
     // 新しい生成は前回の小説を置き換える。前回分の未読フラグが残ったままだと
     // running中にunread:trueが観測され、既読化(古いnotice宛のPOST)が今回の
     // 成功時のunread:trueを上書き消去しうる。開始時点で必ず降ろしておく。
-    await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: false });
-    await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
-    const p = run(userId, sessionId, session, pov, startedAt).finally(() => pending.delete(key));
-    pending.set(key, p);
+    try {
+      if (jobRepository) {
+        const queued = await jobRepository.enqueue({
+          id: jobId,
+          type: NOVEL_JOB_TYPE,
+          ownerId: userId,
+          aggregateId: sessionId,
+          payload: { userId, sessionId, pov },
+        }, startedAt);
+        if (!queued.ok) {
+          notifySettled(onSettled);
+          return false;
+        }
+        const claimed = await jobRepository.claim(jobId, bootId, {
+          leaseMs: NOVEL_JOB_TIMEOUT_MS,
+          timestamp: startedAt,
+        });
+        if (!claimed) {
+          notifySettled(onSettled);
+          return false;
+        }
+      }
+      await dataStore.set(sessionNovelNoticeKey(userId, sessionId), { unread: false });
+      await write(userId, sessionId, { status: 'running', startedAt, updatedAt: startedAt, error: null, bootId });
+    } catch (error) {
+      if (jobRepository) {
+        try {
+          await jobRepository.fail(jobId, bootId, 'startup_failed', now());
+        } catch {
+          // 開始時の元例外を優先する。
+        }
+      }
+      notifySettled(onSettled);
+      throw error;
+    }
+    launch({ userId, sessionId, session, pov, startedAt, jobId, onSettled });
+    return true;
   }
 
-  return { read, start, pending, bootId };
+  async function recover() {
+    if (!jobRepository) return { found: 0, started: 0, failed: 0 };
+    const recoverable = await jobRepository.listRecoverable(NOVEL_JOB_TYPE, now());
+    let started = 0;
+    let failed = 0;
+    for (const job of recoverable) {
+      const { userId, sessionId, pov } = job.payload || {};
+      const key = `${userId}/${sessionId}`;
+      if (pending.has(key)) continue;
+      const claimed = await jobRepository.claim(job.id, bootId, {
+        leaseMs: NOVEL_JOB_TIMEOUT_MS,
+        allowSteal: true,
+        timestamp: now(),
+      });
+      if (!claimed) continue;
+      if (!userId || !sessionId) {
+        await jobRepository.fail(job.id, bootId, 'invalid_payload', now());
+        failed += 1;
+        continue;
+      }
+
+      const session = await dataStore.get(sessionKey(userId, sessionId));
+      if (!session) {
+        await jobRepository.fail(job.id, bootId, 'source_missing', now());
+        failed += 1;
+        continue;
+      }
+
+      let releaseReservation = null;
+      if (reserveRecoveryStorage) {
+        try {
+          releaseReservation = await reserveRecoveryStorage(userId);
+        } catch (error) {
+          console.error('novelJobs recovery reservation failed', {
+            name: error?.name || 'Error',
+            code: error?.code || null,
+          });
+        }
+        if (!releaseReservation) {
+          await write(userId, sessionId, {
+            status: 'error',
+            startedAt: now(),
+            updatedAt: now(),
+            error: '保存容量を確保できないため小説化を再開できませんでした。',
+            bootId,
+          });
+          await jobRepository.fail(job.id, bootId, 'storage_quota', now());
+          failed += 1;
+          continue;
+        }
+      }
+
+      const startedAt = now();
+      try {
+        await write(userId, sessionId, {
+          status: 'running',
+          startedAt,
+          updatedAt: startedAt,
+          error: null,
+          bootId,
+        });
+      } catch {
+        notifySettled(releaseReservation);
+        await jobRepository.fail(job.id, bootId, 'recovery_start_failed', now());
+        failed += 1;
+        continue;
+      }
+      launch({
+        userId,
+        sessionId,
+        session,
+        pov: pov === 'first' ? 'first' : 'third',
+        startedAt,
+        jobId: job.id,
+        onSettled: releaseReservation,
+      });
+      started += 1;
+    }
+    return { found: recoverable.length, started, failed };
+  }
+
+  return { read, start, recover, pending, bootId };
 }

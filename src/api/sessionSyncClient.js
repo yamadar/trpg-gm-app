@@ -83,6 +83,14 @@ export function rememberSessionSync(session) {
   blockedSessions.delete(session.id);
 }
 
+export function forgetSessionSync(id) {
+  if (!id) return;
+  const states = readSyncStates();
+  delete states[id];
+  writeSyncStates(states);
+  blockedSessions.delete(id);
+}
+
 export function dispatchSessionConflict(local, remote, reason = 'write-conflict') {
   const sessionId = local?.id || remote?.id;
   if (sessionId) blockedSessions.add(sessionId);
@@ -153,6 +161,11 @@ export function putSessionToServer(session, options) {
 
 export async function getServerSession(id) {
   return apiFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'GET' });
+}
+
+export async function deleteServerSession(id) {
+  await apiFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  forgetSessionSync(id);
 }
 
 export async function heartbeatSession(id) {

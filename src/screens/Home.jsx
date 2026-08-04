@@ -24,6 +24,7 @@ import { summarizeRolls } from '../engine/rollStats.js';
 import ImageAttachmentEditor from '../components/media/ImageAttachmentEditor.jsx';
 import TopImage from '../components/media/TopImage.jsx';
 import { attachmentUrl } from '../api/attachmentClient.js';
+import ConfirmModal from '../components/library/ConfirmModal.jsx';
 
 const NOVEL_POLL_MS = 5000;
 
@@ -90,6 +91,7 @@ export default function Home({
   onContinueParty,
   onNewCampaign,
   onContinue,
+  onDeleteSession,
   onNextChapter,
   onStartStarter,
 }) {
@@ -120,6 +122,8 @@ export default function Home({
   const [endingsLoaded, setEndingsLoaded] = useState(false);
   const [endingBusy, setEndingBusy] = useState({});
   const [imageEditorSessionId, setImageEditorSessionId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   // novelJobsの更新経路(マウント時取得・ポーリング・楽観的更新)をすべてここに通し、
   // hasRunningRefを常に最新の状態と一致させる。通知の判定もここに集約する。
@@ -345,6 +349,31 @@ export default function Home({
         delete next[session.id];
         return next;
       });
+    }
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!deleteTarget || !onDeleteSession) return;
+    const target = deleteTarget;
+    setDeleteBusy(true);
+    setNovelizeError((prev) => ({ ...prev, [target.id]: '' }));
+    try {
+      await onDeleteSession(target.id);
+      setDeleteTarget(null);
+      setToasts((prev) => [
+        ...prev,
+        { id: makeId(), text: `「${target.title}」を削除しました`, tone: 'success' },
+      ]);
+    } catch (error) {
+      setDeleteTarget(null);
+      setNovelizeError((prev) => ({
+        ...prev,
+        [target.id]: error.body?.code === 'SESSION_JOB_RUNNING'
+          ? '小説化の完了後に削除してください'
+          : `削除に失敗した: ${error.message}`,
+      }));
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -689,6 +718,19 @@ export default function Home({
                 小説を公開
               </Button>
             ))}
+          {onDeleteSession && (
+            <Button
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteTarget(s);
+              }}
+              disabled={running}
+              style={{ ...ACTION_BTN, color: COLORS.stamp }}
+            >
+              削除
+            </Button>
+          )}
         </div>
         {imageEditorSessionId === s.id && (
           <div onClick={(event) => event.stopPropagation()}>
@@ -739,6 +781,15 @@ export default function Home({
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '48px 20px' }}>
       <ToastStack items={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
+      <ConfirmModal
+        open={!!deleteTarget}
+        message={`「${deleteTarget?.title || ''}」を削除しますか? 小説・挿絵・公開中の小説も削除されます。エンディング記録は残ります。`}
+        confirmDisabled={deleteBusy}
+        onConfirm={handleDeleteConfirmed}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteTarget(null);
+        }}
+      />
       <h1
         style={{
           fontFamily: F_DISPLAY,

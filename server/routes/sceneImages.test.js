@@ -8,7 +8,7 @@ import request from 'supertest';
 import { createSceneImagesRouter } from './sceneImages.js';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createFsImageStore } from '../storage/imageStore.js';
-import { sessionKey, sessionImagePath } from '../storage/paths.js';
+import { sessionKey, sessionImagePath, sessionNovelMetaKey } from '../storage/paths.js';
 
 let dir, dataStore, imageStore, app;
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
@@ -47,6 +47,7 @@ function buildApp(opts = {}) {
     geminiImageModel = 'gemini-image',
     fetchImpl = routedFetch(),
     usage,
+    now,
   } = opts;
   app = express();
   app.use(express.json());
@@ -63,6 +64,7 @@ function buildApp(opts = {}) {
     geminiImageModel,
     fetchImpl,
     usage,
+    now,
   }));
 }
 
@@ -139,6 +141,65 @@ describe('GET /sessions/:id/images/:imageId', () => {
   it('returns 400 for a malformed imageId', async () => {
     const res = await request(app).get('/api/sessions/s1/images/badid');
     expect(res.status).toBe(400);
+  });
+});
+
+describe('DELETE /sessions/:id/images/:imageId', () => {
+  it('deletes bytes, removes session references, and preserves novel marker positions', async () => {
+    await dataStore.set(sessionKey('usr_test', 's1'), {
+      id: 's1',
+      updatedAt: 10,
+      _sync: { revision: 3, updatedAt: 10, clientUpdatedAt: 9 },
+      appearances: {
+        カイ: { name: 'カイ', imageId: 'img_target' },
+        ミナ: { name: 'ミナ', imageId: 'img_other' },
+      },
+      log: [
+        { role: 'gm', text: '対象', image: { imageId: 'img_target' } },
+        { role: 'gm', text: '別', image: { imageId: 'img_other' } },
+      ],
+    });
+    await dataStore.set(sessionNovelMetaKey('usr_test', 's1'), {
+      imageIds: ['img_target', 'img_other'],
+    });
+    await imageStore.write(sessionImagePath('usr_test', 's1', 'img_target'), Buffer.from([1]));
+    await imageStore.write(sessionImagePath('usr_test', 's1', 'img_other'), Buffer.from([2]));
+    const filesystemImageStore = imageStore;
+    const read = vi.fn(() => { throw new Error('DELETE must not read image bytes'); });
+    imageStore = {
+      ...filesystemImageStore,
+      read,
+      stat: vi.fn(filesystemImageStore.stat.bind(filesystemImageStore)),
+    };
+    buildApp({ now: () => 20 });
+
+    const res = await request(app).delete('/api/sessions/s1/images/img_target');
+    expect(res.status).toBe(200);
+    expect(res.body.session).toMatchObject({
+      updatedAt: 20,
+      _sync: { revision: 4, updatedByDeviceId: 'server-image-delete' },
+      appearances: {
+        カイ: { name: 'カイ' },
+        ミナ: { name: 'ミナ', imageId: 'img_other' },
+      },
+    });
+    expect(res.body.session.log[0].image).toBeUndefined();
+    expect(res.body.session.log[1].image.imageId).toBe('img_other');
+    expect(read).not.toHaveBeenCalled();
+    expect(await filesystemImageStore.read(sessionImagePath('usr_test', 's1', 'img_target'))).toBeNull();
+    expect(await filesystemImageStore.read(sessionImagePath('usr_test', 's1', 'img_other'))).not.toBeNull();
+    expect((await dataStore.get(sessionNovelMetaKey('usr_test', 's1'))).imageIds).toEqual([null, 'img_other']);
+  });
+
+  it('returns 404 for a missing image without changing the session', async () => {
+    const before = await dataStore.get(sessionKey('usr_test', 's1'));
+    const res = await request(app).delete('/api/sessions/s1/images/img_missing');
+    expect(res.status).toBe(404);
+    expect(await dataStore.get(sessionKey('usr_test', 's1'))).toEqual(before);
+  });
+
+  it('returns 400 for a malformed imageId', async () => {
+    expect((await request(app).delete('/api/sessions/s1/images/badid')).status).toBe(400);
   });
 });
 

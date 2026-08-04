@@ -62,6 +62,30 @@ describe('Home', () => {
     expect(screen.getByText('(まだ進行なし)')).toBeInTheDocument();
   });
 
+  it('confirms destructive session deletion without opening the session card', async () => {
+    vi.spyOn(sessionSyncClient, 'listNovelJobs').mockResolvedValue({});
+    const onContinue = vi.fn();
+    const onDeleteSession = vi.fn().mockResolvedValue(undefined);
+    const sessions = [{ id: 's1', title: '削除対象', updatedAt: 1, state: {}, log: [] }];
+    renderWithAuth(
+      <Home
+        sessions={sessions}
+        storageOk
+        onNew={vi.fn()}
+        onContinue={onContinue}
+        onDeleteSession={onDeleteSession}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    expect(screen.getByText(/小説・挿絵・公開中の小説も削除/)).toBeInTheDocument();
+    expect(onContinue).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '削除する' }));
+
+    await waitFor(() => expect(onDeleteSession).toHaveBeenCalledWith('s1'));
+    expect(await screen.findByText('「削除対象」を削除しました')).toBeInTheDocument();
+  });
+
   // 素材ライブラリ / 公開ギャラリー / エンディング図鑑 はグローバルナビが担うようになった。
   // 本文に同じ導線を残すと、同じ場所へ行く道が2本あることになる。
   it('no longer duplicates the global nav destinations in its body', async () => {
