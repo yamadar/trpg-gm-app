@@ -59,7 +59,9 @@ describe('createApp', () => {
 
     expect((await request(app).get('/live')).status).toBe(200);
     expect((await request(app).get('/ready')).status).toBe(503);
-    expect((await request(app).get('/api/config')).status).toBe(200);
+    const config = await request(app).get('/api/config');
+    expect(config.status).toBe(200);
+    expect(config.body.maintenanceMode).toBe('read-only');
     const write = await request(app).post('/api/sessions');
     expect(write.status).toBe(503);
     expect(write.body.code).toBe('READ_ONLY_MAINTENANCE');
@@ -95,7 +97,10 @@ describe('createApp', () => {
     });
     const { cookie } = await createTestUserSession(app.locals.dataStore);
 
-    expect((await request(app).get('/api/config')).body).toEqual({ imageGen: true });
+    expect((await request(app).get('/api/config')).body).toEqual({
+      imageGen: true,
+      maintenanceMode: 'off',
+    });
     await request(app)
       .post('/api/text-operations/summarize-world')
       .set('Cookie', cookie)
@@ -512,7 +517,7 @@ describe('static serving', () => {
   it('does not shadow public API routes', async () => {
     const res = await request(buildApp()).get('/api/config');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ imageGen: false });
+    expect(res.body).toEqual({ imageGen: false, maintenanceMode: 'off' });
   });
 
   // 認証必須APIの401がSPAのHTMLに化けると、クライアントがログイン切れを

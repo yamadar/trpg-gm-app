@@ -86,6 +86,23 @@ describe('apiFetch', () => {
     expect(err.status).toBe(503);
   });
 
+  it('maps read-only maintenance to a dedicated message and announces the mode', async () => {
+    stubFetch(503, '{"error":"service is in read-only maintenance mode","code":"READ_ONLY_MAINTENANCE"}');
+    const listener = vi.fn();
+    window.addEventListener('gmdesk:maintenance-mode', listener);
+
+    const err = await apiFetch('/api/x', { method: 'POST' }).catch((e) => e);
+
+    expect(err.message).toBe(
+      'メンテナンス中のため変更を保存できません。終了後にもう一度お試しください。'
+    );
+    expect(err.status).toBe(503);
+    expect(err.body.code).toBe('READ_ONLY_MAINTENANCE');
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0].detail).toEqual({ mode: 'read-only' });
+    window.removeEventListener('gmdesk:maintenance-mode', listener);
+  });
+
   it('keeps the generic message for other errors', async () => {
     stubFetch(500, 'boom');
     const err = await apiFetch('/api/x').catch((e) => e);

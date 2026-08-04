@@ -2,6 +2,10 @@ const RETRY_MESSAGE =
   'サーバーが一時的に応答できません。少し時間をおいてから、もう一度お試しください。';
 const AI_RATE_LIMIT_MESSAGE =
   'AIサービス側の利用枠に達しています。運営側での復旧後に、もう一度お試しください。';
+const MAINTENANCE_MESSAGE =
+  'メンテナンス中のため変更を保存できません。終了後にもう一度お試しください。';
+
+export const MAINTENANCE_MODE_EVENT = 'gmdesk:maintenance-mode';
 
 function looksLikeHtml(text) {
   return /^\s*(?:<!doctype\s+html\b|<html\b)/i.test(text);
@@ -20,6 +24,9 @@ function createApiError(status, text) {
   const body = parseErrorBody(text);
   let message;
   if (status === 401) message = 'ログインが必要です。右上からログインしてください。';
+  else if (status === 503 && body?.code === 'READ_ONLY_MAINTENANCE') {
+    message = MAINTENANCE_MESSAGE;
+  }
   else if (status === 429 && body?.error === 'daily limit reached') {
     message = '本日のAI利用上限に達しました。明日また遊べます。';
   } else if (
@@ -58,7 +65,17 @@ export async function apiFetch(url, options) {
   const res = await fetch(url, requestOptions);
   if (!res.ok) {
     const t = await res.text().catch(() => '');
-    throw createApiError(res.status, t);
+    const error = createApiError(res.status, t);
+    if (
+      error.body?.code === 'READ_ONLY_MAINTENANCE'
+      && typeof window !== 'undefined'
+      && typeof CustomEvent !== 'undefined'
+    ) {
+      window.dispatchEvent(new CustomEvent(MAINTENANCE_MODE_EVENT, {
+        detail: { mode: 'read-only' },
+      }));
+    }
+    throw error;
   }
   if (res.status === 204) return undefined;
   return res.json();

@@ -9,6 +9,7 @@ import * as sessionApi from './api/session.js';
 import * as campaignClient from './api/campaignClient.js';
 import * as sessionSyncClient from './api/sessionSyncClient.js';
 import * as partyClient from './api/partyClient.js';
+import { MAINTENANCE_MODE_EVENT } from './api/apiFetch.js';
 
 afterEach(() => {
   window.location.hash = '';
@@ -28,6 +29,21 @@ describe('App', () => {
     render(<App />);
     expect(await findHome()).toBeInTheDocument();
     expect(screen.getByText('+ 新規プレイ')).toBeInTheDocument();
+  });
+
+  it('shows read-only maintenance from a runtime maintenance event', async () => {
+    render(<App />);
+    await findHome();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(MAINTENANCE_MODE_EVENT, {
+        detail: { mode: 'read-only' },
+      }));
+    });
+
+    const banner = screen.getByText('メンテナンス中').closest('aside');
+    expect(banner).toHaveTextContent('メンテナンス中');
+    expect(banner).toHaveTextContent('閲覧のみ利用できます');
   });
 
   it('reads the session list once on the initial home render', async () => {

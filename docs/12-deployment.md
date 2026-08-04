@@ -74,7 +74,7 @@ Blueprintを使わず手動で作る場合は、以下の設定で **New → Web
 | `OBJECT_STORAGE_PREFIX` | 例: `gmdesk` | 任意。bucket内namespace |
 | `OBJECT_STORAGE_FORCE_PATH_STYLE` | AWS S3は`false` | 任意。S3互換サービス要件に合わせる |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IAM資格情報 | S3時必須。instance role等の標準credential chain利用時は省略 |
-| `MAINTENANCE_MODE` | 通常`off`、移行中`read-only` | ✅ |
+| `MAINTENANCE_MODE` | 通常`off`、移行中`read-only`。`read-only`時は全画面へ閲覧専用バナーを表示 | ✅ |
 | `BASE_URL` | `https://<サービス名>.onrender.com`(末尾スラッシュなし) | ✅ |
 | `GEMINI_TEXT_API_KEY` | Google AI Studioのテキスト生成用キー | ✅ |
 | `GEMINI_TEXT_MODEL` | 使用するテキスト生成モデルID | ✅ |

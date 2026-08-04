@@ -284,7 +284,10 @@ export function createApp({
     textStore: scopes.publicRead.textStore,
     imageStore,
   })); // 公開ギャラリーは認証不要
-  app.use('/api', createConfigRouter({ imageGenEnabled: !!geminiImageApiKey })); // 機能検出は認証不要
+  app.use('/api', createConfigRouter({
+    imageGenEnabled: !!geminiImageApiKey,
+    maintenanceMode,
+  })); // 機能検出と保守状態の確認は認証不要
   app.use('/api', createRequireAuth({ dataStore: scopes.auth.dataStore, cookieOptions }));
   app.use('/api', createStorageGuard({
     dataDir,

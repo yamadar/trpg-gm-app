@@ -20,6 +20,9 @@ import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { useSessionTakeover } from './auth/useSessionTakeover.js';
 import ConfirmModal from './components/library/ConfirmModal.jsx';
 import SessionConflictModal from './components/play/SessionConflictModal.jsx';
+import MaintenanceBanner from './components/MaintenanceBanner.jsx';
+import { getConfig } from './api/sceneImageClient.js';
+import { MAINTENANCE_MODE_EVENT } from './api/apiFetch.js';
 import {
   getServerSession,
   deleteServerSession,
@@ -66,6 +69,7 @@ function AppInner() {
   const [syncConflict, setSyncConflict] = useState(null);
   const [resolvingConflict, setResolvingConflict] = useState(false);
   const [conflictError, setConflictError] = useState('');
+  const [maintenanceMode, setMaintenanceMode] = useState('off');
   // ウィザードへ引き継ぐ文脈。world.summary や scenario オブジェクトを含み URL には載せられないため、
   // 従来どおりメモリで持つ。#/setup を直接開いた場合は素のウィザードとして開く。
   //
@@ -81,6 +85,33 @@ function AppInner() {
   const [campaignFocus, setCampaignFocus] = useState(null);
   const [partyWizard, setPartyWizard] = useState({ seq: 0, context: null });
   const takeover = useSessionTakeover();
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      getConfig()
+        .then((config) => {
+          if (!cancelled) {
+            setMaintenanceMode(config?.maintenanceMode === 'read-only' ? 'read-only' : 'off');
+          }
+        })
+        // 設定取得だけ失敗した場合は通常画面を維持する。書き込みが実際に503を受けたら
+        // apiFetchのイベントで即座にread-only表示へ切り替わる。
+        .catch(() => {});
+    };
+    const onMaintenanceMode = (event) => {
+      if (event.detail?.mode === 'read-only') setMaintenanceMode('read-only');
+    };
+
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener(MAINTENANCE_MODE_EVENT, onMaintenanceMode);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener(MAINTENANCE_MODE_EVENT, onMaintenanceMode);
+    };
+  }, []);
 
   useEffect(() => {
     function onConflict(event) {
@@ -327,6 +358,7 @@ function AppInner() {
   return (
     <div style={{ background: COLORS.paper, minHeight: '100vh', color: COLORS.ink }}>
       <AppShell route={route}>
+        <MaintenanceBanner mode={maintenanceMode} />
         <SessionConflictModal
           conflict={syncConflict}
           busy={resolvingConflict}

@@ -41,7 +41,7 @@ OBJECT_STORAGE_FORCE_PATH_STYLE=false
 MAINTENANCE_MODE=off|read-only
 ```
 
-`OBJECT_STORAGE_DRIVER=s3`は`DATABASE_DRIVER=sqlite`必須。credentialsはIAM roleまたは標準`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`から解決する。`read-only`は更新メソッドとOAuth callbackを`503 READ_ONLY_MAINTENANCE`で止める。`GET /live`はプロセス生存、`GET /ready`はDB疎通・migration版・object storage driver・保守フラグを返す。readinessは一時的S3障害で全APIを落とさないため外部network callを行わない。
+`OBJECT_STORAGE_DRIVER=s3`は`DATABASE_DRIVER=sqlite`必須。credentialsはIAM roleまたは標準`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`から解決する。`read-only`は更新メソッドとOAuth callbackを`503 READ_ONLY_MAINTENANCE`で止める。公開`GET /api/config`も`maintenanceMode`を返し、クライアントは全ルート共通の閲覧専用バナーを表示する。起動後に更新APIが保守レスポンスを受けた場合も即時表示へ切り替わり、60秒ごとの設定再取得で解除を反映する。`GET /live`はプロセス生存、`GET /ready`はDB疎通・migration版・object storage driver・保守フラグを返す。readinessは一時的S3障害で全APIを落とさないため外部network callを行わない。
 - 認証機能の追加に伴い、素材ライブラリ・セッション関連のキーはすべて**ユーザー単位の名前空間`users/{userId}/...`配下**に置かれる(`server/storage/paths.js`)。認証(識別情報・セッショントークン)自体はユーザー名前空間の外側に置かれる。
 - Sessionsは`dataStore`経由で`users/{userId}/sessions/{id}`キーに保存され、`GET /api/sessions`・`GET /api/sessions/:id`・`PUT /api/sessions/:id`・`DELETE /api/sessions/:id`で読み書きできる(`req.userId`はログインセッションから解決され、他ユーザーのセッションにはアクセスできない)。**双方向同期・競合保護は実装済み**:
   - 保存可能なSessionはユーザーあたり100件、1件のJSON直列化サイズは1MiBまで。超過は書き込み前に拒否する。

@@ -13,10 +13,15 @@ function buildApp(opts) {
 describe('GET /config', () => {
   it('reports imageGen true when enabled', async () => {
     const res = await request(buildApp({ imageGenEnabled: true })).get('/api/config');
-    expect(res.body).toEqual({ imageGen: true });
+    expect(res.body).toEqual({ imageGen: true, maintenanceMode: 'off' });
   });
   it('reports imageGen false when disabled', async () => {
     const res = await request(buildApp({ imageGenEnabled: false })).get('/api/config');
-    expect(res.body).toEqual({ imageGen: false });
+    expect(res.body).toEqual({ imageGen: false, maintenanceMode: 'off' });
+  });
+  it('reports read-only maintenance mode', async () => {
+    const res = await request(buildApp({ maintenanceMode: 'read-only' })).get('/api/config');
+    expect(res.body).toEqual({ imageGen: false, maintenanceMode: 'read-only' });
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 });
