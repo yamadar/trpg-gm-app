@@ -40,6 +40,22 @@ describe('analyzeScene', () => {
     expect(system).toContain('武器の種類・素材・形状・色');
     expect(system).toContain('武器なし');
   });
+  it('passes world context and a larger PC source excerpt as quoted data', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(geminiJson({ present_names: [], new_appearances: [] }));
+    await analyzeScene({
+      narrative: '市場に立つ。',
+      pcRaw: `${'経歴'.repeat(400)}\n外見: 銀髪`,
+      worldSummary: '蒸気機関が普及した都市',
+      apiKey: 'k',
+      model: 'm',
+      fetchImpl,
+    });
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    const input = JSON.parse(body.contents[0].parts[0].text);
+    expect(input.world_summary).toContain('蒸気機関');
+    expect(input.pc_sheet).toContain('外見: 銀髪');
+    expect(body.systemInstruction.parts[0].text).toContain('参照データ');
+  });
   it('filters malformed entries', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       geminiJson({ present_names: ['A', 'B', 5], new_appearances: [{ name: 'A' }, { name: 'B', description: 'ok' }] })

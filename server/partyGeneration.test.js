@@ -93,6 +93,39 @@ describe('partyGeneration', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps PC-private facts out of the player-facing narrator context', async () => {
+    const privateSnapshot = {
+      ...snapshot,
+      facts: {
+        public: { text: '扉は古い', audience: { kind: 'all', ids: [] } },
+        pc2Secret: { text: 'ミナだけが印章の正体を知る', audience: { kind: 'pcs', ids: ['pc2'] } },
+      },
+    };
+    const plan = {
+      resolution: 'advance', decisionQuestion: '', decisionOptions: [], autoActions: [],
+      narratorBrief: '一行は扉を調べる。', checks: [],
+    };
+    const outcome = {
+      globalUpdate: { time: '直後', historySummary: '扉を調べた', tensionLevel: 2, endingReached: false, flagUpdates: [] },
+      sceneUpdates: [], pcUpdates: [],
+      narratives: [{ id: 'shared', audienceKind: 'all', audienceIds: [], text: '扉を調べる。' }],
+      choicesByPc: [], autoActions: [],
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(geminiText(plan))
+      .mockResolvedValueOnce(geminiText(outcome));
+
+    await generatePartyResolution({
+      session, snapshot: privateSnapshot, round, apiKey: 'key', model: 'model', fetchImpl,
+    });
+
+    const plannerBody = JSON.stringify(JSON.parse(fetchImpl.mock.calls[0][1].body));
+    const narratorBody = JSON.stringify(JSON.parse(fetchImpl.mock.calls[1][1].body));
+    expect(plannerBody).toContain('ミナだけが印章の正体を知る');
+    expect(narratorBody).toContain('扉は古い');
+    expect(narratorBody).not.toContain('ミナだけが印章の正体を知る');
+  });
+
   it('blocks a privileged planner response that copies GM-only material', async () => {
     const secretSession = {
       ...session,

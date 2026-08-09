@@ -30,11 +30,16 @@ describe('generateImage', () => {
       apiKey: 'k',
       model: 'm',
       fetchImpl,
-      referenceImages: [{ base64: 'REF1', mimeType: 'image/png' }, { base64: 'REF2' }],
+      referenceImages: [
+        { base64: 'REF1', mimeType: 'image/png', name: 'カイ' },
+        { base64: 'REF2', name: 'ミナ' },
+      ],
     });
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
     expect(body.contents[0].parts).toEqual([
+      { text: '参照画像1の人物名: カイ' },
       { inlineData: { data: 'REF1', mimeType: 'image/png' } },
+      { text: '参照画像2の人物名: ミナ' },
       { inlineData: { data: 'REF2', mimeType: 'image/png' } },
       { text: 'scene' },
     ]);

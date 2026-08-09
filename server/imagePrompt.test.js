@@ -15,7 +15,9 @@ describe('buildImagePrompt', () => {
   });
   it('injects only the provided character appearances', () => {
     const p = buildImagePrompt({ narrative: 'x', moods: [], appearances: [{ name: 'カイ', description: '赤髪の猟師' }] });
-    expect(p).toContain('登場人物: カイ=赤髪の猟師');
+    expect(p).toContain('合計1人');
+    expect(p).toContain('1. カイ: 赤髪の猟師');
+    expect(p).toContain('人物ごとの特徴を混ぜない');
   });
   it('人物へ場面に合う姿勢・視線・表情を指定し、棒立ちと無表情を避ける', () => {
     const p = buildImagePrompt({
@@ -55,6 +57,13 @@ describe('buildPortraitPrompt', () => {
   });
   it('空入力で例外を投げない', () => {
     expect(() => buildPortraitPrompt({})).not.toThrow();
+  });
+
+  it('combines up to two known mood styles', () => {
+    const p = buildImagePrompt({ narrative: 'x', moods: ['ホラー', 'ミステリー', '冒険'] });
+    expect(p).toContain('horror');
+    expect(p).toContain('noir');
+    expect(p).not.toContain('adventurous');
   });
 });
 

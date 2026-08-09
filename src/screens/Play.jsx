@@ -234,6 +234,7 @@ export default function Play({ session, setSession }) {
             current_scene: norm.stateUpdate.current_scene ?? session.state.current_scene,
             flags: newFlags,
             history_summary: norm.stateUpdate.history_summary ?? session.state.history_summary,
+            gm_memory: norm.stateUpdate.gm_memory ?? session.state.gm_memory ?? '',
             recent_log: recent,
             turn_count: (Number.isFinite(session.state.turn_count) ? session.state.turn_count : 0) + 1,
             xp: newXp,

@@ -56,6 +56,7 @@ export function createSceneImagesRouter({
       narrative: entry.text,
       registry,
       pcRaw: session.pc?.raw || '',
+      worldSummary: session.world?.summary || '',
       apiKey: geminiTextApiKey,
       model: geminiTextModel,
       fetchImpl,
@@ -102,7 +103,11 @@ export function createSceneImagesRouter({
       if (referenceImages.length >= 3) break;
       if (!a.imageId) continue;
       const refBuf = await imageStore.read(sessionImagePath(req.userId, req.params.id, a.imageId));
-      if (refBuf) referenceImages.push({ base64: refBuf.toString('base64'), mimeType: 'image/png' });
+      if (refBuf) referenceImages.push({
+        base64: refBuf.toString('base64'),
+        mimeType: 'image/png',
+        name: a.name,
+      });
     }
 
     const prompt = buildImagePrompt({

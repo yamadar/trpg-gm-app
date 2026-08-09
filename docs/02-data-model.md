@@ -50,6 +50,7 @@ Markdown推奨(逐語厳守したい記述と、GM裁量に委ねる記述を明
   "current_scene": "森の入口",
   "flags": {"met_npc_a": true},
   "history_summary": "直近までの物語要約(300字程度、毎ターンGMが書き換える)",
+  "gm_memory": "プレイヤーへ未公開の敵側進行・秘密状態・伏線を保持するGM専用メモ",
   "explained_terms": ["エーテル大水路", "灰鐘区"],
   "recent_log": [
     {"role": "player", "text": "..."},
@@ -64,6 +65,7 @@ Markdown推奨(逐語厳守したい記述と、GM裁量に委ねる記述を明
 ```
 - `recent_log`は文字列配列ではなく`{role, text}`オブジェクトの配列。直近12件を超えると先頭から捨てる(`Play.jsx`)。閾値超過時の要約圧縮トリガーは未実装。
 - `explained_terms`はプレイヤー向け出力で説明済みの一般的でない用語・地名の表記一覧。GMは初出時だけ意味・種別・用途などの短い説明を添え、`state_update.newly_explained_terms`へその表記を返す。`Play.jsx`が重複を除いて蓄積し、次ターン以降のプロンプトへ渡す。旧セッションで未定義なら空配列扱い。
+- `gm_memory`はプレイヤー向けログや`history_summary`へまだ出せない敵側進行・秘密の状態変化・未提示の伏線を保持する文字列。`state_update.gm_memory`は毎ターン更新後全文を返し、Play UIには表示せず次ターンのGM入力へ戻す。旧セッションで未定義なら空文字列扱い。
 - `xp`は`ruleset.growthUnit`(例:「経験値」「CP」)の単位で、GMが`state_update.xp_gained`として提示した値を毎ターン加算していく(`src/api/prompts.js`のturn出力形式、`Play.jsx`の加算処理)。
 - `resources`は**実装済み(2026-07-25)**。解決したRulesetアダプタ(`src/engine/rulesetAdapters.js`)の`resourceDefs`から`{ [key]: { value, max } }`形状でセッション作成時に初期化される(coc7eなら`{ san: { value: 60, max: 99 } }`)。`resourceDefs`が空(simple/dnd5e/gurps)なら`resources`キー自体を持たない。既存セッション(`resources`未定義)はプロンプト・UIともに無害に無視される(3.5.1節・07-risks-and-roadmap.md 10.1節参照)。
 - `current_region`・`revealed_facts`はコードに存在しない。将来案として残すのみで、現状のstateキーではない。`tension_level`は実装済み(05-ui-ux.md 13.2節参照)。
@@ -270,7 +272,7 @@ Novelの添付画像は、本文中の`〈挿絵N〉`と`novel.json.imageIds`で
 - `growthUnit`は成長ポイントの呼び名(「経験値」「CP」等)。GMプロンプトのxp_gained指示とPlay画面の成長ポイント表示の両方に使われる。
 - `formula`は**実装済み(2026-07-25)**。判定式アダプタ(`src/engine/rulesetAdapters.js`の`getAdapter`)を選択するフィールドで、`simple`/`coc7e`/`dnd5e`/`gurps`の4値を持つ。ビルトインは上記4値がそのまま`id`と一致する形で設定済み。カスタムRulesetもRulesetタブのドロップダウンで選択でき(既定`simple`)、未知の値はサーバー保存時に`simple`へ丸められる。未指定・未知の`formula`は`getAdapter`が`simple`にフォールバックする。判定式そのものの違い(degree語彙・SANの有無)は03-gm-logic.md 5章・07-risks-and-roadmap.md 10.1節を参照。`hint`は判定式の説明ではなく演出の色付けとして残る(3.6節参照)。
 
-`session`は`rulesetId`(選択したRulesetのid)と`ruleset`(選択時点の`{id,label,desc,hint,growthUnit}`スナップショット)を併せ持つ。`buildSystemPrompt`(`src/api/prompts.js`)は`session.ruleset`があればそれを優先し、無ければ`rulesetId`からビルトインRulesetを検索する。これは、後からビルトインRulesetの定義を変更してもプレイ中セッションの演出が変わらないようにするため。この解決規則(`session.ruleset` → `rulesetId`検索 → 先頭)は`src/engine/resolveRuleset.js`の`resolveRuleset`/`resolveAdapter`に切り出されており、`prompts.js`とダイス統計モジュール(3.6節)の双方がここから import する。
+`session`は`rulesetId`(選択したRulesetのid)と`ruleset`(選択時点の`{id,label,desc,hint,growthUnit}`スナップショット)を併せ持つ。`buildSystemBlocks`(`src/api/prompts.js`)は`session.ruleset`があればそれを優先し、無ければ`rulesetId`からビルトインRulesetを検索する。これは、後からビルトインRulesetの定義を変更してもプレイ中セッションの演出が変わらないようにするため。この解決規則(`session.ruleset` → `rulesetId`検索 → 先頭)は`src/engine/resolveRuleset.js`の`resolveRuleset`/`resolveAdapter`に切り出されており、`prompts.js`とダイス統計モジュール(3.6節)の双方がここから import する。
 
 ### 3.6 エンディング記録・実績(実装済み 2026-07-25)
 

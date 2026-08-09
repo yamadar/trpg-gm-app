@@ -22,6 +22,7 @@ export function normalizeTurnResult(result) {
     typeof su.current_scene === 'string' && su.current_scene.length > 0 ? su.current_scene : null;
   const flags = isPlainObject(su.flags) ? su.flags : null;
   const history_summary = typeof su.history_summary === 'string' ? su.history_summary : null;
+  const gm_memory = typeof su.gm_memory === 'string' ? su.gm_memory : null;
 
   const rawXp = Number(su.xp_gained);
   const xpGain = Number.isFinite(rawXp) ? Math.max(0, rawXp) : 0;
@@ -48,6 +49,7 @@ export function normalizeTurnResult(result) {
       current_scene,
       flags,
       history_summary,
+      gm_memory,
       xpGain,
       tension_level,
       endingReached,

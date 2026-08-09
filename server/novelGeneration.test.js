@@ -221,6 +221,22 @@ describe('generateNovel', () => {
     expect(systemOf(fetchImpl)).toContain('一人称');
   });
 
+  it('treats the transcript as source data and preserves established events', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, fetchImpl });
+    const system = systemOf(fetchImpl);
+    expect(system).toContain('# 原典忠実性');
+    expect(system).toContain('参照データ');
+    expect(system).toContain('ログにない事件・台詞・人物・真相');
+    expect(system).toContain('全重要場面を順番に小説化');
+  });
+
+  it('identifies the first-person protagonist when a PC name is available', async () => {
+    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
+    await generateNovel({ ...BASE, pov: 'first', pcName: 'カイ', fetchImpl });
+    expect(systemOf(fetchImpl)).toContain('一人称の語り手である主人公は「カイ」');
+  });
+
   it('names the protagonist in the system prompt when pcName is given', async () => {
     const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
     await generateNovel({ ...BASE, pcName: 'カイ', fetchImpl });

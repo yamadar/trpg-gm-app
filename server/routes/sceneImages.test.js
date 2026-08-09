@@ -264,7 +264,8 @@ describe('portrait generation and reference images', () => {
     expect(res.status).toBe(200);
     const sceneCall = fetchImpl.mock.calls.filter(([u]) => !String(u).includes('gemini-text')).at(-1);
     const body = JSON.parse(sceneCall[1].body);
-    expect(body.contents[0].parts[0].inlineData.data).toBe(Buffer.from([9, 9]).toString('base64'));
+    expect(body.contents[0].parts[0].text).toContain('参照画像1の人物名: カイ');
+    expect(body.contents[0].parts[1].inlineData.data).toBe(Buffer.from([9, 9]).toString('base64'));
     expect(body.contents[0].parts.at(-1).text).toContain('厳密に維持');
   });
 

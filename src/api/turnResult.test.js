@@ -14,6 +14,7 @@ describe('normalizeTurnResult', () => {
       current_scene: '森',
       flags: { met: true },
       history_summary: '要約',
+      gm_memory: null,
       xpGain: 5,
       tension_level: null,
       endingReached: false,
@@ -60,6 +61,13 @@ describe('normalizeTurnResult', () => {
   it('returns null for a non-string history_summary', () => {
     expect(normalizeTurnResult({ state_update: { history_summary: { x: 1 } } }).stateUpdate.history_summary).toBeNull();
     expect(normalizeTurnResult({ state_update: { history_summary: 'ok' } }).stateUpdate.history_summary).toBe('ok');
+  });
+
+  it('keeps GM-only memory as a string and rejects other values', () => {
+    expect(normalizeTurnResult({ state_update: { gm_memory: '敵が裏口へ回った' } }).stateUpdate.gm_memory)
+      .toBe('敵が裏口へ回った');
+    expect(normalizeTurnResult({ state_update: { gm_memory: { secret: true } } }).stateUpdate.gm_memory)
+      .toBeNull();
   });
 
   it('coerces xp_gained to a finite non-negative number', () => {

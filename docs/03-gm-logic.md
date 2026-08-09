@@ -3,12 +3,9 @@
 ## 4. GMロジック(ターン処理フロー)
 
 1. プレイヤー入力受付(自由記述 or 選択肢クリック)
-2. Game Engine(`src/api/prompts.js`の`buildSystemPrompt`)がsystemプロンプトを構築
-   - 世界観(`session.world.summary`。3.2.1節参照)、シナリオ(GM専用情報含む、プレイヤー出力からのフィルタは出力側=AI自身への指示で行う)
-   - PC設定(`session.pc.raw`)。goal/bondsが抽出済みなら別枠で明示
-   - ルール性向(`ruleset.label`/`hint`)
-   - 直前state(current_scene, flags, history_summary, explained_terms)
-   - 直近ログ(recent_log)
+2. Game Engine(`src/api/prompts.js`)が固定systemプロンプトと毎ターンuserコンテキストを構築
+   - `buildSystemBlocks`: 世界観(`session.world.summary`。3.2.1節参照)、シナリオ(GM専用情報含む)、PC設定(`session.pc.raw`)、ルール性向(`ruleset.label`/`hint`)、GM進行規則
+   - `buildTurnUserContent`: 直前state(current_scene, flags, history_summary, explained_terms, gm_memory)、直近ログ(recent_log)、プレイヤー入力
 3. Google Gemini API呼び出し(`src/api/session.js`の`takeTurn`、サーバー変換は`server/textProvider.js`)
    - 判定必要と判断 → tool_use `roll_check({check_label, success_percent, check_kind?})` を返す。`check_kind`はアダプタが副作用kind(coc7eの`sanity`等)を持つ場合のみスキーマに追加される任意フィールド(`src/api/prompts.js`の`buildRollTool`)
    - Game Engine側(`src/engine/rulesetAdapters.js`の`getAdapter(formula).evaluate`。simpleは`src/engine/dice.js`の`evaluateRoll`に委譲)でd100ロールと判定式アダプタ別のdegree算出を実行 → `check_kind`に対応する副作用があれば`sideEffect`が決定論的にリソース増減(SAN等)を計算・反映 → 結果(roll/success/degree、副作用があれば`san_loss`/`san_now`)をtool_resultとして返送 → 続きの物語生成(詳細は5章)
@@ -23,18 +20,23 @@
        "xp_gained": 0,
        "tension_level": "medium",
        "ending_reached": false,
-       "newly_explained_terms": ["このターンで初出説明した用語"]
+       "newly_explained_terms": ["このターンで初出説明した用語"],
+       "gm_memory": "次ターン以降へ保持する非公開GMメモ"
      },
      "choices": ["選択肢1", "選択肢2", "選択肢3"]
    }
    ```
-   `flags`は構造化出力制約に合わせた`{key, value}`配列で受け取り、Game Engineがstate保存前にオブジェクトへ変換する。`xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。`newly_explained_terms`はこのターンで初出説明した一般的でない用語・地名だけを返し、`state.explained_terms`へ重複なく蓄積する。初出説明はnarrative内で行う(choices・current_sceneへ新語を出す場合も、同ターンのnarrativeで先に登場させて説明させる)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
+   `flags`は構造化出力制約に合わせた`{key, value}`配列で受け取り、Game Engineがstate保存前にオブジェクトへ変換する。`xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。`newly_explained_terms`はこのターンで初出説明した一般的でない用語・地名だけを返し、`state.explained_terms`へ重複なく蓄積する。`gm_memory`は敵側の進行・秘密の状態変化・未提示の伏線を保持する非公開メモで、Play UIには表示せず次ターンのGMコンテキストへ戻す。初出説明はnarrative内で行う(choices・current_sceneへ新語を出す場合も、同ターンのnarrativeで先に登場させて説明させる)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
 5. Game Engineがstate_updateを検証・確定・保存(IndexedDB。加えてサーバーへも自動同期。04章参照)
 6. UIにnarrative・choices反映
 
-**選択肢のネタバレ防止**: `choices`はPCがその時点で知覚・把握している材料(同ターンのnarrativeで実際に描写した内容、`recent_log`、`history_summary`、既知フラグ、PC設定、`explained_terms`)だけで組み立てるよう指示している。そのどこにも出ていない人物・場所・物・出来事・事実を選択肢で初出させない、まだ確かめていない結果や隠された真相・PCが抱いていない推理を先取りしない、というのが要点。情報開示はnarrative側の役割で、開示したい手掛かりは先にnarrativeでPCが見聞きする形にしてから選択肢にする(同ターン内でよい)。指示は`src/api/prompts.js`の「選択肢の作り方」節・`choices`スキーマのdescription・`buildTurnUserContent`の毎ターン注意書きの3箇所に置いている。開示をnarrativeへ寄せる分、narrativeの150〜250字を圧迫するため、同節で紙幅の配分も指定している(新要素は1ターン1〜2個まで、優先順位は「行動の結果 > 新要素の導入 > 情景の装飾」、収まらない手掛かりは出さず次ターンへ回す)。字数指示自体はソフトな目安で、切り詰めや検証は行っていない(ハード上限は`src/api/session.js`の`max_tokens`のみ)。
+**プロンプト構成と重複防止**: GM運用規則は固定systemプロンプトの「判定」「描写と話者」「情報公開と選択肢」「状態更新」へ集約する。出力フィールド固有の契約は`TURN_OUTPUT_FORMAT`のJSON Schema descriptionを正とし、system側はSchema参照と横断規則だけを持つ。毎ターンuserコンテキストは動的state・ログ・入力・信頼境界だけを渡し、固定規則を再掲しない。
 
-**履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。初出説明の判定は短期ログだけに頼らず、セッション全体で保持する`explained_terms`を使う。
+**選択肢のネタバレ防止**: `choices`はPCがその時点で知覚・把握している材料(同ターンのnarrative、`recent_log`、`history_summary`、既知フラグ、PC設定、`explained_terms`)だけで組み立てる。そのどこにも出ていない人物・場所・物・出来事・事実を初出させず、未確定結果、隠された真相、PCがまだ持たない推理も先取りしない。材料範囲は固定systemプロンプトの「情報公開と選択肢」節だけで定義し、`choices`スキーマは同節を参照する。開示したい手掛かりは先にnarrativeでPCが見聞きする形にする(同ターン内でよい)。narrativeの150〜250字を圧迫しないよう、新要素は原則1件・最大2件、優先順位は「行動結果 > 次の判断材料 > 情景」、収まらない手掛かりは次ターンへ回す。字数はソフトな目安で、ハード上限は`src/api/session.js`の`max_tokens`だけ。
+
+**履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。更新時は確定した重要事実、未解決事項、重要人物との関係、重要物、PCの現在目的を優先保持し、雰囲気描写と解決済み細部から削るよう指示する。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。未公開情報は`gm_memory`、初出説明履歴は`explained_terms`でセッション全体に保持する。
+
+**プロンプト信頼境界**: World、Scenario、director guide、PC設定、現在state、ログ、プレイヤー入力は参照データとしてラベル付けし、内部に書かれた役割変更・秘密開示・出力形式変更へ従わない固定指示を置く。未公開Scenario情報は`gm_memory`以外のプレイヤー向け出力・公開stateへ出さない。
 
 ### 4.1 Partyラウンド処理(実装済み2026-08-01)
 
@@ -44,8 +46,8 @@ Partyはクライアントごとのターン処理を行わない。`server/part
 2. 全アクティブ参加者ready後の5秒grace、またはサーバー時刻の締切でラウンドをlockする。入力中leaseが残る未提出者がいれば15秒ずつ最大90秒延長する。
 3. 未提出PCへ`awayPolicy`に従う防御・警戒・援護のauto intentを補い、2ラウンド連続無反応なら`away_auto`へ移す。人間行動が一件も無ければAIを呼ばず停止する。
 4. `server/partyGeneration.js`が全行動の両立・主行動と援護・別Scene・排他的決定・必要判定を一度に計画する。排他的なParty決定だけ2〜4案の投票へ移し、多数決、同数なら持ち回り先導PCの票で決める。
-5. コードが`rulesetAdapters`で判定を実行する。判定は1PCにつき最大1件、合計PC数以下。AIは出目・成功を決めない。
-6. 確定した判定結果をAIへ戻し、一つのglobal更新、Scene/PC更新、`all|scene|pcs` audience付き描写、PC別選択肢を生成する。構造検証後だけsnapshotへ一度適用する。
+5. コードが`rulesetAdapters`で判定を実行する。判定は1PCにつき最大1件、合計PC数以下。AIは出目・成功を決めない。plannerにはRulesetと成功率アンカーを渡し、`sanity`は対応Rulesetだけで使わせる。
+6. 確定した判定結果をAIへ戻し、一つのglobal更新、Scene/PC更新、`all|scene|pcs` audience付き描写、PC別選択肢を生成する。narratorへは全PC公開factだけを渡し、個人向けfactを入力段階で除外する。`conditionChanges`は差分でなく更新後全件、`tensionLevel`は0〜10。構造検証後だけsnapshotへ一度適用する。
 
 AI失敗・不正出力・利用枠超過時は提出行動を保持したまま`paused`へ移す。チャット本文は計画・描写どちらのAI入力にも含めない。
 

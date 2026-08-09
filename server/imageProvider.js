@@ -2,9 +2,13 @@ const GEMINI_TIMEOUT_MS = 120000;
 
 export async function generateImage({ prompt, apiKey, model, fetchImpl = fetch, referenceImages = [] }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  // 参照画像(キャラポートレート等)を先頭に並べ、最後にテキスト指示を置く
+  // 参照画像ごとに人物名ラベルを付け、どの画像が誰かをモデルへ明示する。
+  // 最後にシーン全体のテキスト指示を置く。
   const requestParts = [
-    ...referenceImages.map((r) => ({ inlineData: { data: r.base64, mimeType: r.mimeType || 'image/png' } })),
+    ...referenceImages.flatMap((r, index) => [
+      { text: `参照画像${index + 1}の人物名: ${String(r.name || `人物${index + 1}`)}` },
+      { inlineData: { data: r.base64, mimeType: r.mimeType || 'image/png' } },
+    ]),
     { text: prompt },
   ];
   const upstream = await fetchImpl(url, {
