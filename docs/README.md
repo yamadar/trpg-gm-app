@@ -1,39 +1,23 @@
-# AI-GM型TRPGアプリ 設計ドキュメント
+# TRPG GM App — 現行設計
 
-ユーザーとAI(GM)がインタラクティブに物語を紡ぐTRPG型アプリ。
-入力: キャラクターシート・世界観・シナリオ。
-AI-GMがシナリオに沿って進行、プレイヤーはPCの行動・選択を入力して物語を分岐させる。
+このディレクトリは、現在の実装を説明する短い参照資料だけを置く。過去の設計判断、実装計画、ロードマップ、レビュー記録は保持しない。正本はコードとテスト。
 
-## 目的
+## アプリ概要
 
-- 既存TRPGシステムの手動GM負荷をAIで代替
-- シナリオ・キャラシートさえ用意すれば誰でもGM役なしでプレイ可能に
+AI が GM として進行する Web TRPG アプリ。ソロセッションと複数人の Party セッション、素材ライブラリ、公開ギャラリー、キャンペーン、エンディング・実績を提供する。テキスト生成は Google Gemini を利用し、場面挿絵は設定時だけ画像モデルを利用する。
 
-## スコープ(MVP)
+## 読む順序
 
-- 1人プレイヤー、1AI-GM
-- テキストベース入出力(自由記述主体、GM側からの二択/Yes-No問いかけを補助的に使用)
-- ダイス判定あり(判定式アダプタ(`getAdapter`)により`formula`ごとにsimple/coc7e/dnd5e/gurpsの判定式を切り替え。実装済み。CoC7e風はSAN(正気度)副作用も持つ。詳細は03-gm-logic.md・07-risks-and-roadmap.md 10.1節参照)
-- シナリオ既存読み込み / AI自動生成の両対応
-- Vite+Reactのフロントエンドと軽量プロキシサーバー(Express)から成るWebアプリとして動作
-- 実装済み: 素材ライブラリ(World/Character/Scenario/Rulesetの保存・再利用)、成長ポイント(growthUnit/xp)、セッションログの小説化書き出し
+- [01-architecture.md](01-architecture.md) — 実行構成と責務境界
+- [02-data-model.md](02-data-model.md) — 保存する主要エンティティと状態
+- [03-gm-logic.md](03-gm-logic.md) — ソロ／Party の進行と判定
+- [04-persistence.md](04-persistence.md) — IndexedDB、サーバー永続化、同期
+- [05-ui-ux.md](05-ui-ux.md) — 画面とナビゲーション
+- [06-content-generation.md](06-content-generation.md) — 生成機能とコンテンツ処理
+- [12-deployment.md](12-deployment.md) — 開発・本番運用
 
-## 目次
+## 正本
 
-- [01-architecture.md](01-architecture.md) — システム構成・デプロイ形態
-- [02-data-model.md](02-data-model.md) — データモデル(キャラクターシート/世界観/state/ストレージ構造)
-- [03-gm-logic.md](03-gm-logic.md) — GMロジック(ターン処理フロー)・判定システム
-- [04-persistence.md](04-persistence.md) — 状態管理・永続化
-- [05-ui-ux.md](05-ui-ux.md) — UI/UX方針・演出方針・起動直後のUI
-- [06-content-generation.md](06-content-generation.md) — シナリオ自動生成・世界観分割/インポート・活用方針
-- [07-risks-and-roadmap.md](07-risks-and-roadmap.md) — 留意点・リスク一覧・実装フェーズ計画・設計決定事項
-- [08-feature-ideas.md](08-feature-ideas.md) — 機能アイデア集(楽しさ向上・未着手候補の整理)
-- [09-accessibility-plan.md](09-accessibility-plan.md) — アクセシビリティ評価・改善計画
-- [10-design-critique.md](10-design-critique.md) — UIデザイン・ユーザビリティ評価
-- [11-sqlite-migration-and-architecture-redesign.md](11-sqlite-migration-and-architecture-redesign.md) — SQLite/S3移行の実装状況・cutover runbook・モジュール正規化・将来のPostgreSQL移行計画
-- [12-deployment.md](12-deployment.md) — デプロイ手順(Render)・本番運用メモ
-
-## 設計草案
-
-- [プレイ結果適応型キャンペーン継続・次話生成](superpowers/specs/2026-08-01-adaptive-campaign-continuation-design.md) — 章終了時の正史更新、次話候補、Scenario生成
-- [同時参加型パーティセッション](superpowers/specs/2026-08-01-party-session-design.md) — 複数PC同時入力、PC別視点、離席・再接続、行動衝突
+- 挙動: `src/`、`server/`
+- 設定値: `.env.example`、`render.yaml`、`package.json`
+- 仕様確認: 対応する `*.test.*`

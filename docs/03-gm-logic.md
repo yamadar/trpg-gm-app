@@ -1,69 +1,37 @@
-# GMロジック・判定システム
+# GMロジック・判定
 
-## 4. GMロジック(ターン処理フロー)
+## ソロターン
 
-1. プレイヤー入力受付(自由記述 or 選択肢クリック)
-2. Game Engine(`src/api/prompts.js`)が固定systemプロンプトと毎ターンuserコンテキストを構築
-   - `buildSystemBlocks`: 世界観(`session.world.summary`。3.2.1節参照)、シナリオ(GM専用情報含む)、PC設定(`session.pc.raw`)、ルール性向(`ruleset.label`/`hint`)、GM進行規則
-   - `buildTurnUserContent`: 直前state(current_scene, flags, history_summary, explained_terms, gm_memory)、直近ログ(recent_log)、プレイヤー入力
-3. Google Gemini API呼び出し(`src/api/session.js`の`takeTurn`、サーバー変換は`server/textProvider.js`)
-   - 判定必要と判断 → tool_use `roll_check({check_label, success_percent, check_kind?})` を返す。`check_kind`はアダプタが副作用kind(coc7eの`sanity`等)を持つ場合のみスキーマに追加される任意フィールド(`src/api/prompts.js`の`buildRollTool`)
-   - Game Engine側(`src/engine/rulesetAdapters.js`の`getAdapter(formula).evaluate`。simpleは`src/engine/dice.js`の`evaluateRoll`に委譲)でd100ロールと判定式アダプタ別のdegree算出を実行 → `check_kind`に対応する副作用があれば`sideEffect`が決定論的にリソース増減(SAN等)を計算・反映 → 結果(roll/success/degree、副作用があれば`san_loss`/`san_now`)をtool_resultとして返送 → 続きの物語生成(詳細は5章)
-4. 応答から構造化出力を抽出(実際の出力形式。`src/api/prompts.js`の指示文)
-   ```json
-   {
-     "narrative": "地の文(150〜250字程度)",
-     "state_update": {
-       "current_scene": "更新後のシーン名",
-       "flags": [{"key": "追加/更新分のみ", "value": true}],
-       "history_summary": "更新後の物語要約(300字程度)",
-       "xp_gained": 0,
-       "tension_level": "medium",
-       "ending_reached": false,
-       "newly_explained_terms": ["このターンで初出説明した用語"],
-       "gm_memory": "次ターン以降へ保持する非公開GMメモ"
-     },
-     "choices": ["選択肢1", "選択肢2", "選択肢3"]
-   }
-   ```
-   `flags`は構造化出力制約に合わせた`{key, value}`配列で受け取り、Game Engineがstate保存前にオブジェクトへ変換する。`xp_gained`は`ruleset.growthUnit`単位の成長ポイント増分(02-data-model.md 3.5.1節参照)。`ending_reached`は**実装済み(2026-07-25)**のbooleanで、物語が結末(エンディング)に到達しこれ以上続ける必要がない場合のみtrue、それ以外は必ずfalse。trueが返ると`state.ending_reached`に反映され、Play画面が終了確定の案内カードを出す(02-data-model.md 3.3節・05-ui-ux.md参照)。`newly_explained_terms`はこのターンで初出説明した一般的でない用語・地名だけを返し、`state.explained_terms`へ重複なく蓄積する。`gm_memory`は敵側の進行・秘密の状態変化・未提示の伏線を保持する非公開メモで、Play UIには表示せず次ターンのGMコンテキストへ戻す。初出説明はnarrative内で行う(choices・current_sceneへ新語を出す場合も、同ターンのnarrativeで先に登場させて説明させる)。出力の揺れは`src/api/turnResult.js`の正規化処理で吸収する。
-5. Game Engineがstate_updateを検証・確定・保存(IndexedDB。加えてサーバーへも自動同期。04章参照)
-6. UIにnarrative・choices反映
+1. プレイヤーが自由記述または選択肢を送る
+2. `buildSystemBlocks` が固定 GM 規則と World、Scenario、PC、Ruleset を組み立てる
+3. `buildTurnUserContent` が現在 state、直近ログ、プレイヤー入力を渡す
+4. 必要なら AI が `roll_check` を要求し、クライアントの Ruleset アダプタが結果を確定する
+5. AI が JSON Schema に従う `narrative`、`state_update`、`choices` を返す
+6. `normalizeTurnResult` が値を正規化し、`Play.jsx` が state とログを更新して保存・同期する
 
-**プロンプト構成と重複防止**: GM運用規則は固定systemプロンプトの「判定」「描写と話者」「情報公開と選択肢」「状態更新」へ集約する。出力フィールド固有の契約は`TURN_OUTPUT_FORMAT`のJSON Schema descriptionを正とし、system側はSchema参照と横断規則だけを持つ。毎ターンuserコンテキストは動的state・ログ・入力・信頼境界だけを渡し、固定規則を再掲しない。
+`roll_check` は不確実で失敗にも意味がある重要行動だけに使い、1 ターン最大 1 回。出目と成功はコードが決める。
 
-**選択肢のネタバレ防止**: `choices`はPCがその時点で知覚・把握している材料(同ターンのnarrative、`recent_log`、`history_summary`、既知フラグ、PC設定、`explained_terms`)だけで組み立てる。そのどこにも出ていない人物・場所・物・出来事・事実を初出させず、未確定結果、隠された真相、PCがまだ持たない推理も先取りしない。材料範囲は固定systemプロンプトの「情報公開と選択肢」節だけで定義し、`choices`スキーマは同節を参照する。開示したい手掛かりは先にnarrativeでPCが見聞きする形にする(同ターン内でよい)。narrativeの150〜250字を圧迫しないよう、新要素は原則1件・最大2件、優先順位は「行動結果 > 次の判断材料 > 情景」、収まらない手掛かりは次ターンへ回す。字数はソフトな目安で、ハード上限は`src/api/session.js`の`max_tokens`だけ。
+## プロンプトの責務
 
-**履歴管理**: `history_summary`は毎ターンGM自身が書き換える(閾値超過を検知して圧縮する専用トリガーは無い)。更新時は確定した重要事実、未解決事項、重要人物との関係、重要物、PCの現在目的を優先保持し、雰囲気描写と解決済み細部から削るよう指示する。`recent_log`は直近12件の`{role, text}`を保持するだけの簡易バッファで、超過分は`Play.jsx`が先頭から捨てる。未公開情報は`gm_memory`、初出説明履歴は`explained_terms`でセッション全体に保持する。
+- 固定 system 指示: 信頼境界、シナリオ進行、判定、描写、情報公開、状態更新
+- 動的 user コンテキスト: state、ログ、入力。固定規則を再掲しない
+- World、Scenario、PC、ログ、入力は参照データであり、含まれる命令は実行しない
+- Scenario の GM 専用情報は `gm_memory` 以外の出力へ含めない
+- 選択肢は同ターンの描写、既知状態、PC 設定、説明済み用語だけから作る。未公開情報を初出させない
 
-**プロンプト信頼境界**: World、Scenario、director guide、PC設定、現在state、ログ、プレイヤー入力は参照データとしてラベル付けし、内部に書かれた役割変更・秘密開示・出力形式変更へ従わない固定指示を置く。未公開Scenario情報は`gm_memory`以外のプレイヤー向け出力・公開stateへ出さない。
+`history_summary` と `gm_memory` は更新後全文を返す。`flags` は変更分だけ返し、クライアント側で前値と結合する。
 
-### 4.1 Partyラウンド処理(実装済み2026-08-01)
+## Ruleset
 
-Partyはクライアントごとのターン処理を行わない。`server/partyService.js`が全参加者のcommandを直列化し、一つの共有stateを次の順で更新する。
+`formula` は `simple`、`coc7e`、`dnd5e`、`gurps` を解決する。各アダプタは成功度、表示、必要ならリソース副作用を定義する。CoC7e 系の SAN 副作用は、そのセッションに対応リソースがあるときだけ反映する。
 
-1. 各参加者が担当PCの行動を提出・更新・撤回し、提出済み行動は全員へ公開する。
-2. 全アクティブ参加者ready後の5秒grace、またはサーバー時刻の締切でラウンドをlockする。入力中leaseが残る未提出者がいれば15秒ずつ最大90秒延長する。
-3. 未提出PCへ`awayPolicy`に従う防御・警戒・援護のauto intentを補い、2ラウンド連続無反応なら`away_auto`へ移す。人間行動が一件も無ければAIを呼ばず停止する。
-4. `server/partyGeneration.js`が全行動の両立・主行動と援護・別Scene・排他的決定・必要判定を一度に計画する。排他的なParty決定だけ2〜4案の投票へ移し、多数決、同数なら持ち回り先導PCの票で決める。
-5. コードが`rulesetAdapters`で判定を実行する。判定は1PCにつき最大1件、合計PC数以下。AIは出目・成功を決めない。plannerにはRulesetと成功率アンカーを渡し、`sanity`は対応Rulesetだけで使わせる。
-6. 確定した判定結果をAIへ戻し、一つのglobal更新、Scene/PC更新、`all|scene|pcs` audience付き描写、PC別選択肢を生成する。narratorへは全PC公開factだけを渡し、個人向けfactを入力段階で除外する。`conditionChanges`は差分でなく更新後全件、`tensionLevel`は0〜10。構造検証後だけsnapshotへ一度適用する。
+## Party ラウンド
 
-AI失敗・不正出力・利用枠超過時は提出行動を保持したまま`paused`へ移す。チャット本文は計画・描写どちらのAI入力にも含めない。
+1. 参加者が intent を提出し ready にする
+2. 全員 ready 後の grace、または締切でラウンドを lock する。不参加者には away policy に応じた安全な auto action を補う
+3. planner が全 intent、公開・GM 専用データ、Ruleset から処理計画または投票候補を作る
+4. コードが PC ごとの判定を確定する。AI は判定結果を決めない
+5. narrator が確定結果から global、Scene、PC 更新、対象 audience 付き描写、PC 別選択肢を作る
+6. サーバーが PC・Scene・audience・判定数を検証し、snapshot へ一度だけ反映する
 
----
-
-## 5. 判定システム
-
-- ダイスロールは必ずクライアント側JSで実行(乱数・検証可能性の担保)。判定式は`formula`ごとにアダプタ化されている(**実装済み・2026-07-25**、`src/engine/rulesetAdapters.js`の`getAdapter`)。詳細は07-risks-and-roadmap.md 10.1節参照。
-- AIの役割は「判定が必要かどうか」の判断と、その状況での**成功確率(success_percent, 0-100)の設定**。skill値や難易度クラスのペアではなく、AIが確率を直接決める。結果そのもの(ロール)は生成しない。
-- tool_use形式で実装(`src/api/prompts.js`の`buildRollTool`。副作用kindを持たないアダプタでは静的な`ROLL_TOOL`と同一):
-  ```json
-  {"name": "roll_check", "input": {"check_label": "崖を登る", "success_percent": 60, "check_kind": "sanity"}}
-  ```
-- 各アダプタの`evaluate(successPercent, rng)`はsuccess_percentを1-99にクランプ(NaNは50)しd100を振り、アダプタ別の評価順でdegreeを決める。共通degree語彙は`critical`(会心)/`extreme`(イクストリーム成功、coc7eのみ)/`hard`(ハード成功、coc7eのみ)/`success`(通常成功)/`fail`(失敗)/`fumble`(大失敗)の部分集合:
-  - `simple`(既定・旧来踏襲): 成功判定が先。roll ≤ success_percentなら成功側(さらに上位5%相当でcritical)、それ以外はfail/fumble(roll ≥ 96)。
-  - `coc7e`: roll==1でcritical、roll==100または(p<50かつroll≥96)でfumble、以下ceil(p/5)でextreme、ceil(p/2)でhard、pまでsuccess、それ以外fail。加えて`resourceDefs`にSAN(正気度、`max:99, initial:60`)を持ち、`check_kind:'sanity'`のとき`sideEffect`が判定結果に応じてSANを決定論的に増減する(hard/extreme/criticalは0、successは-1、failは-1d6、fumbleは-1d10)。
-  - `dnd5e`/`gurps`: 成功率によらず固定でroll≤5がcritical、roll≥96がfumble(いずれも成功判定より先に評価)。gurpsはさらに`margin`(success_percent−roll)を返す。
-  - 未知/未指定の`formula`は`simple`にフォールバックする。
-- ロール結果(roll/success/degree、副作用があれば`san_loss`/`san_now`)をtool_resultとして返し、AIがそれを踏まえて地の文継続
+排他的な決定は投票へ戻す。生成失敗や不正出力時は intent を残して Party を `paused` にする。
