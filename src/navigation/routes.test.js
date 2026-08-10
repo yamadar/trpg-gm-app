@@ -114,10 +114,12 @@ describe('parseRoute', () => {
     expect(parseRoute('#/u/usr_1/worlds/pub_1/extra')).toBeNull();
   });
 
-  it('parses setup and play routes', () => {
+  it('parses setup, play and private novel routes', () => {
     expect(parseRoute('#/setup')).toEqual({ name: 'setup' });
     expect(parseRoute('#/play/ses_1')).toEqual({ name: 'play', sessionId: 'ses_1' });
+    expect(parseRoute('#/novel/ses_1')).toEqual({ name: 'novel', sessionId: 'ses_1' });
     expect(parseRoute('#/play')).toBeNull();
+    expect(parseRoute('#/novel')).toBeNull();
   });
 
   it('parses Party setup, room and tokenized join routes', () => {
@@ -161,6 +163,7 @@ describe('buildHash', () => {
     );
     expect(buildHash({ name: 'setup' })).toBe('#/setup');
     expect(buildHash({ name: 'play', sessionId: 'ses_1' })).toBe('#/play/ses_1');
+    expect(buildHash({ name: 'novel', sessionId: 'ses_1' })).toBe('#/novel/ses_1');
     expect(buildHash({ name: 'partySetup' })).toBe('#/party-setup');
     expect(buildHash({ name: 'party', sessionId: 'p_1' })).toBe('#/party/p_1');
     expect(buildHash({ name: 'partyJoin', sessionId: 'p_1', inviteToken: 'token_abc' })).toBe('#/party/p_1/join/token_abc');
@@ -181,6 +184,7 @@ describe('buildHash', () => {
       '#/u/usr_1/worlds/pub_1',
       '#/setup',
       '#/play/ses_1',
+      '#/novel/ses_1',
       '#/party-setup',
       '#/party/p_1',
       '#/party/p_1/join/token_abc',
@@ -227,6 +231,7 @@ describe('navTabFor', () => {
   it('returns null where no tab should be highlighted', () => {
     expect(navTabFor(parseRoute('#/setup'))).toBeNull();
     expect(navTabFor(parseRoute('#/play/ses_1'))).toBeNull();
+    expect(navTabFor(parseRoute('#/novel/ses_1'))).toBeNull();
     expect(navTabFor(parseRoute('#/u/usr_1'))).toBeNull();
     expect(navTabFor(null)).toBeNull();
   });
@@ -245,6 +250,7 @@ describe('isFocusRoute', () => {
     expect(isFocusRoute(parseRoute('#/'))).toBe(false);
     expect(isFocusRoute(parseRoute('#/library/world'))).toBe(false);
     expect(isFocusRoute(parseRoute('#/u/usr_1'))).toBe(false);
+    expect(isFocusRoute(parseRoute('#/novel/ses_1'))).toBe(false);
     expect(isFocusRoute(null)).toBe(false);
   });
 });
@@ -252,6 +258,11 @@ describe('isFocusRoute', () => {
 describe('crumbsFor', () => {
   it('returns a single home crumb on the home route', () => {
     expect(crumbsFor(parseRoute('#/'))).toEqual([{ key: 'home', label: 'ホーム', hash: '#/' }]);
+  });
+
+  it('uses a dynamic title crumb for the private novel reader', () => {
+    expect(crumbsFor(parseRoute('#/novel/ses_1'))).toEqual([{ key: 'home', label: 'ホーム', hash: '#/' }]);
+    expect(wantsDynamicCrumb(parseRoute('#/novel/ses_1'))).toBe(true);
   });
 
   it('builds library crumbs from the tab labels', () => {

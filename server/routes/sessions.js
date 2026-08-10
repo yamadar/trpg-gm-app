@@ -7,14 +7,11 @@ import {
   sessionNovelMetaKey,
   sessionNovelNoticeKey,
   sessionListPrefix,
-  sessionImagePath,
   sessionImageDir,
   novelAttachmentDir,
 } from '../storage/paths.js';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
-import { stripImageMarkers } from '../novelMarkers.js';
-import { buildIllustratedHtml } from '../illustratedNovel.js';
 import { getAttachmentCollection, topAttachmentOf } from '../storage/attachmentLibrary.js';
 import { unpublishNovel } from '../storage/shareLibrary.js';
 import { createKeyedLock } from '../keyedLock.js';
@@ -353,33 +350,18 @@ export function createSessionsRouter({
       res.status(404).json({ error: 'novel not found' });
       return;
     }
-    const meta = await dataStore.get(sessionNovelMetaKey(req.userId, req.params.id));
-    const session = await dataStore.get(sessionKey(req.userId, req.params.id));
-    res.json({ text: stripImageMarkers(text), stale: isStale(meta, session) });
-  }));
-
-  router.get('/sessions/:id/novel/illustrated', asyncHandler(async (req, res) => {
-    const text = await textStore.read(sessionNovelDocPath(req.userId, req.params.id));
-    if (text === null) {
-      res.status(404).json({ error: 'novel not found' });
-      return;
-    }
     const [meta, session] = await Promise.all([
       dataStore.get(sessionNovelMetaKey(req.userId, req.params.id)),
       dataStore.get(sessionKey(req.userId, req.params.id)),
     ]);
-    const imageIds = Array.isArray(meta?.imageIds) ? meta.imageIds : [];
-    const images = new Map();
-    for (const imageId of imageIds) {
-      images.set(imageId, await imageStore.read(sessionImagePath(req.userId, req.params.id, imageId)));
-    }
+    // 再生成直後にブラウザや中継層の古い本文を使わず、マーカー位置も最新に保つ。
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({
-      html: buildIllustratedHtml({
-        title: session?.title || '小説',
-        novelText: text,
-        imageIds,
-        images,
-      }),
+      title: session?.title || '小説',
+      raw: text,
+      imageIds: Array.isArray(meta?.imageIds) ? meta.imageIds : [],
+      stale: isStale(meta, session),
+      truncated: meta?.truncated === true,
     });
   }));
 

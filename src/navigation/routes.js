@@ -78,6 +78,8 @@ export function parseRoute(hash) {
       return null;
     case 'play':
       return segments.length === 2 && isId(a) ? { name: 'play', sessionId: a } : null;
+    case 'novel':
+      return segments.length === 2 && isId(a) ? { name: 'novel', sessionId: a } : null;
     default:
       return null;
   }
@@ -112,6 +114,8 @@ export function buildHash(route) {
       return `#/party/${route.sessionId}/join/${route.inviteToken}`;
     case 'play':
       return `#/play/${route.sessionId}`;
+    case 'novel':
+      return `#/novel/${route.sessionId}`;
     case 'home':
     default:
       return '#/';
@@ -193,6 +197,8 @@ export function crumbsFor(route) {
             },
           ]
         : [HOME_CRUMB];
+    case 'novel':
+      return [HOME_CRUMB];
     case 'home':
     default:
       return [HOME_CRUMB];
@@ -204,5 +210,5 @@ export function wantsDynamicCrumb(route) {
   if (!route) return false;
   if (route.name === 'library') return !!route.worldId;
   if (route.name === 'browse') return !!route.publicId;
-  return route.name === 'user';
+  return route.name === 'user' || route.name === 'novel';
 }

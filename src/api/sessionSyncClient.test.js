@@ -3,7 +3,6 @@ import {
   putSessionToServer,
   novelizeSession,
   getNovel,
-  getIllustratedNovel,
   listNovelJobs,
   deleteServerSession,
   SESSION_CONFLICT_EVENT,
@@ -105,31 +104,18 @@ describe('deleteServerSession', () => {
 });
 
 describe('getNovel', () => {
-  it('GETs the generated novel text', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ text: '小説本文' }) });
+  it('GETs the generated novel reader data', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ raw: '小説本文', imageIds: [] }) });
     vi.stubGlobal('fetch', fetchMock);
     const result = await getNovel('s1');
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/s1/novel', expect.objectContaining({ method: 'GET' }));
-    expect(result).toEqual({ text: '小説本文' });
+    expect(result).toEqual({ raw: '小説本文', imageIds: [] });
   });
 
   it('throws with status and truncated body on a non-ok response', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => 'not found' });
     vi.stubGlobal('fetch', fetchMock);
     await expect(getNovel('s1')).rejects.toThrow('API error 404: not found');
-  });
-});
-
-describe('getIllustratedNovel', () => {
-  it('GETs the illustrated novel endpoint with an encoded id', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ html: '<!doctype html>' }) });
-    vi.stubGlobal('fetch', fetchMock);
-    const result = await getIllustratedNovel('s 1');
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/sessions/s%201/novel/illustrated',
-      expect.objectContaining({ method: 'GET' })
-    );
-    expect(result).toEqual({ html: '<!doctype html>' });
   });
 });
 

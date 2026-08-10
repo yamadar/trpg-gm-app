@@ -12,6 +12,7 @@ import Gallery from './screens/Gallery.jsx';
 import UserPage from './screens/UserPage.jsx';
 import EndingGallery from './screens/EndingGallery.jsx';
 import AchievementList from './screens/AchievementList.jsx';
+import NovelReader from './screens/NovelReader.jsx';
 import { useRoute, navigate, replace } from './navigation/useRoute.js';
 import { buildHash } from './navigation/routes.js';
 import { BreadcrumbProvider } from './navigation/BreadcrumbContext.jsx';
@@ -424,6 +425,7 @@ function AppInner() {
                 navigate({ name: 'library', libraryTab: 'campaign', worldId: null });
               }}
               onContinue={(id) => navigate({ name: 'play', sessionId: id })}
+              onReadNovel={(id) => navigate({ name: 'novel', sessionId: id })}
               onDeleteSession={handleDeleteSession}
               onNextChapter={(focus) => {
                 setCampaignFocus(focus);
@@ -466,6 +468,7 @@ function AppInner() {
         {route.name === 'records' && route.recordsTab === 'endings' && <EndingGallery />}
         {route.name === 'records' && route.recordsTab === 'achievements' && <AchievementList />}
         {route.name === 'user' && <UserPage route={route} />}
+        {route.name === 'novel' && <NovelReader sessionId={route.sessionId} />}
         {/* 集中モードのシェルはナビを出さないので、読み込み中に何も描かないと
             真っ白で戻る手段の無い画面になる。ホームと同じ表示で埋める。 */}
         {route.name === 'play' &&

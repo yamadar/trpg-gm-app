@@ -53,7 +53,7 @@ describe('NovelizeProgress', () => {
   it('shows the completion message and no elapsed time when done', () => {
     render(<NovelizeProgress done elapsedMs={84000} />);
     expect(screen.getByRole('status')).toHaveTextContent('小説ができました');
-    expect(screen.getByText('下の「小説をDL」から取り出せます')).toBeInTheDocument();
+    expect(screen.getByText('「小説を読む」から読めます')).toBeInTheDocument();
     expect(screen.queryByText(/経過/)).not.toBeInTheDocument();
   });
 });

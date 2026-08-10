@@ -20,12 +20,23 @@ describe('publicMetaLine', () => {
 });
 
 describe('publicNovelBlocks', () => {
-  it('本文マーカー位置へ画像を差し込み、未配置画像を末尾へ回す', () => {
+  it('本文マーカー位置へ画像を差し込み、未配置画像は表示しない', () => {
     expect(publicNovelBlocks('前\n〈挿絵1〉\n後', ['img_a', 'img_b'])).toEqual([
       { type: 'text', value: '前\n' },
       { type: 'image', n: 1, imageId: 'img_a' },
       { type: 'text', value: '\n後' },
-      { type: 'image', n: 2, imageId: 'img_b' },
+    ]);
+  });
+
+  it('本文に挿絵マーカーが無い場合、画像を末尾へまとめて表示しない', () => {
+    expect(publicNovelBlocks('本文だけ', ['img_a', 'img_b'])).toEqual([
+      { type: 'text', value: '本文だけ' },
+    ]);
+  });
+
+  it('同じ挿絵マーカーが重複しても画像は一度だけ表示する', () => {
+    expect(publicNovelBlocks('前〈挿絵1〉中〈挿絵1〉後', ['img_a']).filter((block) => block.type === 'image')).toEqual([
+      { type: 'image', n: 1, imageId: 'img_a' },
     ]);
   });
 });

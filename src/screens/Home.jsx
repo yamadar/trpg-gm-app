@@ -8,8 +8,6 @@ import ToastStack from '../components/ui/Toast.jsx';
 import StarterPackList from '../components/share/StarterPackList.jsx';
 import {
   novelizeSession,
-  getNovel,
-  getIllustratedNovel,
   putSessionToServer,
   listNovelJobs,
   markNovelSeen,
@@ -40,12 +38,6 @@ function hasIllustrations(session) {
 
 // 操作行のボタンは数が多いので、共通の小さめサイズに揃える。
 const ACTION_BTN = { fontSize: 12, padding: '6px 10px' };
-
-export function sanitizeFilename(title) {
-  const cleaned = (title || 'session').replace(/[\\/:*?"<>|]/g, '_');
-  const trimmed = cleaned.replace(/^\.+/, '').trim();
-  return trimmed.length > 0 ? cleaned : 'session';
-}
 
 // 小説化の失敗を通知イベントとして取り出す。
 // 完了(done)はサーバーのunreadフラグが担当するため、ここでは扱わない。
@@ -94,6 +86,7 @@ export default function Home({
   onDeleteSession,
   onNextChapter,
   onStartStarter,
+  onReadNovel = () => {},
 }) {
   const { user } = useAuth();
   const [novelJobs, setNovelJobs] = useState({}); // sessionId -> { status, error, hasNovel, stale, elapsedMs, truncated, unread }
@@ -170,7 +163,7 @@ export default function Home({
     setToasts((prevToasts) => [...prevToasts, ...added]);
   }
 
-  // 完了ブロックを消す。目的を果たした(DL)か、やり直す(再生成)ときに呼ぶ。
+  // 完了ブロックを消す。目的を果たした(読書画面を開く)か、やり直す(再生成)ときに呼ぶ。
   function clearFinished(sessionId) {
     setFinishedIds((prev) => {
       if (!prev.has(sessionId)) return prev;
@@ -272,7 +265,7 @@ export default function Home({
     if (!user) {
       applyNovelJobs({});
       // ローカルセッション(IndexedDB由来)はuserと無関係に残るため、完了ブロックや
-      // トーストを消さずにいると「下の「小説をDL」から取り出せます」のように、
+      // トーストを消さずにいると「「小説を読む」から読めます」のように、
       // ログアウトでボタンごと消えた操作を指す案内が残ってしまう。
       setFinishedIds(new Set());
       setToasts([]);
@@ -377,18 +370,6 @@ export default function Home({
     }
   }
 
-  function downloadText(filename, text, type) {
-    const blob = new Blob([text], { type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-
   async function handleNovelize(e, session) {
     e.stopPropagation();
     setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
@@ -412,30 +393,6 @@ export default function Home({
       return;
     }
     setPollNonce((n) => n + 1); // ポーリングを再始動する
-  }
-
-  async function handleDownloadNovel(e, session) {
-    e.stopPropagation();
-    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
-    clearFinished(session.id);
-    try {
-      const { text } = await getNovel(session.id);
-      downloadText(`${sanitizeFilename(session.title)}.md`, text, 'text/markdown;charset=utf-8');
-    } catch (err) {
-      setNovelizeError((prev) => ({ ...prev, [session.id]: '小説の取得に失敗した: ' + err.message }));
-    }
-  }
-
-  async function handleDownloadIllustrated(e, session) {
-    e.stopPropagation();
-    setNovelizeError((prev) => ({ ...prev, [session.id]: '' }));
-    clearFinished(session.id);
-    try {
-      const { html } = await getIllustratedNovel(session.id);
-      downloadText(`${sanitizeFilename(session.title)}-挿絵付き.html`, html, 'text/html;charset=utf-8');
-    } catch (err) {
-      setNovelizeError((prev) => ({ ...prev, [session.id]: '挿絵付き小説の取得に失敗した: ' + err.message }));
-    }
   }
 
   async function handleNextChapter(e, session) {
@@ -652,13 +609,16 @@ export default function Home({
           ) : (
             <>
               {hasNovel && (
-                <Button variant="ghost" onClick={(e) => handleDownloadNovel(e, s)} style={ACTION_BTN}>
-                  小説をDL
-                </Button>
-              )}
-              {hasNovel && hasIllustrations(s) && (
-                <Button variant="ghost" onClick={(e) => handleDownloadIllustrated(e, s)} style={ACTION_BTN}>
-                  挿絵付きでDL
+                <Button
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearFinished(s.id);
+                    onReadNovel(s.id);
+                  }}
+                  style={ACTION_BTN}
+                >
+                  小説を読む
                 </Button>
               )}
               <Button variant="ghost" onClick={(e) => handleNovelize(e, s)} disabled={!user} style={ACTION_BTN}>

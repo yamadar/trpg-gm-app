@@ -330,7 +330,7 @@ describe('sessions routes', () => {
 
     const getRes = await request(app).get('/api/sessions/s1/novel');
     expect(getRes.status).toBe(200);
-    expect(getRes.body).toEqual({ text: '小説化された本文。', stale: false });
+    expect(getRes.body).toMatchObject({ raw: '小説化された本文。', stale: false });
   });
 
   it('waits for an in-flight final turn save before snapshotting another device novelization', async () => {
@@ -430,31 +430,19 @@ describe('sessions routes', () => {
     expect(sentBody.systemInstruction.parts[0].text).not.toContain('挿絵挿入位置');
   });
 
-  it('GET /novel はマーカーを除去したプレーン本文を返す', async () => {
+  it('GET /novel は読書画面用の本文・挿絵対応を返す', async () => {
     await request(app).put('/api/sessions/s3').send({ title: 'T', state: {}, log: [] });
     await textStore.write('users/usr_test/sessions/s3/novel.md', '前\n〈挿絵1〉\n後');
+    await dataStore.set('users/usr_test/sessions/s3/novel', { imageIds: ['img_a'], truncated: true });
     const res = await request(app).get('/api/sessions/s3/novel');
     expect(res.status).toBe(200);
-    expect(res.body.text).toBe('前\n後');
-  });
-
-  it('GET /novel/illustrated は自己完結した挿絵入りHTMLを返す', async () => {
-    await request(app).put('/api/sessions/s4').send({ title: '挿絵小説', state: {}, log: [] });
-    await textStore.write('users/usr_test/sessions/s4/novel.md', '前\n〈挿絵1〉\n後');
-    await dataStore.set('users/usr_test/sessions/s4/novel', { turnCount: 0, updatedAt: 1, imageIds: ['img_a'] });
-    await imageStore.write(sessionImagePath('usr_test', 's4', 'img_a'), Buffer.from([1, 2]));
-    const res = await request(app).get('/api/sessions/s4/novel/illustrated');
-    expect(res.status).toBe(200);
-    expect(res.body.html).toContain('<!doctype html>');
-    expect(res.body.html).toContain('<title>挿絵小説</title>');
-    expect(res.body.html).toContain('<img src="data:image/png;base64,');
-    expect(res.body.html).not.toContain('〈挿絵1〉');
-  });
-
-  it('GET /novel/illustrated は小説未生成なら404', async () => {
-    await request(app).put('/api/sessions/s5').send({ title: 'T', state: {}, log: [] });
-    const res = await request(app).get('/api/sessions/s5/novel/illustrated');
-    expect(res.status).toBe(404);
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.body).toMatchObject({
+      title: 'T',
+      raw: '前\n〈挿絵1〉\n後',
+      imageIds: ['img_a'],
+      truncated: true,
+    });
   });
 
   it('marks the novel stale after the session advances past the novelized turn', async () => {
@@ -484,7 +472,7 @@ describe('sessions routes', () => {
     expect(jobs.body.s1.status).toBe('done');
     expect(jobs.body.s1.truncated).toBe(false);
     const get = await request(app).get('/api/sessions/s1/novel');
-    expect(get.body.text).toBe('前半後半');
+    expect(get.body.raw).toBe('前半後半');
   });
 
   it('reports truncated in /novel-jobs when the novelization hit the continuation limit', async () => {
@@ -497,7 +485,7 @@ describe('sessions routes', () => {
     expect(jobs.body.s1.status).toBe('done');
     expect(jobs.body.s1.truncated).toBe(true);
     // 未完でも本文は残る。
-    expect((await request(app).get('/api/sessions/s1/novel')).body.text).toContain('途中');
+    expect((await request(app).get('/api/sessions/s1/novel')).body.raw).toContain('途中');
   });
 
   it('reports elapsedMs for a running job in /novel-jobs', async () => {

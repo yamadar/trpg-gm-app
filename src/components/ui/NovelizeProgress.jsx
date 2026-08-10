@@ -8,7 +8,7 @@ const ESTIMATE_LIMIT_MS = 5 * 60 * 1000;
 const OVER_ESTIMATE_NOTE =
   '長い記録、または生成中に追加ログを同期したため時間がかかっています。中断はされていません。';
 const RUNNING_NOTE = '長い記録ほど時間がかかります。このまま他の画面に移っても生成は続きます。';
-const DONE_NOTE = '下の「小説をDL」から取り出せます';
+const DONE_NOTE = '「小説を読む」から読めます';
 
 const KEYFRAMES_ID = 'trpg-novelize-anim';
 const KEYFRAMES = `
