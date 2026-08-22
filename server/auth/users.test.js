@@ -4,7 +4,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from '../storage/dataStore.js';
-import { findOrCreateUser, getUser, updateUserProfile, identityKey, userProfileKey } from './users.js';
+import {
+  findOrCreateUser,
+  getUser,
+  updateUserProfile,
+  identityKey,
+  linkProviderIdentity,
+  userProfileKey,
+} from './users.js';
 
 let dir;
 let dataStore;
@@ -45,6 +52,27 @@ describe('users', () => {
   it('stores the identity mapping', async () => {
     const user = await findOrCreateUser(dataStore, profile);
     expect(await dataStore.get(identityKey('google', '12345'))).toEqual({ userId: user.id });
+  });
+
+  it('links an unused provider identity to an existing user', async () => {
+    const user = await findOrCreateUser(dataStore, profile);
+    await linkProviderIdentity(dataStore, {
+      userId: user.id,
+      provider: 'discord',
+      providerUserId: 'discord-user',
+    });
+    expect(await dataStore.get(identityKey('discord', 'discord-user'))).toEqual({ userId: user.id });
+  });
+
+  it('does not move a provider identity already linked to another user', async () => {
+    const first = await findOrCreateUser(dataStore, profile);
+    const second = await findOrCreateUser(dataStore, { ...profile, provider: 'discord' });
+    await expect(linkProviderIdentity(dataStore, {
+      userId: first.id,
+      provider: 'discord',
+      providerUserId: profile.providerUserId,
+    })).rejects.toMatchObject({ code: 'IDENTITY_ALREADY_LINKED' });
+    expect(await dataStore.get(identityKey('discord', profile.providerUserId))).toEqual({ userId: second.id });
   });
 
   it('rejects a filesystem-unsafe providerUserId', async () => {

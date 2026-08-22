@@ -4,6 +4,10 @@ export function loginUrl(provider) {
   return `/auth/${provider}/start`;
 }
 
+export async function startIdentityLink(provider) {
+  return apiFetch(`/auth/${encodeURIComponent(provider)}/link/start`, { method: 'POST' });
+}
+
 export async function fetchMe() {
   return apiFetch('/api/me');
 }

@@ -36,7 +36,7 @@ React + Vite (src/)  ── HTTP ──>  Express (server/)
 
 - Gemini テキストモデル: GM ターン、シナリオ分析・生成、キャンペーン、ノベル化
 - Gemini 画像モデル: 場面挿絵。画像用 API キーとモデル未設定時は機能を公開しない
-- OAuth: Google、Discord、X。設定済みプロバイダだけを有効化する
+- OAuth: Google、Discord、X。設定済みプロバイダだけを有効化する。ログイン済みユーザーはアカウントメニューから別のプロバイダを追加でき、同じ外部 identity は一つのアカウントにだけ紐付ける
 
 ## 稼働確認
 

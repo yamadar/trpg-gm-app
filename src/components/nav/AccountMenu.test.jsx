@@ -46,6 +46,19 @@ describe('AccountMenu', () => {
     fireEvent.click(screen.getByText('テスト'));
     expect(screen.getByText('ログアウト')).toBeInTheDocument();
     expect(screen.getByText('プロフィール編集')).toBeInTheDocument();
+    expect(screen.getByText('ログイン方法を追加')).toBeInTheDocument();
+  });
+
+  it('opens the provider-link modal from the account menu', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ providers: [] }) })
+    );
+    renderWithAuth(<AccountMenu />);
+    fireEvent.click(screen.getByText('テスト'));
+    fireEvent.click(screen.getByText('ログイン方法を追加'));
+    await waitFor(() => expect(screen.getByText('ログイン方法を追加')).toBeInTheDocument());
+    expect(screen.getByText('ログイン方法が設定されていません')).toBeInTheDocument();
   });
 
   it('renders a first-letter avatar circle when no avatarUrl is set', () => {

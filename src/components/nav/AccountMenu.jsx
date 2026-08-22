@@ -25,6 +25,7 @@ export default function AccountMenu() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -142,6 +143,16 @@ export default function AccountMenu() {
               style={menuItemStyle}
               onClick={() => {
                 setMenuOpen(false);
+                setLinkOpen(true);
+              }}
+            >
+              ログイン方法を追加
+            </button>
+            <button
+              type="button"
+              style={menuItemStyle}
+              onClick={() => {
+                setMenuOpen(false);
                 logout();
               }}
             >
@@ -160,6 +171,7 @@ export default function AccountMenu() {
           }}
         />
       )}
+      {linkOpen && <LoginModal mode="link" onClose={() => setLinkOpen(false)} />}
     </div>
   );
 }

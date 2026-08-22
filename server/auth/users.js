@@ -37,6 +37,24 @@ export async function findOrCreateUser(dataStore, { provider, providerUserId, di
   return user;
 }
 
+export async function linkProviderIdentity(dataStore, { userId, provider, providerUserId }) {
+  if (!PROVIDER_USER_ID_RE.test(String(providerUserId))) {
+    throw new Error('invalid provider user id');
+  }
+  const user = await dataStore.get(userProfileKey(userId));
+  if (!user) throw new Error('user not found');
+
+  const key = identityKey(provider, providerUserId);
+  const existing = await dataStore.get(key);
+  if (existing?.userId && existing.userId !== userId) {
+    const error = new Error('provider identity is already linked to another user');
+    error.code = 'IDENTITY_ALREADY_LINKED';
+    throw error;
+  }
+  if (!existing) await dataStore.set(key, { userId });
+  return user;
+}
+
 export async function getUser(dataStore, userId) {
   const user = await dataStore.get(userProfileKey(userId));
   if (!user) return null;

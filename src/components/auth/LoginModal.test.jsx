@@ -27,6 +27,28 @@ describe('LoginModal', () => {
     window.location = original;
   });
 
+  it('starts a provider link for the current account', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ providers: ['google'] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://accounts.example/link' }) });
+    vi.stubGlobal('fetch', f);
+    const assign = vi.fn();
+    const original = window.location;
+    delete window.location;
+    window.location = { ...original, assign };
+
+    render(<LoginModal mode="link" onClose={() => {}} />);
+    await waitFor(() => screen.getByText('Google を追加'));
+    fireEvent.click(screen.getByText('Google を追加'));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('https://accounts.example/link'));
+    expect(f.mock.calls[1]).toEqual(['/auth/google/link/start', {
+      method: 'POST',
+      headers: { 'X-GMDesk-CSRF': '1' },
+    }]);
+
+    window.location = original;
+  });
+
   it('shows a message when no providers are configured', async () => {
     vi.stubGlobal(
       'fetch',

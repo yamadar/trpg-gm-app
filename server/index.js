@@ -278,7 +278,14 @@ export function createApp({
   const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: secureCookies, path: '/' };
 
   app.use(createOriginCheck({ baseUrl }));
-  app.use(createAuthRouter({ dataStore: scopes.auth.dataStore, providers, baseUrl, fetchImpl, secureCookies }));
+  app.use(createAuthRouter({
+    dataStore: scopes.auth.dataStore,
+    providers,
+    baseUrl,
+    fetchImpl,
+    secureCookies,
+    transaction: persistence.transaction,
+  }));
   app.use('/api', createPublicContentRouter({
     dataStore: scopes.publicRead.dataStore,
     textStore: scopes.publicRead.textStore,

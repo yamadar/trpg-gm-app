@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import { randomToken } from './crypto.js';
 import { authorizationUrl, exchangeCode, fetchProfile } from './providers.js';
-import { findOrCreateUser, getUser, updateUserProfile } from './users.js';
+import {
+  findOrCreateUser,
+  getUser,
+  linkProviderIdentity,
+  updateUserProfile,
+} from './users.js';
 import { createAuthSession, deleteAuthSession, getAuthSession, SESSION_COOKIE, SESSION_TTL_MS } from './sessions.js';
 import { parseCookies } from './middleware.js';
 import { asyncHandler } from '../routes/asyncHandler.js';
@@ -15,6 +20,7 @@ export function createAuthRouter({
   baseUrl,
   fetchImpl = fetch,
   secureCookies = process.env.NODE_ENV === 'production',
+  transaction = async (operation) => operation(),
 }) {
   const router = Router();
   const cookieOpts = { httpOnly: true, sameSite: 'lax', secure: secureCookies, path: '/' };
@@ -34,6 +40,33 @@ export function createAuthRouter({
     res.redirect(authorizationUrl(provider, { baseUrl, state, codeVerifier }));
   });
 
+  // 既存アカウントへ別のログイン方法を追加する。OAuth callbackの前に、現在の
+  // セッションから所有者を確定するため、cookie内の値だけでリンク先を選ばない。
+  router.post('/auth/:provider/link/start', asyncHandler(async (req, res) => {
+    const provider = providers[req.params.provider];
+    const user = await currentUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'login required' });
+      return;
+    }
+    if (!provider) {
+      res.status(404).json({ error: 'unknown provider' });
+      return;
+    }
+    const state = randomToken();
+    const codeVerifier = randomToken();
+    res.cookie(OAUTH_COOKIE, JSON.stringify({
+      provider: provider.name,
+      state,
+      codeVerifier,
+      intent: 'link',
+    }), {
+      ...cookieOpts,
+      maxAge: OAUTH_COOKIE_TTL_MS,
+    });
+    res.json({ url: authorizationUrl(provider, { baseUrl, state, codeVerifier }) });
+  }));
+
   router.get('/auth/:provider/callback', async (req, res) => {
     try {
       const provider = providers[req.params.provider];
@@ -48,7 +81,23 @@ export function createAuthRouter({
         codeVerifier: saved.codeVerifier,
       });
       const profile = await fetchProfile(fetchImpl, provider, accessToken);
-      const user = await findOrCreateUser(dataStore, { provider: provider.name, ...profile });
+      if (saved.intent === 'link') {
+        const user = await currentUser(req);
+        if (!user) {
+          const error = new Error('login required to link provider');
+          error.code = 'LINK_SESSION_MISSING';
+          throw error;
+        }
+        await transaction(() => linkProviderIdentity(dataStore, {
+          userId: user.id,
+          provider: provider.name,
+          providerUserId: profile.providerUserId,
+        }));
+        res.clearCookie(OAUTH_COOKIE, cookieOpts);
+        res.redirect(`/?auth_linked=${encodeURIComponent(provider.name)}`);
+        return;
+      }
+      const user = await transaction(() => findOrCreateUser(dataStore, { provider: provider.name, ...profile }));
       const token = await createAuthSession(dataStore, user.id);
       res.clearCookie(OAUTH_COOKIE, cookieOpts);
       res.cookie(SESSION_COOKIE, token, { ...cookieOpts, maxAge: SESSION_TTL_MS });
@@ -59,7 +108,9 @@ export function createAuthRouter({
         code: error?.code || null,
       });
       res.clearCookie(OAUTH_COOKIE, cookieOpts);
-      res.redirect('/?auth_error=1');
+      res.redirect(error?.code === 'IDENTITY_ALREADY_LINKED'
+        ? '/?auth_link_error=identity_in_use'
+        : '/?auth_error=1');
     }
   });
 

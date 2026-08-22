@@ -1,11 +1,21 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fetchMe, fetchProviders, patchMe, logout, loginUrl } from './authClient.js';
+import { fetchMe, fetchProviders, patchMe, logout, loginUrl, startIdentityLink } from './authClient.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('authClient', () => {
   it('loginUrl builds the start path', () => {
     expect(loginUrl('google')).toBe('/auth/google/start');
+  });
+
+  it('startIdentityLink POSTs to the provider link endpoint', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ url: 'https://accounts.example' }) });
+    vi.stubGlobal('fetch', f);
+    await expect(startIdentityLink('google')).resolves.toEqual({ url: 'https://accounts.example' });
+    expect(f).toHaveBeenCalledWith('/auth/google/link/start', {
+      method: 'POST',
+      headers: { 'X-GMDesk-CSRF': '1' },
+    });
   });
 
   it('fetchMe GETs /api/me', async () => {

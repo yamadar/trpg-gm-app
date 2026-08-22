@@ -9,7 +9,8 @@ import request from 'supertest';
 import { createFsDataStore } from '../storage/dataStore.js';
 import { createProviders } from './providers.js';
 import { createAuthRouter } from './routes.js';
-import { SESSION_COOKIE } from './sessions.js';
+import { SESSION_COOKIE, createAuthSession } from './sessions.js';
+import { findOrCreateUser, identityKey } from './users.js';
 
 const BASE = 'http://localhost:5173';
 const env = { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec' };
@@ -61,6 +62,13 @@ async function login(app, fetchImpl) {
   return { cb, sessionCookie: cookieHeader(cb, SESSION_COOKIE) };
 }
 
+async function linkStart(app, sessionCookie) {
+  const start = await request(app)
+    .post('/auth/google/link/start')
+    .set('Cookie', sessionCookie);
+  return { start, oauthCookie: cookieHeader(start, 'gmdesk_oauth') };
+}
+
 describe('auth routes', () => {
   it('start redirects to the provider and sets the oauth cookie', async () => {
     const res = await request(buildApp()).get('/auth/google/start');
@@ -81,6 +89,50 @@ describe('auth routes', () => {
     expect(sessionCookie).toBeTruthy();
     const me = await request(app).get('/api/me').set('Cookie', sessionCookie);
     expect(me.body.user.displayName).toBe('太郎');
+  });
+
+  it('links a provider identity to the current account without creating another user', async () => {
+    const existing = await findOrCreateUser(dataStore, {
+      provider: 'discord', providerUserId: 'discord-1', displayName: '既存', avatarUrl: null,
+    });
+    const sessionCookie = `${SESSION_COOKIE}=${await createAuthSession(dataStore, existing.id)}`;
+    const app = buildApp(googleFetchMock());
+    const { start, oauthCookie } = await linkStart(app, sessionCookie);
+    expect(start.status).toBe(200);
+    const state = new URL(start.body.url).searchParams.get('state');
+    const callback = await request(app)
+      .get(`/auth/google/callback?code=c1&state=${state}`)
+      .set('Cookie', `${sessionCookie}; ${oauthCookie}`);
+
+    expect(callback.status).toBe(302);
+    expect(callback.headers.location).toBe('/?auth_linked=google');
+    expect(await dataStore.get(identityKey('google', '111'))).toEqual({ userId: existing.id });
+    const me = await request(app).get('/api/me').set('Cookie', sessionCookie);
+    expect(me.body.user.id).toBe(existing.id);
+  });
+
+  it('requires a logged-in account before starting a provider link', async () => {
+    const res = await request(buildApp()).post('/auth/google/link/start');
+    expect(res.status).toBe(401);
+  });
+
+  it('does not replace an identity already linked to another account', async () => {
+    const existing = await findOrCreateUser(dataStore, {
+      provider: 'discord', providerUserId: 'discord-1', displayName: '既存', avatarUrl: null,
+    });
+    const other = await findOrCreateUser(dataStore, {
+      provider: 'google', providerUserId: '111', displayName: '別人', avatarUrl: null,
+    });
+    const sessionCookie = `${SESSION_COOKIE}=${await createAuthSession(dataStore, existing.id)}`;
+    const app = buildApp(googleFetchMock());
+    const { start, oauthCookie } = await linkStart(app, sessionCookie);
+    const state = new URL(start.body.url).searchParams.get('state');
+    const callback = await request(app)
+      .get(`/auth/google/callback?code=c1&state=${state}`)
+      .set('Cookie', `${sessionCookie}; ${oauthCookie}`);
+
+    expect(callback.headers.location).toBe('/?auth_link_error=identity_in_use');
+    expect(await dataStore.get(identityKey('google', '111'))).toEqual({ userId: other.id });
   });
 
   it('callback with a state mismatch redirects to /?auth_error=1 without a session', async () => {
