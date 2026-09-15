@@ -78,11 +78,11 @@ export function createPartySessionsRouter({ service }) {
   }));
 
   router.post('/party-sessions/:id/ready', asyncHandler(async (req, res) => {
-    res.json(await service.setReady(req.userId, req.params.id, true));
+    res.json(await service.setReady(req.userId, req.params.id, true, req.body?.roundId));
   }));
 
   router.delete('/party-sessions/:id/ready', asyncHandler(async (req, res) => {
-    res.json(await service.setReady(req.userId, req.params.id, false));
+    res.json(await service.setReady(req.userId, req.params.id, false, req.body?.roundId));
   }));
 
   router.post('/party-sessions/:id/typing', asyncHandler(async (req, res) => {
@@ -108,6 +108,10 @@ export function createPartySessionsRouter({ service }) {
       return;
     }
     res.json(await service.vote(req.userId, req.params.id, req.body.optionId));
+  }));
+
+  router.patch('/party-sessions/:id/host/settings', asyncHandler(async (req, res) => {
+    res.json(await service.hostUpdateSettings(req.userId, req.params.id, req.body));
   }));
 
   router.post('/party-sessions/:id/host/advance', asyncHandler(async (req, res) => {
@@ -160,6 +164,7 @@ export function createPartySessionsRouter({ service }) {
     }
     res.status(error.status).json({
       error: error.message,
+      requestId: req.requestId,
       ...(error.code ? { code: error.code } : {}),
       ...(error.resetAt ? { resetAt: error.resetAt } : {}),
     });

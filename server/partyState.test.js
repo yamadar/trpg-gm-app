@@ -17,7 +17,7 @@ describe('partyState', () => {
     expect(normalizePartySettings({ maxPlayers: 99, actionTimeoutSeconds: 1 })).toMatchObject({
       maxPlayers: 6,
       actionTimeoutSeconds: 15,
-      voteTimeoutSeconds: 30,
+      voteTimeoutSeconds: 120,
     });
     const snapshot = createPartySnapshot(pcs, { resourceDefs: [{ key: 'san', initial: 60, max: 99 }] }, 100);
     expect(snapshot.scenes.main.participantPcIds).toEqual(['pc1', 'pc2']);

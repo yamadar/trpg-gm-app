@@ -47,7 +47,8 @@ describe('PartyPlay', () => {
       screen.getAllByText(/罠を調べる/).some((element) => element.tagName === 'DIV'),
     ).toBe(true));
     fireEvent.click(await screen.findByText('この行動で確定'));
-    await waitFor(() => expect(ready).toHaveBeenCalledWith('p1'));
+    await waitFor(() => expect(submit).toHaveBeenLastCalledWith('p1', expect.objectContaining({ text: '罠を調べる', roundId: 'round_1', ready: true })));
+    expect(ready).not.toHaveBeenCalled();
   });
 
   it('renders lobby PC assignment and host invite controls', async () => {
@@ -112,4 +113,38 @@ describe('PartyPlay', () => {
     expect(await screen.findByText(/LATEST_CHAT_SENTINEL/)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('OLDEST_CHAT_SENTINEL');
   });
+});
+
+it('renders GM progress below the story with goals and an own character sheet, without a zero countdown', async () => {
+  const current = snapshot();
+  vi.spyOn(partyClient, 'getPartySnapshot').mockResolvedValue({ ...current,
+    sharedGoal: '皆で帰路を探す', pcs: [{ ...pcs[0], goal: '失われた剣を探す' }, pcs[1]],
+    round: { ...current.round, phase: 'resolving', lockAt: Date.now() - 1000, deadlineAt: Date.now() - 1000, resolutionStartedAt: Date.now() - 5000, progress: 'narrating' },
+  });
+  render(<PartyPlay sessionId="p1" />);
+  const progress = await screen.findByText('判定完了・あなたの場面を描写中…');
+  const story = screen.getByText('石の扉が開く。');
+  expect(story.compareDocumentPosition(progress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByText('0秒')).toBeNull();
+  expect(screen.getByText('皆で帰路を探す')).toBeInTheDocument();
+  expect(screen.getByText('失われた剣を探す')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('キャラクターシート：カイ'));
+  expect(screen.getByText('自分のシート')).toBeVisible();
+});
+
+it('updates the GM state even while chat is stuck, and retains the draft after a stale-round error', async () => {
+  let current = snapshot();
+  vi.mocked(partyClient.getPartyChat).mockReturnValue(new Promise(() => {}));
+  vi.spyOn(partyClient, 'getPartySnapshot').mockImplementation(async () => current);
+  vi.spyOn(partyClient, 'submitPartyIntent').mockImplementation(async () => {
+    current = { ...current, eventSeq: 2, round: { ...current.round, phase: 'resolving' } };
+    throw Object.assign(new Error('行動受付は終了した'), { status: 409 });
+  });
+  render(<PartyPlay sessionId="p1" />);
+  fireEvent.change(await screen.findByLabelText('自分の行動'), { target: { value: '失いたくない下書き' } });
+  fireEvent.click(screen.getByText('この行動で確定'));
+  expect(await screen.findByText('全員の行動を一度に解決中…')).toBeInTheDocument();
+  expect(await screen.findByRole('alert')).toHaveTextContent('行動受付は終了した');
+  current = { ...current, eventSeq: 3, round: { ...current.round, id: 'round_2', phase: 'collecting' } };
+  expect(await screen.findByLabelText('自分の行動', {}, { timeout: 2000 })).toHaveValue('失いたくない下書き');
 });

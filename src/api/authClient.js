@@ -1,7 +1,7 @@
 import { apiFetch } from './apiFetch.js';
 
-export function loginUrl(provider) {
-  return `/auth/${provider}/start`;
+export function loginUrl(provider, returnTo = '') {
+  return `/auth/${provider}/start${returnTo.startsWith('#/') ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`;
 }
 
 export async function startIdentityLink(provider) {

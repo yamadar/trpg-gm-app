@@ -23,7 +23,8 @@ function parseErrorBody(text) {
 function createApiError(status, text) {
   const body = parseErrorBody(text);
   let message;
-  if (status === 401) message = 'ログインが必要です。右上からログインしてください。';
+  if (status === 401) message = 'ログインが必要です。ログインボタンから続けてください。';
+  else if (status === 409 && ['ROUND_NOT_COLLECTING', 'ROUND_CHANGED', 'RESOLUTION_IN_PROGRESS', 'NOT_PAUSED'].includes(body?.code)) message = body.error;
   else if (status === 503 && body?.code === 'READ_ONLY_MAINTENANCE') {
     message = MAINTENANCE_MESSAGE;
   }

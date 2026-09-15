@@ -24,10 +24,11 @@ export default function PartySetup({ onCreated, initialContext = null }) {
   const [customRulesets, setCustomRulesets] = useState([]);
   const [rulesetId, setRulesetId] = useState(initialContext?.rulesetId || 'simple');
   const [title, setTitle] = useState(initialContext?.title || initialContext?.scenario?.title || '');
+  const [sharedGoal, setSharedGoal] = useState('');
   const [maxPlayers, setMaxPlayers] = useState(4);
-  const [actionTimeoutSeconds, setActionTimeoutSeconds] = useState(90);
-  const [voteTimeoutSeconds, setVoteTimeoutSeconds] = useState(30);
-  const [viewPolicy, setViewPolicy] = useState('open');
+  const [actionTimeoutSeconds, setActionTimeoutSeconds] = useState(0);
+  const [voteTimeoutSeconds, setVoteTimeoutSeconds] = useState(120);
+  const [viewPolicy, setViewPolicy] = useState('character');
   const [defaultAwayPolicy, setDefaultAwayPolicy] = useState('follow');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -93,13 +94,14 @@ export default function PartySetup({ onCreated, initialContext = null }) {
       const adapter = getAdapter(ruleset.formula);
       const created = await createPartySession({
         title: title.trim(),
+        sharedGoal: sharedGoal.trim(),
         worldId,
         campaignId: initialContext?.campaignId || null,
         pcs: pcs.map((pc) => ({
           id: pc.name || pc.id,
           characterName: pc.characterName || characterDisplayName(pc, 'pc'),
           raw: pc.raw,
-          goal: pc.parsed?.goal || '',
+          goal: pc.goal || pc.parsed?.goal || '',
           bonds: pc.parsed?.bonds || '',
         })),
         gmSnapshot: {
@@ -181,6 +183,9 @@ export default function PartySetup({ onCreated, initialContext = null }) {
               )}
             </div>
           </Field>
+          <Field label="旅の共通目的" hint="空欄なら導入でAI GMが提示。個人目的も各PCへ提示する。">
+            <textarea value={sharedGoal} onChange={(e) => setSharedGoal(e.target.value)} rows={2} maxLength={1000} style={inputStyle} />
+          </Field>
           <Field label="ルール">
             <select value={rulesetId} onChange={(e) => setRulesetId(e.target.value)} style={inputStyle}>
               {rulesets.map((ruleset) => <option key={ruleset.id} value={ruleset.id}>{ruleset.label}</option>)}
@@ -190,8 +195,11 @@ export default function PartySetup({ onCreated, initialContext = null }) {
             <Field label="最大人数">
               <input type="number" min="2" max="6" value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))} style={inputStyle} />
             </Field>
-            <Field label="行動時間（秒）">
-              <input type="number" min="15" max="600" value={actionTimeoutSeconds} onChange={(e) => setActionTimeoutSeconds(Number(e.target.value))} style={inputStyle} />
+            <Field label="行動時間">
+              <select value={actionTimeoutSeconds} onChange={(e) => setActionTimeoutSeconds(Number(e.target.value))} style={inputStyle}>
+                <option value={0}>無制限（全員確定で進む）</option>
+                <option value={180}>3分</option><option value={300}>5分</option><option value={600}>10分</option>
+              </select>
             </Field>
             <Field label="投票時間（秒）">
               <input type="number" min="10" max="120" value={voteTimeoutSeconds} onChange={(e) => setVoteTimeoutSeconds(Number(e.target.value))} style={inputStyle} />

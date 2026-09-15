@@ -1,3 +1,7 @@
+import { useState } from 'react';
+import { useAuth } from '../../auth/AuthContext.jsx';
+import LoginModal from '../auth/LoginModal.jsx';
+import Button from '../ui/Button.jsx';
 import { ChevronLeft } from 'lucide-react';
 import { navigateHash } from '../../navigation/useRoute.js';
 import { COLORS, F_MONO, F_DISPLAY } from '../../theme.js';
@@ -18,7 +22,9 @@ export const FOCUS_HEADER_HEIGHT = EXIT_BUTTON_MIN_HEIGHT + HEADER_VERTICAL_PADD
 // 画面固有の判定(どの画面か、パネルが出ているか等)はここには持ち込まず、
 // 値だけを受け取る。padding のような一括指定より後ろに展開しているので、
 // paddingRight だけを上書きするような部分指定もそのまま効く。
-export default function FocusHeader({ title, steps, currentStep = 0, exitLabel = 'ホーム', onExit, style }) {
+export default function FocusHeader({ title, steps, currentStep = 0, exitLabel = 'ホーム', onExit, style, showLogin = false }) {
+  const { user, loading } = useAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
   return (
     <div
       style={{
@@ -79,6 +85,8 @@ export default function FocusHeader({ title, steps, currentStep = 0, exitLabel =
         {title}
       </div>
 
+      {showLogin && !user && !loading && <Button variant="ghost" onClick={() => setLoginOpen(true)}>ログイン</Button>}
+      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
       {steps && steps.length > 0 && (
         <ol
           style={{

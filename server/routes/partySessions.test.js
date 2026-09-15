@@ -23,7 +23,7 @@ beforeEach(async () => {
   await dataStore.set('users/host/profile', { displayName: 'ホスト' });
   await dataStore.set('users/player/profile', { displayName: '参加者' });
   service = createPartyService({
-    dataStore,
+    dataStore, logger: vi.fn(),
     randomToken: () => 'safe_invite_token',
     generator: vi.fn(async ({ round }) => ({
       resolution: 'advance',
@@ -39,7 +39,7 @@ beforeEach(async () => {
   app.use('/api', createPartySessionsRouter({ service }));
 });
 
-afterEach(async () => fs.rm(dir, { recursive: true, force: true }));
+afterEach(async () => { await service.waitForIdle(); await fs.rm(dir, { recursive: true, force: true }); });
 
 describe('party session routes', () => {
   it('creates, lists, invites and joins without leaking GM-only snapshots', async () => {
@@ -84,7 +84,10 @@ describe('party session routes', () => {
     const started = await request(app).post(`/api/party-sessions/${id}/start`);
     expect(started.status).toBe(200);
     expect(started.body.status).toBe('playing');
-    expect(started.body.round.phase).toBe('collecting');
-    expect(started.body.snapshot.narratives[0].text).toBe('導入');
+    expect(started.body.round.phase).toBe('resolving');
+    await service.waitForIdle();
+    const snapshot = await request(app).get(`/api/party-sessions/${id}/snapshot`);
+    expect(snapshot.body.round.phase).toBe('collecting');
+    expect(snapshot.body.snapshot.narratives[0].text).toBe('導入');
   });
 });

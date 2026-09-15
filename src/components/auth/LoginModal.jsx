@@ -24,7 +24,7 @@ export default function LoginModal({ onClose, mode = 'login' }) {
         window.location.assign(url);
         return;
       }
-      window.location.assign(loginUrl(provider));
+      window.location.assign(loginUrl(provider, window.location.hash));
     } catch (reason) {
       setError(reason.message || 'ログイン方法の追加に失敗しました');
     }

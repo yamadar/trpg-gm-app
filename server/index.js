@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { requestLogging, logEvent, errorMetadata } from './observability.js';
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -143,6 +144,7 @@ export function createApp({
   const maintenanceMode = resolveMaintenanceMode(env.MAINTENANCE_MODE);
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
+  app.use(requestLogging());
   app.use(securityHeaders);
   app.use(express.json({ limit: '2mb' }));
 
@@ -447,7 +449,7 @@ export function createApp({
   }
 
   app.use((err, req, res, next) => {
-    const requestId = crypto.randomUUID();
+    const requestId = req.requestId || crypto.randomUUID();
     const rawStatus = typeof err?.status === 'number'
       ? err.status
       : typeof err?.statusCode === 'number'
@@ -456,14 +458,7 @@ export function createApp({
     const status = rawStatus >= 400 && rawStatus <= 599 ? rawStatus : 500;
     // 本文、query、Cookie、Authorization、例外message/stackをログ対象にしない。
     // requestIdでクライアント報告と安全な最小メタデータを対応付ける。
-    console.error('request failed', {
-      requestId,
-      method: req.method,
-      path: req.path,
-      status,
-      errorName: err?.name || 'Error',
-      errorCode: err?.code || null,
-    });
+    logEvent('http.failed', { requestId, method: req.method, route: req.route?.path || '(unmatched)', status, ...errorMetadata(err) });
     if (status >= 500) {
       const upstream = status === 502 || status === 503;
       res.status(status).json({

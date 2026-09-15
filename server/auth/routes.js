@@ -11,6 +11,10 @@ import { createAuthSession, deleteAuthSession, getAuthSession, SESSION_COOKIE, S
 import { parseCookies } from './middleware.js';
 import { asyncHandler } from '../routes/asyncHandler.js';
 
+function safeReturnTo(value) {
+  return typeof value === 'string' && /^#\/[^\r\n]{0,1500}$/.test(value) ? '/' + value : '/';
+}
+
 const OAUTH_COOKIE = 'gmdesk_oauth';
 const OAUTH_COOKIE_TTL_MS = 10 * 60 * 1000;
 
@@ -33,7 +37,7 @@ export function createAuthRouter({
     }
     const state = randomToken();
     const codeVerifier = randomToken();
-    res.cookie(OAUTH_COOKIE, JSON.stringify({ provider: provider.name, state, codeVerifier }), {
+    res.cookie(OAUTH_COOKIE, JSON.stringify({ provider: provider.name, state, codeVerifier, returnTo: req.query.returnTo }), {
       ...cookieOpts,
       maxAge: OAUTH_COOKIE_TTL_MS,
     });
@@ -101,7 +105,7 @@ export function createAuthRouter({
       const token = await createAuthSession(dataStore, user.id);
       res.clearCookie(OAUTH_COOKIE, cookieOpts);
       res.cookie(SESSION_COOKIE, token, { ...cookieOpts, maxAge: SESSION_TTL_MS });
-      res.redirect('/');
+      res.redirect(safeReturnTo(saved.returnTo));
     } catch (error) {
       console.error('oauth callback failed', {
         name: error?.name || 'Error',

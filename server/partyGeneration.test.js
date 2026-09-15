@@ -45,10 +45,7 @@ describe('partyGeneration', () => {
         { pcId: 'pc1', sceneId: 'main', conditionChanges: [], newlyKnownFactIds: [] },
         { pcId: 'pc2', sceneId: 'main', conditionChanges: [], newlyKnownFactIds: [] },
       ],
-      narratives: [
-        { id: 'shared', audienceKind: 'all', audienceIds: [], text: '扉が開く。' },
-        { id: 'mina', audienceKind: 'pcs', audienceIds: ['pc2'], text: '罠の痕跡を見た。' },
-      ],
+      narratives: { pc1: '扉が開く。', pc2: '罠の痕跡を見た。' },
       choicesByPc: [{ pcId: 'pc1', choices: ['入る'] }, { pcId: 'pc2', choices: ['調べる'] }],
       autoActions: [],
     };
@@ -108,7 +105,7 @@ describe('partyGeneration', () => {
     const outcome = {
       globalUpdate: { time: '直後', historySummary: '扉を調べた', tensionLevel: 2, endingReached: false, flagUpdates: [] },
       sceneUpdates: [], pcUpdates: [],
-      narratives: [{ id: 'shared', audienceKind: 'all', audienceIds: [], text: '扉を調べる。' }],
+      narratives: { pc1: '扉を調べる。', pc2: '罠の痕跡を見た。' },
       choicesByPc: [], autoActions: [],
     };
     const fetchImpl = vi.fn()
@@ -176,7 +173,7 @@ describe('partyGeneration', () => {
       globalUpdate: { time: '直後', historySummary: '', tensionLevel: 1, endingReached: false, flagUpdates: [] },
       sceneUpdates: [],
       pcUpdates: [],
-      narratives: [{ id: 'leak', audienceKind: 'all', audienceIds: [], text: `${secret} が黒幕だ。` }],
+      narratives: { pc1: `${secret} が黒幕だ。`, pc2: '罠を見る。' },
       choicesByPc: [],
       autoActions: [],
     };
@@ -192,4 +189,39 @@ describe('partyGeneration', () => {
       fetchImpl,
     })).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
   });
+});
+
+it('reuses the saved plan and dice, makes one narrator call, and requires each PC view', async () => {
+  const plan = { resolution: 'advance', sharedGoal: '帰路を見つける', narratorBrief: '', checks: [], autoActions: [], pcBriefs: [
+    { pcId: 'pc1', text: '扉を見る', goal: '仲間を守る' }, { pcId: 'pc2', text: '壁を見る', goal: '文字を読む' },
+  ] };
+  const saved = { ...round, checkpoint: { plan, checkResults: [{ pcId: 'pc1', roll: 21, success: true }] } };
+  const onProgress = vi.fn();
+  const rng = vi.fn();
+  const fetchImpl = vi.fn().mockResolvedValue(geminiText({
+    globalUpdate: { flagUpdates: [] }, sceneUpdates: [], pcUpdates: [],
+    narratives: { pc1: '仲間を守りつつ扉を押す。', pc2: '刻まれた文字を目で追う。' }, choicesByPc: [], autoActions: [],
+  }));
+  const result = await generatePartyResolution({ session, snapshot, round: saved, apiKey: 'key', model: 'gemini-3-flash-preview', fetchImpl, rng, onProgress });
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+  expect(rng).not.toHaveBeenCalled();
+  expect(result.checkResults).toEqual(saved.checkpoint.checkResults);
+  expect(result.globalUpdate.sharedGoal).toBe('帰路を見つける');
+  expect(result.goalsByPc.map((item) => item.goal)).toEqual(['仲間を守る', '文字を読む']);
+  const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+  expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
+  expect(body.generationConfig.responseJsonSchema.properties.narratives.required).toEqual(['pc1', 'pc2']);
+  fetchImpl.mockResolvedValue(geminiText({ narratives: { pc1: '一人分しかない' } }));
+  await expect(generatePartyResolution({ session, snapshot, round: saved, apiKey: 'key', model: 'model', fetchImpl })).rejects.toMatchObject({ code: 'PARTY_MISSING_PC_VIEW' });
+});
+
+it('allows an existing personal goal only in its owner view, not the common brief or another view', async () => {
+  const secret = 'ULTRA_SECRET_BLACK_DRAGON_92841';
+  const ownSession = { ...session, pcs: [{ ...session.pcs[0], goal: secret }, session.pcs[1]], gmSnapshot: { ...session.gmSnapshot, scenario: { raw: `## GM専用情報\n${secret}` } } };
+  const plan = { resolution: 'advance', sharedGoal: '帰る', narratorBrief: '', checks: [], autoActions: [], pcBriefs: [{ pcId: 'pc1', text: '', goal: secret }, { pcId: 'pc2', text: '', goal: '' }] };
+  const response = { globalUpdate: { flagUpdates: [] }, narratives: { pc1: secret, pc2: '門を眺める。' }, pcUpdates: [], choicesByPc: [], autoActions: [] };
+  const fetchImpl = vi.fn().mockResolvedValueOnce(geminiText(plan)).mockResolvedValueOnce(geminiText(response));
+  await expect(generatePartyResolution({ session: ownSession, snapshot, round, apiKey: 'key', model: 'model', fetchImpl })).resolves.toMatchObject({ resolution: 'advance' });
+  fetchImpl.mockResolvedValueOnce(geminiText(plan)).mockResolvedValueOnce(geminiText({ ...response, narratives: { pc1: '門を見る。', pc2: secret } }));
+  await expect(generatePartyResolution({ session: ownSession, snapshot, round, apiKey: 'key', model: 'model', fetchImpl })).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
 });

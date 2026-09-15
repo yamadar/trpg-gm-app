@@ -204,7 +204,7 @@ describe('createApp', () => {
     const secret = 'token=SUPER_SECRET_VALUE';
     const { cookie } = await createTestUserSession(app.locals.dataStore);
     app.locals.dataStore.list = vi.fn().mockRejectedValue(new Error(secret));
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => {});
     const res = await request(app)
       .get(`/api/sessions?code=${encodeURIComponent(secret)}`)
       .set('Cookie', cookie);
@@ -216,10 +216,9 @@ describe('createApp', () => {
     expect(res.body.requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(JSON.stringify(res.body)).not.toContain(secret);
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(secret);
-    expect(errorSpy).toHaveBeenCalledWith(
-      'request failed',
-      expect.objectContaining({ requestId: res.body.requestId, path: '/api/sessions' }),
-    );
+    const records = errorSpy.mock.calls.map(([line]) => JSON.parse(line));
+    expect(records).toContainEqual(expect.objectContaining({ event: 'http.failed', requestId: res.body.requestId, route: '/sessions' }));
+    expect(res.headers['x-request-id']).toBe(res.body.requestId);
     errorSpy.mockRestore();
   });
 

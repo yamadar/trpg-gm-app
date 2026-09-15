@@ -1,3 +1,4 @@
+import { logEvent, errorMetadata } from './observability.js';
 const GEMINI_TEXT_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 function textFromContent(content) {
@@ -183,19 +184,32 @@ export async function generateText({
   request,
   fetchImpl = fetch,
   timeoutMs,
+  telemetry = {},
+  logger = logEvent,
 }) {
-  const upstream = await fetchImpl(
-    `${GEMINI_TEXT_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify(buildGeminiTextRequest(request)),
-      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
-    },
-  );
-  if (!upstream.ok) {
-    const body = await upstream.text().catch(() => '');
-    throw new GeminiTextApiError(upstream.status, body);
+  const started = performance.now();
+  const body = JSON.stringify(buildGeminiTextRequest(request));
+  logger('ai.started', { ...telemetry, model, inputChars: body.length });
+  try {
+    const upstream = await fetchImpl(
+      `${GEMINI_TEXT_ENDPOINT}/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body,
+        ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+      },
+    );
+    if (!upstream.ok) {
+      const body = await upstream.text().catch(() => '');
+      throw new GeminiTextApiError(upstream.status, body);
+    }
+    const data = await upstream.json();
+    const result = toCompatibleTextResponse(data);
+    logger('ai.completed', { ...telemetry, model, durationMs: Math.round(performance.now() - started), inputTokens: data.usageMetadata?.promptTokenCount, outputTokens: data.usageMetadata?.candidatesTokenCount, thinkingTokens: data.usageMetadata?.thoughtsTokenCount, reason: result.stop_reason });
+    return result;
+  } catch (error) {
+    logger('ai.failed', { ...telemetry, model, durationMs: Math.round(performance.now() - started), ...errorMetadata(error) });
+    throw error;
   }
-  return toCompatibleTextResponse(await upstream.json());
 }

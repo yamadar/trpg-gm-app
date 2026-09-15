@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { logEvent, errorMetadata } from './observability.js';
 import {
   appendPartyChat,
   appendPartyEvent,
@@ -132,9 +133,9 @@ function newRound(session, number, now) {
     number,
     phase: 'collecting',
     basedOnStateRevision: session.stateRevision || 0,
-    deadlineAt: now + timeout,
-    baseDeadlineAt: now + timeout,
-    maxDeadlineAt: now + timeout + MAX_TYPING_EXTENSION_MS,
+    deadlineAt: timeout ? now + timeout : null,
+    baseDeadlineAt: timeout ? now + timeout : null,
+    maxDeadlineAt: timeout ? now + timeout + MAX_TYPING_EXTENSION_MS : null,
     lockAt: null,
     intents: [],
     readyUserIds: [],
@@ -177,17 +178,36 @@ export function createPartyService({
   transaction = (operation) => operation(),
   generator = null,
   usage = null,
+  logger = logEvent,
   now = Date.now,
   randomToken = () => crypto.randomBytes(24).toString('base64url'),
 }) {
   const locks = new Map();
+  const jobs = new Map();
+
+  function scheduleResolution(job) {
+    if (jobs.has(job.resolutionId)) return;
+    const task = runResolution(job).catch((error) => {
+      logger('party.job_failed', { ...job, ...errorMetadata(error) });
+    }).finally(() => jobs.delete(job.resolutionId));
+    jobs.set(job.resolutionId, task);
+  }
+
+  async function waitForIdle() {
+    await Promise.all([...jobs.values()]);
+  }
   const presence = new Map();
   const typing = new Map();
   const chatRate = new Map();
 
   async function withLock(sessionId, operation) {
+    const enqueued = performance.now();
     const previous = locks.get(sessionId) || Promise.resolve();
-    const current = previous.catch(() => {}).then(() => transaction(operation));
+    const current = previous.catch(() => {}).then(() => transaction(async () => {
+      const waitMs = Math.round(performance.now() - enqueued);
+      if (waitMs >= 100) logger('party.lock_wait', { sessionId, waitMs });
+      return operation();
+    }));
     locks.set(sessionId, current);
     try {
       return await current;
@@ -240,9 +260,11 @@ export function createPartyService({
   }
 
   async function record(data, event) {
+    const started = performance.now();
     await appendPartyEvent(dataStore, data.session, { ...event, createdAt: now() }, data.snapshot);
     if (data.round) await savePartyRound(dataStore, data.session.id, data.round);
     await syncMemberships(data.session);
+    logger('party.' + event.type, { sessionId: data.session.id, roundId: event.roundId || data.round?.id, resolutionId: event.payload?.resolutionId || data.round?.resolutionId, phase: data.round?.phase, eventSeq: data.session.eventSeq, durationMs: Math.round(performance.now() - started) });
   }
 
   function active(data) {
@@ -270,6 +292,9 @@ export function createPartyService({
       }
     }
     data.round.phase = 'resolving';
+    data.round.resolutionStartedAt = now();
+    data.round.deadlineAt = null;
+    data.round.progress = 'planning';
     data.round.resolutionId ||= randomId('resolution');
     data.round.resolutionIntents = intents;
     data.round.lockAt = now();
@@ -303,7 +328,15 @@ export function createPartyService({
     let event = null;
     const result = await withLock(sessionId, async () => {
       const data = await load(sessionId);
-      if (!data.round || ['lobby', 'ended', 'resolving', 'locked'].includes(data.round.phase)) return { data };
+      if (data.round?.phase === 'resolving' && !jobs.has(data.round.resolutionId)) {
+        // A persisted in-flight round without a local job means the server restarted.
+        data.round.phase = 'paused';
+        data.round.retryResolution = true;
+        data.round.error = 'サーバーの再起動で処理が中断した。ホストが再開すると再試行できる。';
+        data.session.status = 'paused';
+        await record(data, { type: 'resolution_interrupted', roundId: data.round.id, payload: {} });
+      }
+      if (!data.round || ['lobby', 'ended', 'resolving', 'locked', 'paused'].includes(data.round.phase)) return { data };
       const timestamp = now();
 
       // 45秒を超えた切断は自動離席。復帰APIまで待機対象へ戻さない。
@@ -367,6 +400,9 @@ export function createPartyService({
           const winner = winningDecision(data);
           data.round.decision.result = winner;
           data.round.phase = 'resolving';
+          data.round.resolutionStartedAt = now();
+          data.round.progress = 'planning';
+          data.round.checkpoint = null;
           data.round.resolutionId = randomId('resolution');
           data.session.leaderIndex = ((data.session.leaderIndex || 0) + 1) % Math.max(1, voters.length);
           event = { type: 'decision_resolved', roundId: data.round.id, payload: { option: winner } };
@@ -380,11 +416,13 @@ export function createPartyService({
       if (event) await record(data, event);
       return { data };
     });
-    if (result.job) await runResolution(result.job);
+    if (result.job) scheduleResolution(result.job);
     return result;
   }
 
   async function runResolution(job) {
+    const started = performance.now();
+    logger('party.resolution_started', job);
     const prepared = await withLock(job.sessionId, async () => {
       const data = await load(job.sessionId);
       if (data.round?.resolutionId !== job.resolutionId || data.round.phase !== 'resolving') return null;
@@ -401,6 +439,13 @@ export function createPartyService({
       const generated = await generator({
         ...prepared,
         decisionResult: prepared.round.decision?.result || null,
+        onProgress: async (stage, checkpoint) => withLock(job.sessionId, async () => {
+          const data = await load(job.sessionId);
+          if (data.round?.resolutionId !== job.resolutionId || data.round.phase !== 'resolving') return;
+          data.round.progress = stage;
+          if (checkpoint) data.round.checkpoint = checkpoint;
+          await record(data, { type: 'resolution_progress', roundId: data.round.id, payload: { stage } });
+        }),
       });
       validatePartyResolution(prepared.session, prepared.snapshot, prepared.round, generated);
       await withLock(job.sessionId, async () => {
@@ -444,6 +489,7 @@ export function createPartyService({
           type: 'round_resolved',
           roundId: resolvedRoundId,
           payload: {
+            resolutionId: job.resolutionId,
             intents: resolvedIntents,
             checks,
             narrativeIds: (generated.narratives || []).map((item) => item.id).filter(Boolean),
@@ -454,10 +500,12 @@ export function createPartyService({
         await savePartyRound(dataStore, data.session.id, resolvedRound);
       });
     } catch (error) {
+      logger('party.resolution_failed', { ...job, ...errorMetadata(error), durationMs: Math.round(performance.now() - started) });
       await withLock(job.sessionId, async () => {
         const data = await load(job.sessionId);
         if (data.round?.resolutionId !== job.resolutionId || data.round.phase !== 'resolving') return;
         data.round.phase = 'paused';
+        data.round.retryResolution = true;
         data.round.error = 'AI GM処理に失敗した。ホストが再開すると再試行できる。';
         data.session.status = 'paused';
         const publicCodes = new Set([
@@ -476,6 +524,8 @@ export function createPartyService({
           },
         });
       });
+    } finally {
+      logger('party.resolution_finished', { ...job, durationMs: Math.round(performance.now() - started) });
     }
   }
 
@@ -519,6 +569,7 @@ export function createPartyService({
         campaignId: safeId(body.campaignId, null),
         worldId: safeId(body.worldId, null),
         title,
+        sharedGoal: cleanText(body.sharedGoal, 1000),
         status: 'lobby',
         settings,
         participants: [{
@@ -585,8 +636,7 @@ export function createPartyService({
     ensureMember(initial.session, userId);
     touchPresence(sessionId, userId);
     await advanceClock(sessionId);
-    const data = await load(sessionId);
-    return projection(data, userId);
+    return withLock(sessionId, async () => projection(await load(sessionId), userId));
   }
 
   async function createInvite(userId, sessionId, options = {}) {
@@ -692,11 +742,12 @@ export function createPartyService({
     });
   }
 
-  async function setReady(userId, sessionId, ready) {
+  async function setReady(userId, sessionId, ready, expectedRoundId = null) {
     let shouldTick = false;
     const value = await withLock(sessionId, async () => {
       const data = await load(sessionId);
       const participant = ensureMember(data.session, userId);
+      if (expectedRoundId && data.round?.id !== expectedRoundId) throw partyError(409, 'ラウンドが進んだ。最新の状況を確認してほしい', 'ROUND_CHANGED');
       if (data.session.status === 'lobby') {
         if (!participant.pcId && ready) throw partyError(400, 'choose a PC before ready');
         participant.lobbyReady = ready;
@@ -717,11 +768,14 @@ export function createPartyService({
         await record(data, { type: ready ? 'round_ready' : 'round_unready', actorUserId: userId, roundId: data.round.id, payload: {} });
         shouldTick = ready;
       } else {
-        throw partyError(409, 'ready cannot be changed in this phase');
+        throw partyError(409, '行動の受付は終了した。最新の進行状態を確認してほしい', 'ROUND_NOT_COLLECTING');
       }
       return projection(data, userId);
     });
-    if (shouldTick) await advanceClock(sessionId);
+    if (shouldTick) {
+      const result = await advanceClock(sessionId);
+      return projection(result.data, userId);
+    }
     return value;
   }
 
@@ -744,15 +798,17 @@ export function createPartyService({
         maxDeadlineAt: null,
         resolutionId: randomId('resolution'),
         resolutionIntents: [],
+        resolutionStartedAt: now(),
+        progress: 'planning',
       };
       data.round = round;
       data.session.currentRoundId = round.id;
       data.session.status = 'playing';
       await record(data, { type: 'party_started', actorUserId: userId, roundId: round.id, payload: {} });
-      return { sessionId, roundId: round.id, resolutionId: round.resolutionId };
+      return { sessionId, roundId: round.id, resolutionId: round.resolutionId, view: projection(data, userId) };
     });
-    await runResolution(job);
-    return getSnapshot(userId, sessionId);
+    scheduleResolution(job);
+    return job.view;
   }
 
   function canControlPc(session, participant, pcId) {
@@ -762,10 +818,11 @@ export function createPartyService({
   }
 
   async function submitIntent(userId, sessionId, body, expectedIntentId = null) {
-    return withLock(sessionId, async () => {
+    const result = await withLock(sessionId, async () => {
       const data = await load(sessionId);
       const participant = ensureMember(data.session, userId);
-      if (!data.round || !['collecting', 'lock_grace'].includes(data.round.phase)) throw partyError(409, 'round is not collecting');
+      if (!data.round || !['collecting', 'lock_grace'].includes(data.round.phase)) throw partyError(409, '行動の受付は終了した。最新の進行状態を確認してほしい', 'ROUND_NOT_COLLECTING');
+      if (body.roundId && body.roundId !== data.round.id) throw partyError(409, 'ラウンドが進んだ。最新の状況を確認してほしい', 'ROUND_CHANGED');
       const pcId = body.pcId || participant.pcId;
       if (!pcId || !canControlPc(data.session, participant, pcId)) throw partyError(403, 'cannot control this PC');
       const text = cleanText(body.text, 4000);
@@ -789,11 +846,12 @@ export function createPartyService({
       const index = data.round.intents.findIndex((item) => item.id === id);
       if (index === -1) data.round.intents.push(intent);
       else data.round.intents[index] = { ...data.round.intents[index], ...intent };
-      participant.activity = 'active';
+      participant.activity = body.ready === true ? 'ready' : 'active';
       participant.consecutiveMisses = 0;
       participant.lastActionRound = data.round.number;
       const ready = new Set(data.round.readyUserIds);
-      ready.delete(userId);
+      if (body.ready === true) ready.add(userId);
+      else ready.delete(userId);
       data.round.readyUserIds = [...ready];
       if (data.round.phase === 'lock_grace') {
         data.round.phase = 'collecting';
@@ -810,13 +868,15 @@ export function createPartyService({
       });
       return intent;
     });
+    if (body.ready === true) await advanceClock(sessionId);
+    return result;
   }
 
   async function deleteIntent(userId, sessionId, intentId) {
     return withLock(sessionId, async () => {
       const data = await load(sessionId);
       const participant = ensureMember(data.session, userId);
-      if (!data.round || !['collecting', 'lock_grace'].includes(data.round.phase)) throw partyError(409, 'round is not collecting');
+      if (!data.round || !['collecting', 'lock_grace'].includes(data.round.phase)) throw partyError(409, '行動の受付は終了した。最新の進行状態を確認してほしい', 'ROUND_NOT_COLLECTING');
       const intent = data.round.intents.find((item) => item.id === intentId);
       if (!intent || !canControlPc(data.session, participant, intent.pcId)) throw partyError(404, 'intent not found');
       data.round.intents = data.round.intents.filter((item) => item.id !== intentId);
@@ -868,12 +928,6 @@ export function createPartyService({
       participant.consecutiveMisses = 0;
       participant.lastSeenAt = now();
       touchPresence(sessionId, userId);
-      if (data.round?.phase === 'paused' && data.session.status !== 'ended') {
-        data.session.status = 'playing';
-        data.round.phase = 'collecting';
-        data.round.error = null;
-        data.round.deadlineAt = now() + data.session.settings.actionTimeoutSeconds * 1000;
-      }
       await record(data, { type: 'participant_returned', actorUserId: userId, payload: {} });
       return projection(data, userId);
     });
@@ -906,6 +960,9 @@ export function createPartyService({
       const data = await load(sessionId);
       ensureHost(data.session, userId);
       if (!data.round || data.session.status === 'ended') throw partyError(409, 'party cannot be paused');
+      if (data.round.phase === 'resolving') throw partyError(409, 'AI GM処理が終わってから停止できる', 'RESOLUTION_IN_PROGRESS');
+      if (data.round.phase === 'paused') return projection(data, userId);
+      data.round.suspendedPhase = data.round.phase;
       data.session.status = 'paused';
       data.round.phase = 'paused';
       data.round.error = 'ホストが進行を停止した';
@@ -915,17 +972,53 @@ export function createPartyService({
   }
 
   async function hostResume(userId, sessionId) {
+    const result = await withLock(sessionId, async () => {
+      const data = await load(sessionId);
+      ensureHost(data.session, userId);
+      if (data.round?.phase !== 'paused') throw partyError(409, '停止中のセッションだけ再開できる', 'NOT_PAUSED');
+      data.session.status = 'playing';
+      data.round.error = null;
+      let job = null;
+      if (data.round.retryResolution || (data.round.resolutionId && !data.round.suspendedPhase)) {
+        data.round.phase = 'resolving';
+        data.round.resolutionId = randomId('resolution');
+        data.round.resolutionStartedAt = now();
+        data.round.progress = data.round.checkpoint ? 'narrating' : 'planning';
+        data.round.retryResolution = false;
+        job = { sessionId, roundId: data.round.id, resolutionId: data.round.resolutionId };
+      } else if (data.round.suspendedPhase === 'deciding') {
+        data.round.phase = 'deciding';
+        data.round.decision.deadlineAt = now() + data.session.settings.voteTimeoutSeconds * 1000;
+      } else {
+        data.round.phase = 'collecting';
+        data.round.lockAt = null;
+        const timeout = data.session.settings.actionTimeoutSeconds * 1000;
+        data.round.deadlineAt = timeout ? now() + timeout : null;
+        data.round.maxDeadlineAt = timeout ? data.round.deadlineAt + MAX_TYPING_EXTENSION_MS : null;
+      }
+      data.round.suspendedPhase = null;
+      await record(data, { type: 'party_resumed_by_host', actorUserId: userId, payload: {} });
+      return { view: projection(data, userId), job };
+    });
+    if (result.job) scheduleResolution(result.job);
+    return result.view;
+  }
+
+  async function hostUpdateSettings(userId, sessionId, body) {
     return withLock(sessionId, async () => {
       const data = await load(sessionId);
       ensureHost(data.session, userId);
-      if (!data.round || data.session.status === 'ended') throw partyError(409, 'party cannot be resumed');
-      data.session.status = 'playing';
-      data.round.phase = 'collecting';
-      data.round.error = null;
-      data.round.resolutionId = null;
-      data.round.deadlineAt = now() + data.session.settings.actionTimeoutSeconds * 1000;
-      data.round.maxDeadlineAt = data.round.deadlineAt + MAX_TYPING_EXTENSION_MS;
-      await record(data, { type: 'party_resumed_by_host', actorUserId: userId, payload: {} });
+      if (data.session.status === 'ended') throw partyError(409, '終了済み');
+      const seconds = body?.actionTimeoutSeconds;
+      if (!Number.isInteger(seconds) || (seconds !== 0 && (seconds < 15 || seconds > 600))) {
+        throw partyError(400, '行動時間は0（無制限）または15〜600秒を指定');
+      }
+      data.session.settings.actionTimeoutSeconds = seconds;
+      if (data.round && ['collecting', 'lock_grace'].includes(data.round.phase)) {
+        data.round.deadlineAt = seconds ? now() + seconds * 1000 : null;
+        data.round.maxDeadlineAt = seconds ? data.round.deadlineAt + MAX_TYPING_EXTENSION_MS : null;
+      }
+      await record(data, { type: 'party_settings_updated', actorUserId: userId, payload: { actionTimeoutSeconds: seconds } });
       return projection(data, userId);
     });
   }
@@ -1072,6 +1165,8 @@ export function createPartyService({
 
   return {
     create,
+    waitForIdle,
+    hostUpdateSettings,
     list,
     getSnapshot,
     createInvite,

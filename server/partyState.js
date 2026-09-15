@@ -21,17 +21,17 @@ export function normalizePartySettings(value = {}) {
   const maxPlayers = Number.isSafeInteger(value.maxPlayers)
     ? Math.max(2, Math.min(6, value.maxPlayers))
     : 4;
-  const actionTimeoutSeconds = Number.isFinite(value.actionTimeoutSeconds)
+  const actionTimeoutSeconds = value.actionTimeoutSeconds === 0 ? 0 : Number.isFinite(value.actionTimeoutSeconds)
     ? Math.max(15, Math.min(600, Math.round(value.actionTimeoutSeconds)))
-    : 90;
+    : 0;
   const voteTimeoutSeconds = Number.isFinite(value.voteTimeoutSeconds)
     ? Math.max(10, Math.min(120, Math.round(value.voteTimeoutSeconds)))
-    : 30;
+    : 120;
   return {
     maxPlayers,
     actionTimeoutSeconds,
     voteTimeoutSeconds,
-    viewPolicy: value.viewPolicy === 'character' ? 'character' : 'open',
+    viewPolicy: value.viewPolicy === 'open' ? 'open' : 'character',
     defaultAwayPolicy: PARTY_AWAY_POLICIES.includes(value.defaultAwayPolicy)
       ? value.defaultAwayPolicy
       : 'follow',
@@ -194,6 +194,7 @@ export function projectPartySession({ session, snapshot, round, userId, connecti
     campaignId: session.campaignId || null,
     worldId: session.worldId || null,
     title: session.title,
+    sharedGoal: session.sharedGoal || snapshot.global?.sharedGoal || '',
     status: session.status,
     settings: session.settings,
     participants: session.participants.map((item) => ({
@@ -210,7 +211,7 @@ export function projectPartySession({ session, snapshot, round, userId, connecti
       connection: connectionOf(item.userId),
       typing: typingOf(item.userId),
     })),
-    pcs: session.pcs.map((pc) => publicPc(pc, pc.id === participant.pcId)),
+    pcs: session.pcs.map((pc) => publicPc({ ...pc, goal: pc.goal || snapshot.pcs?.[pc.id]?.goal || '' }, pc.id === participant.pcId)),
     me: {
       userId,
       role: participant.role,
@@ -221,6 +222,9 @@ export function projectPartySession({ session, snapshot, round, userId, connecti
           id: round.id,
           number: round.number,
           phase: round.phase,
+          resolutionId: round.resolutionId || null,
+          resolutionStartedAt: round.resolutionStartedAt || null,
+          progress: round.progress || null,
           deadlineAt: round.deadlineAt || null,
           lockAt: round.lockAt || null,
           intents: (round.intents || []).map((intent) => ({
@@ -289,6 +293,7 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
   for (const update of result.pcUpdates || []) {
     if (!pcIds.has(update?.pcId)) continue;
     const pc = next.pcs[update.pcId];
+    if (typeof update.goal === 'string' && !pc.goal) pc.goal = update.goal.slice(0, 1000);
     if (existingSceneIds.has(update.sceneId)) pc.sceneId = update.sceneId;
     if (Array.isArray(update.conditionChanges)) {
       pc.conditions = update.conditionChanges.map(String).map((v) => v.slice(0, 300)).slice(0, 20);
@@ -296,6 +301,10 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
     if (Array.isArray(update.newlyKnownFactIds)) {
       pc.knownFactIds = [...new Set([...pc.knownFactIds, ...update.newlyKnownFactIds.map(String)])].slice(0, 200);
     }
+  }
+
+  for (const brief of result.goalsByPc || []) {
+    if (pcIds.has(brief.pcId) && !next.pcs[brief.pcId].goal) next.pcs[brief.pcId].goal = String(brief.goal || '').slice(0, 1000);
   }
 
   for (const check of result.checkResults || []) {
@@ -308,6 +317,7 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
   if (result.globalUpdate) {
     next.global = {
       ...next.global,
+      sharedGoal: next.global.sharedGoal || String(result.globalUpdate.sharedGoal || '').slice(0, 1000),
       time: String(result.globalUpdate.time || next.global.time).slice(0, 300),
       historySummary: String(result.globalUpdate.historySummary || next.global.historySummary).slice(0, 12000),
       tensionLevel: Number.isFinite(result.globalUpdate.tensionLevel)
@@ -354,50 +364,54 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
   return next;
 }
 
+function invalidResolution(reason) {
+  return Object.assign(new Error(reason), { code: 'PARTY_INVALID_RESOLUTION', reason });
+}
+
 export function validatePartyResolution(session, snapshot, round, result) {
   if (result?.resolution === 'decision_required') {
     if (!Array.isArray(result.decision?.options) || result.decision.options.length < 2 || result.decision.options.length > 4) {
-      throw new Error('party decision must have 2-4 options');
+      throw invalidResolution('party decision must have 2-4 options');
     }
     return result;
   }
-  if (result?.resolution !== 'advance') throw new Error('unknown party resolution');
+  if (result?.resolution !== 'advance') throw invalidResolution('unknown party resolution');
   const pcIds = new Set(session.pcs.map((pc) => pc.id));
   const sceneIds = new Set([
     ...Object.keys(snapshot.scenes || {}),
     ...(result.sceneUpdates || []).map((item) => item.sceneId),
   ]);
-  if (sceneIds.size > MAX_PARTY_SCENES) throw new Error('party scene limit reached');
+  if (sceneIds.size > MAX_PARTY_SCENES) throw invalidResolution('party scene limit reached');
   for (const scene of result.sceneUpdates || []) {
     if (!scene?.sceneId || (scene.participantPcIds || []).some((id) => !pcIds.has(id))) {
-      throw new Error('party resolution contains an unknown scene PC');
+      throw invalidResolution('party resolution contains an unknown scene PC');
     }
   }
   for (const update of result.pcUpdates || []) {
     if (!pcIds.has(update?.pcId) || !sceneIds.has(update.sceneId)) {
-      throw new Error('party resolution contains an unknown PC or scene');
+      throw invalidResolution('party resolution contains an unknown PC or scene');
     }
   }
   const checkPcs = new Set();
   for (const check of result.checkResults || []) {
-    if (!pcIds.has(check?.pcId) || checkPcs.has(check.pcId)) throw new Error('party resolution contains invalid checks');
+    if (!pcIds.has(check?.pcId) || checkPcs.has(check.pcId)) throw invalidResolution('party resolution contains invalid checks');
     checkPcs.add(check.pcId);
   }
-  if (checkPcs.size > pcIds.size) throw new Error('party resolution contains too many checks');
+  if (checkPcs.size > pcIds.size) throw invalidResolution('party resolution contains too many checks');
   for (const narrative of result.narratives || []) {
     const audience = narrative?.audience;
     if (audience?.kind === 'pcs' && (audience.ids || []).some((id) => !pcIds.has(id))) {
-      throw new Error('party narrative contains an unknown audience PC');
+      throw invalidResolution('party narrative contains an unknown audience PC');
     }
     if (audience?.kind === 'scene' && (audience.ids || []).some((id) => !sceneIds.has(id))) {
-      throw new Error('party narrative contains an unknown audience scene');
+      throw invalidResolution('party narrative contains an unknown audience scene');
     }
   }
   const automaticPcIds = new Set(
     (round.resolutionIntents || []).filter((intent) => intent.source === 'auto').map((intent) => intent.pcId),
   );
   for (const action of result.autoActions || []) {
-    if (!automaticPcIds.has(action?.pcId)) throw new Error('auto action was emitted for a human-controlled PC');
+    if (!automaticPcIds.has(action?.pcId)) throw invalidResolution('auto action was emitted for a human-controlled PC');
   }
   return result;
 }

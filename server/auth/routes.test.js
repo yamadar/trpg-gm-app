@@ -209,3 +209,15 @@ describe('auth routes', () => {
     expect((await request(app).patch('/api/me').set('Cookie', sessionCookie).send({ bio: 'あ'.repeat(500) })).status).toBe(200);
   });
 });
+
+it.each([
+  ['#/party/p1/join/invite-secret', '/#/party/p1/join/invite-secret'],
+  ['https://evil.example', '/'],
+  ['//evil.example', '/'],
+])('preserves only an internal hash return destination: %s', async (returnTo, expected) => {
+  const app = buildApp(googleFetchMock());
+  const start = await request(app).get('/auth/google/start').query({ returnTo });
+  const state = new URL(start.headers.location).searchParams.get('state');
+  const callback = await request(app).get('/auth/google/callback').query({ code: 'c1', state }).set('Cookie', cookieHeader(start, 'gmdesk_oauth'));
+  expect(callback.headers.location).toBe(expected);
+});

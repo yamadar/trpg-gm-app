@@ -40,3 +40,27 @@ curl -fsS https://<host>/ready
 ```
 
 `/ready` は保守モード中または永続化が未準備なら 503 を返す。SQLite 運用では定期的に `npm run backup:sqlite` を実行し、出力の整合性結果を保管する。
+
+
+## アプリケーションログ
+
+`server/observability.js` から1行1JSONで標準出力へ記録する。RenderではサービスのLogs画面を利用する。ローカルで保存する場合は例えば `npm start > /tmp/gmdesk.log 2>&1`。永続ファイルへリダイレクトする運用では、ホスト側でローテーションと保持期間を設定する。
+
+- `http.completed` / `http.disconnected` / `http.failed`: リクエストID、ルートテンプレート、HTTPステータス、所要時間。レスポンスの `X-Request-ID` と照合できる
+- `ai.started` / `ai.completed` / `ai.failed`: モデル、段階、所要時間、入力・出力・思考トークン数（プロバイダが返した場合）、例外型・エラーコード・HTTPステータス
+- `party.*`: ラウンドの受付・確定・停止・再開・保存時間。`party.lock_wait` は100ms以上の保存処理待ち
+- `party.resolution_started` / `party.resolution_finished` / `party.resolution_failed`: AI GM処理全体。`sessionId`、`roundId`、`resolutionId` を使って各段階の記録を追う
+
+本文、プロンプト、AI応答、Cookie、APIキー、招待トークンを含むクエリ文字列、例外message/stackは記録しない。状態取得から見える問い合わせIDは `resolutionId`。シナリオ本文や他PCの秘密を問い合わせへ添付する必要はない。
+
+例（`jq` がある場合、npm起動メッセージなどJSON以外の行を除外）:
+
+```sh
+jq -R 'fromjson? | select(.sessionId == "party_...")' /tmp/gmdesk.log
+jq -R 'fromjson? | select(.resolutionId == "resolution_...")' /tmp/gmdesk.log
+jq -R 'fromjson? | select(.event == "ai.failed" or .event == "party.resolution_failed")' /tmp/gmdesk.log
+```
+
+`ai.completed.durationMs` を planning / narrating ごとに比較してAI待ちを特定する。`party.lock_wait.waitMs` と各遷移の `durationMs` は保存待ちの切り分けに使う。`PARTY_TRUNCATED` は出力上限、`PARTY_INVALID_JSON` は不正JSON、`PARTY_MISSING_PC_VIEW` は個別描写不足、`PARTY_INVALID_RESOLUTION` はPC・Scene等の不正な更新（`reason`で内訳）、`PARTY_SECRET_LEAK_BLOCKED` は秘密境界での拒否。TimeoutErrorや503などは `ai.failed` 側で確認する。
+
+Partyの実行中ジョブとロックは1プロセス内で管理する。複数インスタンスへの水平分割には共有ジョブキューと分散ロックの追加が必要。再起動で中断した処理は次回アクセス時に停止表示へ移し、ホストが保存済みcheckpointから再試行できる。

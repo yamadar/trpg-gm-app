@@ -25,8 +25,8 @@ export const startPartySession = (id) => apiFetch(path(id, '/start'), { method: 
 export const submitPartyIntent = (id, body) => apiFetch(path(id, '/intents'), json('POST', body));
 export const updatePartyIntent = (id, intentId, body) => apiFetch(path(id, `/intents/${encodeURIComponent(intentId)}`), json('PATCH', body));
 export const deletePartyIntent = (id, intentId) => apiFetch(path(id, `/intents/${encodeURIComponent(intentId)}`), { method: 'DELETE' });
-export const readyParty = (id) => apiFetch(path(id, '/ready'), { method: 'POST' });
-export const unreadyParty = (id) => apiFetch(path(id, '/ready'), { method: 'DELETE' });
+export const readyParty = (id, roundId) => apiFetch(path(id, '/ready'), json('POST', roundId ? { roundId } : undefined));
+export const unreadyParty = (id, roundId) => apiFetch(path(id, '/ready'), json('DELETE', roundId ? { roundId } : undefined));
 export const heartbeatPartyTyping = (id) => apiFetch(path(id, '/typing'), { method: 'POST' });
 export const heartbeatPartyPresence = (id) => apiFetch(path(id, '/presence'), { method: 'POST' });
 export const setPartyAway = (id, body) => apiFetch(path(id, '/away'), json('POST', body));
@@ -40,3 +40,5 @@ export const updatePartyParticipant = (id, userId, body) => apiFetch(path(id, `/
 export const getPartyEvents = (id, after = 0) => apiFetch(path(id, `/events?after=${encodeURIComponent(after)}`));
 export const getPartyChat = (id, after = 0) => apiFetch(path(id, `/chat?after=${encodeURIComponent(after)}`));
 export const sendPartyChat = (id, text, commandId) => apiFetch(path(id, '/chat'), json('POST', { text, commandId }));
+
+export const updatePartySettings = (id, settings) => apiFetch(path(id, '/host/settings'), json('PATCH', settings));

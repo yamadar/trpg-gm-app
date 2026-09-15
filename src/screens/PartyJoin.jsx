@@ -1,3 +1,5 @@
+import { useAuth } from '../auth/AuthContext.jsx';
+import LoginModal from '../components/auth/LoginModal.jsx';
 import { useState } from 'react';
 import { COLORS, F_BODY, F_DISPLAY } from '../theme.js';
 import { joinPartySession } from '../api/partyClient.js';
@@ -7,6 +9,8 @@ import FocusHeader from '../components/nav/FocusHeader.jsx';
 import { navigate, replace } from '../navigation/useRoute.js';
 
 export default function PartyJoin({ sessionId, inviteToken }) {
+  const { user, loading } = useAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,7 +29,7 @@ export default function PartyJoin({ sessionId, inviteToken }) {
 
   return (
     <div>
-      <FocusHeader title="Party招待" steps={['招待', 'PC選択', '準備', '開始']} currentStep={0} exitLabel="戻る" onExit={() => navigate({ name: 'home' })} />
+      <FocusHeader showLogin title="Party招待" steps={['招待', 'PC選択', '準備', '開始']} currentStep={0} exitLabel="戻る" onExit={() => navigate({ name: 'home' })} />
       <div style={{ maxWidth: 520, margin: '0 auto', padding: '52px 20px' }}>
         <Card style={{ textAlign: 'center' }}>
           <div style={{ fontFamily: F_DISPLAY, fontSize: 22, color: COLORS.ink, marginBottom: 10 }}>
@@ -35,11 +39,12 @@ export default function PartyJoin({ sessionId, inviteToken }) {
             参加後、空いているPCを選び、全員の準備完了を待つ。
           </div>
           {error && <div style={{ color: COLORS.stamp, fontFamily: F_BODY, fontSize: 13, marginBottom: 14 }}>{error}</div>}
-          <Button variant="brass" onClick={join} disabled={busy || !inviteToken}>
-            {busy ? '参加中…' : '招待に参加'}
+          <Button variant="brass" onClick={user ? join : () => setLoginOpen(true)} disabled={loading || busy || !inviteToken}>
+            {loading ? 'ログイン状態を確認中…' : !user ? 'ログインして参加' : busy ? '参加中…' : '招待に参加'}
           </Button>
         </Card>
       </div>
+      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
     </div>
   );
 }
