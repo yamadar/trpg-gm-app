@@ -148,3 +148,27 @@ it('updates the GM state even while chat is stuck, and retains the draft after a
   current = { ...current, eventSeq: 3, round: { ...current.round, id: 'round_2', phase: 'collecting' } };
   expect(await screen.findByLabelText('自分の行動', {}, { timeout: 2000 })).toHaveValue('失いたくない下書き');
 });
+
+it('reduces polling while hidden and preserves the screen on unchanged responses', async () => {
+  const { act } = await import('@testing-library/react');
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const fetch = vi.spyOn(partyClient, 'getPartySnapshot').mockResolvedValueOnce(snapshot({ version: 'v1' })).mockResolvedValue({ unchanged: true, version: 'v1', serverNow: Date.now() });
+  const view = render(<PartyPlay sessionId="p1" />);
+  try {
+    await act(async () => {});
+    expect(screen.getByText('石の扉が開く。')).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(fetch).toHaveBeenLastCalledWith('p1', 'v1');
+    expect(screen.getByText('石の扉が開く。')).toBeInTheDocument();
+    visibility.mockReturnValue('hidden');
+    const count = fetch.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(14000); });
+    expect(fetch).toHaveBeenCalledTimes(count);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(fetch).toHaveBeenCalledTimes(count + 1);
+    visibility.mockReturnValue('visible');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(fetch).toHaveBeenCalledTimes(count + 2);
+  } finally { view.unmount(); vi.useRealTimers(); visibility.mockRestore(); }
+});

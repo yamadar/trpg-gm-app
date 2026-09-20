@@ -91,3 +91,17 @@ describe('party session routes', () => {
     expect(snapshot.body.snapshot.narratives[0].text).toBe('導入');
   });
 });
+
+it('returns an unchanged response only when the full player projection still matches', async () => {
+  const created = await request(app).post('/api/party-sessions').send(body);
+  const url = `/api/party-sessions/${created.body.id}/snapshot`;
+  const first = await request(app).get(url);
+  expect(first.body.version).toBeTruthy();
+  const next = await request(app).get(url).query({ known: first.body.version });
+  expect(next.body).toMatchObject({ unchanged: true, version: first.body.version });
+  expect(next.body.snapshot).toBeUndefined();
+  await request(app).post(`/api/party-sessions/${created.body.id}/claim`).send({ pcId: 'pc1' });
+  const changed = await request(app).get(url).query({ known: first.body.version });
+  expect(changed.body.snapshot).toBeDefined();
+  expect(changed.body.version).not.toBe(first.body.version);
+});

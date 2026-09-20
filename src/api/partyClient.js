@@ -14,7 +14,7 @@ function json(method, body) {
 
 export const createPartySession = (body) => apiFetch('/api/party-sessions', json('POST', body));
 export const listPartySessions = () => apiFetch('/api/party-sessions');
-export const getPartySnapshot = (id) => apiFetch(path(id, '/snapshot'));
+export const getPartySnapshot = (id, known = '') => apiFetch(path(id, `/snapshot${known ? `?known=${encodeURIComponent(known)}` : ''}`), { priority: 'low' });
 export const joinPartySession = (id, inviteToken) => apiFetch(path(id, '/join'), json('POST', { inviteToken }));
 export const leavePartySession = (id) => apiFetch(path(id, '/leave'), { method: 'POST' });
 export const createPartyInvite = (id, options = {}) => apiFetch(path(id, '/invites'), json('POST', options));

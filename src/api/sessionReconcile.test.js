@@ -5,12 +5,14 @@ vi.mock('../storage/index.js', () => ({
 }));
 vi.mock('./sessionSyncClient.js', () => ({
   getSessionSyncState: vi.fn(),
+  getServerSession: vi.fn(),
   rememberSessionSync: vi.fn(),
   dispatchSessionConflict: vi.fn(),
 }));
 
 import { saveSession } from '../storage/index.js';
 import {
+  getServerSession,
   dispatchSessionConflict,
   getSessionSyncState,
   rememberSessionSync,
@@ -43,4 +45,16 @@ describe('reconcileServerSessions', () => {
     expect(dispatchSessionConflict).toHaveBeenCalledWith(local, remote, 'background-sync');
     expect(result.conflicts).toEqual([{ local, remote }]);
   });
+});
+
+it('fetches full sessions only for new or changed summary revisions', async () => {
+  const local = { id: 's1', updatedAt: 100, _sync: { revision: 1 } };
+  getSessionSyncState.mockReturnValue({ revision: 1, lastSyncedUpdatedAt: 100 });
+  await reconcileServerSessions([local], [{ id: 's1', _summary: true, _sync: { revision: 1 } }]);
+  expect(getServerSession).not.toHaveBeenCalled();
+  const remote = { id: 's1', updatedAt: 200, log: [{ text: 'full' }], _sync: { revision: 2 } };
+  getServerSession.mockResolvedValue(remote);
+  await reconcileServerSessions([local], [{ id: 's1', _summary: true, _sync: { revision: 2 } }]);
+  expect(getServerSession).toHaveBeenCalledWith('s1');
+  expect(saveSession).toHaveBeenCalledWith(remote);
 });

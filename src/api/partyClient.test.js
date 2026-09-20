@@ -19,7 +19,7 @@ describe('partyClient', () => {
     await createPartySession({ title: '卓' });
     expect(fetch).toHaveBeenLastCalledWith('/api/party-sessions', expect.objectContaining({ method: 'POST', body: '{"title":"卓"}' }));
     await getPartySnapshot('party a');
-    expect(fetch).toHaveBeenLastCalledWith('/api/party-sessions/party%20a/snapshot', undefined);
+    expect(fetch).toHaveBeenLastCalledWith('/api/party-sessions/party%20a/snapshot', { priority: 'low' });
   });
 
   it('sends join, intent, ready, away, vote and chat as separate commands', async () => {

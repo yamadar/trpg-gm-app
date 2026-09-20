@@ -506,10 +506,14 @@ export function createPartyService({
         if (data.round?.resolutionId !== job.resolutionId || data.round.phase !== 'resolving') return;
         data.round.phase = 'paused';
         data.round.retryResolution = true;
-        data.round.error = 'AI GM処理に失敗した。ホストが再開すると再試行できる。';
+        data.round.error = error?.code === 'AI_DAILY_LIMIT' || error?.code === 'DAILY_LIMIT'
+          ? '本日のAI利用上限に達した。利用枠の回復後、ホストが再開できる。'
+          : 'AI GM処理に失敗した。ホストが再開すると再試行できる。';
         data.session.status = 'paused';
         const publicCodes = new Set([
           'DAILY_LIMIT',
+          'AI_DAILY_LIMIT',
+          'AI_BUSY',
           'GENERATOR_UNAVAILABLE',
           'PARTY_SECRET_LEAK_BLOCKED',
         ]);

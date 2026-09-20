@@ -199,8 +199,8 @@ export async function markNovelSeen(id) {
   return apiFetch(`/api/sessions/${encodeURIComponent(id)}/novel/seen`, { method: 'POST' });
 }
 
-export async function listServerSessions() {
-  return apiFetch('/api/sessions');
+export async function listServerSessions({ summaries = false } = {}) {
+  return apiFetch(summaries ? '/api/sessions?summary=1' : '/api/sessions', { priority: 'low' });
 }
 
 // 一覧画面が全セッションの小説化ジョブ状態を1リクエストで取得する。

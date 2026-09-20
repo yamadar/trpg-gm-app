@@ -58,7 +58,7 @@ function buildApp(opts = {}) {
     now,
   });
   app = express();
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '16mb' }));
   app.use((req, res, next) => {
     req.userId = 'usr_test';
     next();
@@ -204,10 +204,10 @@ describe('sessions routes', () => {
     expect((await request(app).delete('/api/sessions/s1')).status).toBe(204);
   });
 
-  it('rejects session documents larger than one MiB', async () => {
+  it('rejects session documents larger than twelve MiB', async () => {
     const res = await request(app)
       .put('/api/sessions/large')
-      .send({ title: 'large', payload: 'x'.repeat(1024 * 1024) });
+      .send({ title: 'large', payload: 'x'.repeat(12 * 1024 * 1024) });
     expect(res.status).toBe(413);
     expect(res.body.code).toBe('SESSION_TOO_LARGE');
     expect(await dataStore.get(sessionKey('usr_test', 'large'))).toBeNull();
@@ -769,4 +769,22 @@ describe('sessions routes', () => {
     const res = await request(app).post('/api/sessions/missing/novel/seen');
     expect(res.status).toBe(404);
   });
+});
+
+it('returns lightweight sync summaries and supports stored logs above the old one MiB limit', async () => {
+  const res = await request(app).put('/api/sessions/long').send({ title: 'Long', log: [{ role: 'gm', text: 'x'.repeat(2 * 1024 * 1024) }] });
+  expect(res.status).toBe(200);
+  const summaries = await request(app).get('/api/sessions?summary=1');
+  expect(summaries.body[0]).toMatchObject({ id: 'long', title: 'Long', _summary: true, _sync: { revision: 1 } });
+  expect(summaries.body[0].log).toBeUndefined();
+  expect((await request(app).get('/api/sessions/long')).body.log[0].text).toHaveLength(2 * 1024 * 1024);
+});
+
+it('does not read novel contents while polling job status', async () => {
+  await dataStore.set(sessionKey('usr_test', 's1'), { id: 's1' });
+  await textStore.write(sessionNovelDocPath('usr_test', 's1'), 'novel');
+  const read = vi.spyOn(textStore, 'read');
+  const res = await request(app).get('/api/novel-jobs');
+  expect(res.body.s1.hasNovel).toBe(true);
+  expect(read).not.toHaveBeenCalled();
 });

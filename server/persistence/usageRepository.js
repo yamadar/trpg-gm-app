@@ -15,6 +15,16 @@ export function createFileUsageRepository({ dataStore, transaction = (operation)
   }
 
   return {
+    adjustBatch(requests) {
+      return serialize(async () => {
+        for (const request of requests) {
+          const key = keyOf(request);
+          const counts = (await dataStore.get(key)) || {};
+          counts[request.kind] = Math.max(0, (counts[request.kind] || 0) + request.units);
+          await dataStore.set(key, counts);
+        }
+      });
+    },
     consumeBatch(requests) {
       return serialize(async () => {
         const records = new Map();
@@ -55,6 +65,15 @@ export function createSqliteUsageRepository({ db, coordinator }) {
   `);
 
   return {
+    adjustBatch(requests, timestamp) {
+      return coordinator.transaction(() => {
+        for (const request of requests) {
+          const ownerId = request.scope === 'global' ? '' : request.ownerId;
+          const stored = Number(get.get(request.scope, ownerId, request.day, request.kind)?.used_units || 0);
+          upsert.run(request.scope, ownerId, request.day, request.kind, Math.max(0, stored + request.units), timestamp);
+        }
+      });
+    },
     consumeBatch(requests, timestamp) {
       return coordinator.transaction(() => {
         const values = [];

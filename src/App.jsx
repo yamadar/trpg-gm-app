@@ -1,17 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useGoogleFonts, COLORS, F_MONO } from './theme.js';
 import { listSessions, getSession, saveSession, removeSession, isStorageAvailable } from './storage/index.js';
-import Home from './screens/Home.jsx';
-import Setup from './screens/Setup.jsx';
-import Play from './screens/Play.jsx';
-import PartySetup from './screens/PartySetup.jsx';
-import PartyPlay from './screens/PartyPlay.jsx';
-import PartyJoin from './screens/PartyJoin.jsx';
-import Library from './screens/Library.jsx';
-import Gallery from './screens/Gallery.jsx';
-import UserPage from './screens/UserPage.jsx';
-import EndingGallery from './screens/EndingGallery.jsx';
-import AchievementList from './screens/AchievementList.jsx';
+const Home = lazy(() => import('./screens/Home.jsx'));
+const Setup = lazy(() => import('./screens/Setup.jsx'));
+const Play = lazy(() => import('./screens/Play.jsx'));
+const PartySetup = lazy(() => import('./screens/PartySetup.jsx'));
+const PartyPlay = lazy(() => import('./screens/PartyPlay.jsx'));
+const PartyJoin = lazy(() => import('./screens/PartyJoin.jsx'));
+const Library = lazy(() => import('./screens/Library.jsx'));
+const Gallery = lazy(() => import('./screens/Gallery.jsx'));
+const UserPage = lazy(() => import('./screens/UserPage.jsx'));
+const EndingGallery = lazy(() => import('./screens/EndingGallery.jsx'));
+const AchievementList = lazy(() => import('./screens/AchievementList.jsx'));
 import { useRoute, navigate, replace } from './navigation/useRoute.js';
 import { buildHash } from './navigation/routes.js';
 import { BreadcrumbProvider } from './navigation/BreadcrumbContext.jsx';
@@ -181,7 +181,7 @@ function AppInner() {
       if (!user && !cancelled) setPartySessions([]);
       if (user) {
         const [remoteResult, partyResult] = await Promise.allSettled([
-          listServerSessions(),
+          listServerSessions({ summaries: true }),
           listPartySessions(),
         ]);
         if (partyResult.status === 'fulfilled') {
@@ -408,6 +408,7 @@ function AppInner() {
           </div>
         )}
 
+        <Suspense fallback={<div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>}>
         {route.name === 'home' &&
           (loadingHome ? (
             <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>
@@ -474,6 +475,7 @@ function AppInner() {
           ) : (
             <div style={{ padding: 48, fontFamily: F_MONO, color: COLORS.faint }}>読み込み中…</div>
           ))}
+        </Suspense>
       </AppShell>
     </div>
   );

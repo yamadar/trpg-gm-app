@@ -293,6 +293,7 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
   for (const update of result.pcUpdates || []) {
     if (!pcIds.has(update?.pcId)) continue;
     const pc = next.pcs[update.pcId];
+    if (typeof update.memory === 'string') pc.memory = update.memory.slice(0, 6000);
     if (typeof update.goal === 'string' && !pc.goal) pc.goal = update.goal.slice(0, 1000);
     if (existingSceneIds.has(update.sceneId)) pc.sceneId = update.sceneId;
     if (Array.isArray(update.conditionChanges)) {
@@ -314,11 +315,22 @@ export function applyPartyResolution(snapshot, result, { roundId, now = Date.now
     if (resource) resource.value = effect.value;
   }
 
+  next.facts ||= {};
+  for (const fact of result.disclosedFacts || []) {
+    next.facts[fact.id] = fact;
+    for (const pcId of pcIds) {
+      if (canReadAudience(fact.audience, { pcId }, { snapshot: next })) {
+        next.pcs[pcId].knownFactIds = [...new Set([...next.pcs[pcId].knownFactIds, fact.id])];
+      }
+    }
+  }
+
   if (result.globalUpdate) {
     next.global = {
       ...next.global,
       sharedGoal: next.global.sharedGoal || String(result.globalUpdate.sharedGoal || '').slice(0, 1000),
       time: String(result.globalUpdate.time || next.global.time).slice(0, 300),
+      publicHistorySummary: String(result.globalUpdate.historySummary || next.global.publicHistorySummary || '').slice(0, 12000),
       historySummary: String(result.globalUpdate.historySummary || next.global.historySummary).slice(0, 12000),
       tensionLevel: Number.isFinite(result.globalUpdate.tensionLevel)
         ? Math.max(0, Math.min(10, Math.round(result.globalUpdate.tensionLevel)))

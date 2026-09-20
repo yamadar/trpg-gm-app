@@ -1,3 +1,4 @@
+import { textGenerationContext } from './textGenerationContext.js';
 import { logEvent, errorMetadata } from './observability.js';
 const GEMINI_TEXT_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -178,7 +179,7 @@ export class GeminiTextApiError extends Error {
   }
 }
 
-export async function generateText({
+async function generateTextRequest({
   apiKey,
   model,
   request,
@@ -189,6 +190,9 @@ export async function generateText({
 }) {
   const started = performance.now();
   const body = JSON.stringify(buildGeminiTextRequest(request));
+  const budget = textGenerationContext();
+  const reservation = budget?.usage ? await budget.usage.reserveTextTokens(budget.userId, Math.ceil(Buffer.byteLength(body, 'utf8') / 2) + (request.max_tokens || 4096)) : null;
+  if (reservation && !reservation.ok) throw Object.assign(new Error('daily limit reached'), { status: 429, code: 'AI_DAILY_LIMIT', resetAt: reservation.resetAt });
   logger('ai.started', { ...telemetry, model, inputChars: body.length });
   try {
     const upstream = await fetchImpl(
@@ -201,10 +205,15 @@ export async function generateText({
       },
     );
     if (!upstream.ok) {
+      // A rejected HTTP request did not return a generation.
+      await reservation?.settle(0);
       const body = await upstream.text().catch(() => '');
       throw new GeminiTextApiError(upstream.status, body);
     }
     const data = await upstream.json();
+    const usage = data.usageMetadata;
+    const actual = usage?.totalTokenCount ?? (Number.isFinite(usage?.promptTokenCount) && Number.isFinite(usage?.candidatesTokenCount) ? usage.promptTokenCount + usage.candidatesTokenCount + (usage.thoughtsTokenCount || 0) : null);
+    if (actual !== null) await reservation?.settle(actual);
     const result = toCompatibleTextResponse(data);
     logger('ai.completed', { ...telemetry, model, durationMs: Math.round(performance.now() - started), inputTokens: data.usageMetadata?.promptTokenCount, outputTokens: data.usageMetadata?.candidatesTokenCount, thinkingTokens: data.usageMetadata?.thoughtsTokenCount, reason: result.stop_reason });
     return result;
@@ -212,4 +221,14 @@ export async function generateText({
     logger('ai.failed', { ...telemetry, model, durationMs: Math.round(performance.now() - started), ...errorMetadata(error) });
     throw error;
   }
+}
+
+// Every text generation path, including retries and background jobs, shares this gate.
+export function generateText(options) {
+  const request = { ...options.request };
+  if (/^gemini-3(?:[.-]|$)/i.test(options.model || '') && !request.thinking_level) {
+    request.thinking_level = 'low';
+  }
+  const run = () => generateTextRequest({ ...options, request });
+  return textGenerationContext()?.limiter ? textGenerationContext().limiter(run) : run();
 }

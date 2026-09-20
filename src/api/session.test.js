@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { summarizeWorld, generateScenario, takeTurn, recallMemory, advanceCampaignPc } from './session.js';
+import { turnContext } from './turnContext.js';
 import * as client from './client.js';
 
 function makeSession(overrides = {}) {
@@ -313,7 +314,7 @@ describe('recallMemory', () => {
     const out = await recallMemory(session);
     expect(out).toBe('カイは村長の依頼を思い返した。');
     expect(spy.mock.calls[0][0]).toBe('recall-memory');
-    expect(spy.mock.calls[0][1].session).toBe(session);
+    expect(spy.mock.calls[0][1].session).toEqual(turnContext(session));
   });
   it('空レスポンスはフォールバック文言を返す', async () => {
     vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
@@ -333,11 +334,37 @@ describe('advanceCampaignPc', () => {
     const out = await advanceCampaignPc(session);
     expect(out).toEqual({ pcRaw: 'PC名: カイ(熟練の猟師)\n持ち物: 銀の矢', xp: 12 });
     expect(spy.mock.calls[0][0]).toBe('advance-campaign-pc');
-    expect(spy.mock.calls[0][1].session).toBe(session);
+    expect(spy.mock.calls[0][1].session).toEqual(turnContext(session));
   });
   it('空レスポンスは元のpc.rawへフォールバックする', async () => {
     vi.spyOn(client, 'callTextModel').mockResolvedValue({ content: [{ type: 'text', text: '' }] });
     const out = await advanceCampaignPc(makeSession({ pc: { raw: '元シート' }, state: { xp: 5, flags: {}, recent_log: [] } }));
     expect(out).toEqual({ pcRaw: '元シート', xp: 5 });
+  });
+});
+
+describe('turn recovery and bounded input', () => {
+  it('keeps the saved roll and signed continuation when narration fails, even after reload', async () => {
+    const session = makeSession({ log: [{ role: 'gm', text: 'unused'.repeat(200000) }] });
+    const tool = { type: 'tool_use', name: 'roll_check', id: 'roll1', input: { check_label: '調査', success_percent: 60 }, thought_signature: 'signed' };
+    const response = { content: [{ type: 'text', text: JSON.stringify({ narrative: '進んだ', state_update: { flags: [] } }) }] };
+    const call = vi.spyOn(client, 'callTextModel').mockResolvedValueOnce({ content: [tool] }).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(response);
+    let saved;
+    await expect(takeTurn(session, '調べる', { onCheckpoint: async (pendingTurn) => { saved = structuredClone({ ...session, pendingTurn }); } })).rejects.toThrow('offline');
+    expect(call.mock.calls[0][1].session.log).toBeUndefined();
+    const result = await takeTurn(saved, '調べる');
+    expect(result.roll).toEqual(saved.pendingTurn.roll);
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(call.mock.calls[2][1].continuation).toEqual(saved.pendingTurn.continuation);
+    expect(call.mock.calls[2][1].continuation.assistantContent[0].thought_signature).toBe('signed');
+    // A different action must not reuse a previous adjudication.
+    call.mockResolvedValueOnce(response);
+    await takeTurn(saved, '待つ');
+    expect(call.mock.calls[3][1].continuation).toBeUndefined();
+  });
+
+  it('rejects truncated JSON rather than committing it as a completed turn', async () => {
+    vi.spyOn(client, 'callTextModel').mockResolvedValue({ stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"narrative":"途中"}' }] });
+    await expect(takeTurn(makeSession(), '進む')).rejects.toThrow('max_tokens');
   });
 });

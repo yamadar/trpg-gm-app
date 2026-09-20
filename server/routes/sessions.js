@@ -29,7 +29,7 @@ function isStale(meta, session) {
 const PRESENCE_TTL_MS = 45_000;
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
 const MAX_SESSIONS_PER_USER = 100;
-const MAX_SESSION_BYTES = 1024 * 1024;
+const MAX_SESSION_BYTES = 12 * 1024 * 1024;
 
 function revisionOf(session) {
   const revision = session?._sync?.revision;
@@ -65,11 +65,16 @@ export function createSessionsRouter({
   const activePlayers = new Map();
 
   router.get('/sessions', asyncHandler(async (req, res) => {
+    if (req.query.summary === '1' && sessionRepository?.listSummaries) {
+      res.json(await sessionRepository.listSummaries(sessionListPrefix(req.userId)));
+      return;
+    }
     const keys = await dataStore.list(sessionListPrefix(req.userId));
     const sessions = await Promise.all(keys.map((k) => dataStore.get(k)));
     // Party終了時のCampaign章精算用exportはowner名前空間にも置くが、Solo一覧へ
     // 二重表示しない。Party一覧は /party-sessions が担う。
-    res.json(sessions.filter((session) => session && session.mode !== 'party'));
+    const visible = sessions.filter((session) => session && session.mode !== 'party');
+    res.json(req.query.summary === '1' ? visible.map(({ id, title, updatedAt, _sync }) => ({ id, title, updatedAt, _sync, _summary: true })) : visible);
   }));
 
   // 一覧画面が全セッションのジョブ状態を1リクエストで取れるようにする
@@ -85,7 +90,7 @@ export function createSessionsRouter({
         const id = key.slice(key.lastIndexOf('/') + 1);
         const [{ status, error, elapsedMs }, text, meta, notice, session] = await Promise.all([
           novelJobs.read(req.userId, id),
-          textStore.read(sessionNovelDocPath(req.userId, id)),
+          textStore.exists ? textStore.exists(sessionNovelDocPath(req.userId, id)) : textStore.read(sessionNovelDocPath(req.userId, id)).then((text) => text !== null),
           dataStore.get(sessionNovelMetaKey(req.userId, id)),
           dataStore.get(sessionNovelNoticeKey(req.userId, id)),
           dataStore.get(key),
@@ -98,7 +103,7 @@ export function createSessionsRouter({
           error,
           // 実行中のみ数値。クライアントはこれを起点に秒を補間して表示する。
           elapsedMs,
-          hasNovel: text !== null,
+          hasNovel: text,
           stale: isStale(meta, session),
           // この変更以前に生成された小説のメタにはtruncatedが無い。完結扱いにする。
           truncated: meta?.truncated === true,

@@ -90,6 +90,7 @@ export function createSqliteModulePersistence(db, { coordinator, now = Date.now 
   }]));
   const documentStatements = Object.fromEntries(Object.entries(DOCUMENT_TABLES).map(([module, table]) => [module, {
     get: db.prepare(`SELECT content FROM ${table} WHERE path = ?`),
+    exists: db.prepare(`SELECT 1 FROM ${table} WHERE path = ?`),
     list: db.prepare(`SELECT path FROM ${table} WHERE path LIKE ? ESCAPE '\\' ORDER BY path`),
     upsert: db.prepare(`
       INSERT INTO ${table}(path, document_type, owner_id, title, content, logical_bytes, updated_at_ms)
@@ -308,6 +309,24 @@ export function createSqliteModulePersistence(db, { coordinator, now = Date.now 
 
   const modules = Object.fromEntries(Object.keys(RECORD_TABLES).map((module) => [module, {
     records: {
+      ...(module === 'sessions' ? {
+        async listSummaries(prefix) {
+          assertStorageKey(prefix);
+          const rows = await coordinator.run(() => db.prepare(`
+            SELECT key, json_extract(value_json, '$.id') AS id,
+              json_extract(value_json, '$.title') AS title,
+              json_extract(value_json, '$.updatedAt') AS updatedAt,
+              json_extract(value_json, '$._sync') AS sync
+            FROM session_records WHERE key LIKE ? ESCAPE '\\'
+              AND coalesce(json_extract(value_json, '$.mode'), '') != 'party'
+          `).all(`${escapedPrefix(prefix)}/%`));
+          const keys = new Set(directChildren(rows.map((row) => row.key), prefix));
+          return rows.filter((row) => keys.has(row.key)).map((row) => ({
+            id: row.id, title: row.title, updatedAt: row.updatedAt,
+            _sync: row.sync ? JSON.parse(row.sync) : undefined, _summary: true,
+          }));
+        },
+      } : {}),
       async get(key) {
         assertStorageKey(key);
         const row = await coordinator.run(() => recordStatements[module].get.get(key));
@@ -323,6 +342,10 @@ export function createSqliteModulePersistence(db, { coordinator, now = Date.now 
       delete: (key) => deleteRecord(module, key),
     },
     documents: documentStatements[module] ? {
+      async exists(documentPath) {
+        assertStorageKey(documentPath, 'document path');
+        return coordinator.run(() => !!documentStatements[module].exists.get(documentPath));
+      },
       async read(documentPath) {
         assertStorageKey(documentPath, 'document path');
         return coordinator.run(() => documentStatements[module].get.get(documentPath)?.content ?? null);
@@ -372,6 +395,10 @@ export function createSqliteModulePersistence(db, { coordinator, now = Date.now 
   };
 
   const textStore = {
+    exists(documentPath) {
+      assertStorageKey(documentPath, 'document path');
+      return modules[moduleForDocumentPath(documentPath)].documents.exists(documentPath);
+    },
     read(documentPath) {
       assertStorageKey(documentPath, 'document path');
       return modules[moduleForDocumentPath(documentPath)].documents.read(documentPath);
@@ -451,6 +478,7 @@ export function createFileModuleRepositories({ dataStore, textStore, transaction
       delete: (key) => dataStore.delete(key),
     },
     documents: DOCUMENT_TABLES[module] ? {
+      exists: (documentPath) => textStore.exists ? textStore.exists(documentPath) : textStore.read(documentPath).then((text) => text !== null),
       read: (documentPath) => textStore.read(documentPath),
       async write(documentPath, content) {
         const expected = moduleForDocumentPath(documentPath);
@@ -513,6 +541,7 @@ export function createScopedModuleStores(modules, allowedModules) {
       async delete(key) { await recordRepository(key).delete(key); },
     },
     textStore: {
+      async exists(documentPath) { return documentRepository(documentPath).exists(documentPath); },
       async read(documentPath) { return documentRepository(documentPath).read(documentPath); },
       async write(documentPath, content) { await documentRepository(documentPath).write(documentPath, content); },
       async list(prefix) {

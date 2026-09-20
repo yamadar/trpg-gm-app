@@ -40,6 +40,26 @@ export function createUsage({ dataStore, repository, limits, globalLimits = {}, 
   }
 
   return {
+    async reserveTextTokens(userId, units) {
+      const timestamp = now();
+      const day = utcDay(timestamp);
+      const requests = [
+        request('user', userId, day, limits, 'textTokens', units),
+        request('global', '', day, globalLimits, 'textTokens', units),
+      ];
+      const result = await consumeRequests(requests, timestamp);
+      if (!result.ok) return result;
+      let settled = false;
+      return {
+        ok: true,
+        async settle(actualUnits) {
+          if (settled || !Number.isSafeInteger(actualUnits) || actualUnits < 0) return;
+          settled = true;
+          const delta = actualUnits - units;
+          if (delta) await (await getRepository()).adjustBatch(requests.map((r) => ({ ...r, units: delta })), now());
+        },
+      };
+    },
     async consume(userId, kind, units = 1) {
       const timestamp = now();
       return consumeRequests([

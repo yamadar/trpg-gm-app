@@ -1,5 +1,6 @@
 import { saveSession } from '../storage/index.js';
 import {
+  getServerSession,
   dispatchSessionConflict,
   getSessionSyncState,
   rememberSessionSync,
@@ -10,9 +11,10 @@ export async function reconcileServerSessions(localSessions, serverSessions) {
   const pulledIds = [];
   const conflicts = [];
 
-  for (const remote of serverSessions) {
+  for (let remote of serverSessions) {
     const local = localById.get(remote.id);
     if (!local) {
+      if (remote._summary) remote = await getServerSession(remote.id);
       if (await saveSession(remote)) {
         rememberSessionSync(remote);
         pulledIds.push(remote.id);
@@ -24,6 +26,7 @@ export async function reconcileServerSessions(localSessions, serverSessions) {
     const localRevision = syncState?.revision ?? local?._sync?.revision ?? 0;
     const remoteRevision = remote?._sync?.revision ?? 0;
     if (remoteRevision <= localRevision) continue;
+    if (remote._summary) remote = await getServerSession(remote.id);
 
     const lastSyncedUpdatedAt = syncState?.lastSyncedUpdatedAt;
     const localDirty =

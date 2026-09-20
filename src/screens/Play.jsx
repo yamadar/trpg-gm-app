@@ -45,7 +45,7 @@ export const SLOW_RESPONSE_NOTICE_MS = 12000;
 
 export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(session.pendingTurn?.playerText || '');
   const [loginOpen, setLoginOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [slowResponse, setSlowResponse] = useState(false);
@@ -192,7 +192,15 @@ export default function Play({ session, setSession }) {
       setError('');
       const slowResponseTimer = setTimeout(() => setSlowResponse(true), SLOW_RESPONSE_NOTICE_MS);
       try {
-        const { result, roll, resourceChange } = await takeTurn(session, playerText, { allowRoll });
+        const { result, roll, resourceChange } = await takeTurn(session, playerText, {
+          allowRoll,
+          onCheckpoint: async (pendingTurn) => {
+            const checkpointed = { ...sessionRef.current, pendingTurn, updatedAt: Date.now() };
+            sessionRef.current = checkpointed;
+            setSession(checkpointed);
+            if (!(await saveSession(checkpointed))) throw new Error('判定結果を保存できなかった。保存領域を確認してほしい。');
+          },
+        });
         const norm = normalizeTurnResult(result);
 
         const newFlags = norm.stateUpdate.flags
@@ -246,6 +254,7 @@ export default function Play({ session, setSession }) {
           log: newLog,
           updatedAt: Date.now(),
         };
+        delete updated.pendingTurn;
         if (motionAllowed()) setNarrating(true);
         setSession(updated);
         const saved = await saveSession(updated);
@@ -288,6 +297,7 @@ export default function Play({ session, setSession }) {
         }
         return true;
       } catch (e) {
+        if (sessionRef.current.pendingTurn?.playerText) setInput(sessionRef.current.pendingTurn.playerText);
         console.error(e);
         if (e.status === 503 || (e.status === 502 && e.body?.upstreamStatus === 503)) {
           setError(
@@ -336,7 +346,7 @@ export default function Play({ session, setSession }) {
   }
 
   function submitChoice(choice) {
-    if (!user || authLoading || busy || narrating) return;
+    if (!user || authLoading || busy || narrating || session.pendingTurn) return;
     runTurn(choice, choice);
   }
 
@@ -574,7 +584,7 @@ export default function Play({ session, setSession }) {
                         key={ci}
                         variant="ghost"
                         onClick={() => submitChoice(c)}
-                        disabled={authLoading || !user || busy}
+                        disabled={authLoading || !user || busy || !!session.pendingTurn}
                       >
                         {c}
                       </Button>
@@ -689,9 +699,11 @@ export default function Play({ session, setSession }) {
               </Button>
             </div>
           )}
+          {session.pendingTurn && <p role="status" style={{ maxWidth: 720, margin: '0 auto 8px', fontFamily: F_BODY, fontSize: 12 }}>判定結果を保持中。同じ行動を送って描写を再試行できる。</p>}
           <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8 }}>
             <input
               value={input}
+              readOnly={!!session.pendingTurn}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) submitFree();

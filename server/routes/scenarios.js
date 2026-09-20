@@ -1,3 +1,4 @@
+import { rethrowTextLimit } from '../textGenerationContext.js';
 import { Router } from 'express';
 import { saveScenario, getScenario, listScenarios, deleteScenario } from '../storage/scenarioLibrary.js';
 import { unpublishScenario } from '../storage/shareLibrary.js';
@@ -55,7 +56,8 @@ export function createScenariosRouter({ dataStore, textStore, imageStore, scenar
         let check;
         try {
           check = await usage.consume(req.userId, 'messages');
-        } catch {
+        } catch (error) {
+          rethrowTextLimit(error);
           res.status(502).json({ error: 'usage check failed', code: 'USAGE_CHECK_FAILED' });
           return;
         }
@@ -66,7 +68,8 @@ export function createScenariosRouter({ dataStore, textStore, imageStore, scenar
       }
       try {
         directorGuide = await scenarioAnalyzer({ title: req.body.title, raw: req.body.raw });
-      } catch {
+      } catch (error) {
+        rethrowTextLimit(error);
         res.status(502).json({ error: 'scenario analysis failed', code: 'SCENARIO_ANALYSIS_FAILED' });
         return;
       }

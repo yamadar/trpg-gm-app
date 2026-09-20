@@ -9,6 +9,10 @@ export function createFsTextStore(rootDir) {
   }
 
   return {
+    async exists(p) {
+      try { await fs.access(fullPath(p)); return true; }
+      catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+    },
     async read(p) {
       try {
         return await fs.readFile(fullPath(p), 'utf-8');

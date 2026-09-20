@@ -1,5 +1,7 @@
 import { callTextModel, extractText, extractToolUse, parseJsonLoose } from './client.js';
 import { resolveAdapter } from './prompts.js';
+import { turnContext } from './turnContext.js';
+import { hashText } from '../utils/hashText.js';
 
 export async function summarizeWorld(raw) {
   const data = await callTextModel('summarize-world', { raw });
@@ -28,13 +30,18 @@ function normalizeFlags(result) {
 // 存在しないターンではfalseで呼ぶ。ツールを開けたままにすると、モデルは判定が不要でも
 // 「ダミー」「判定不要」といった中身のない見出しでroll_checkを1回消費し、その見出しが
 // 判定スタンプとして場面の先頭に描かれてしまう。
-export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
+export async function takeTurn(session, playerText, { allowRoll = true, onCheckpoint = async () => {} } = {}) {
+  const context = turnContext(session);
+  const encodedInput = JSON.stringify({ context, playerText, allowRoll });
+  const inputKey = `${encodedInput.length}:${hashText(encodedInput)}`;
+  const checkpoint = session.pendingTurn?.inputKey === inputKey && session.pendingTurn?.playerText === playerText && session.pendingTurn?.allowRoll === allowRoll ? session.pendingTurn : null;
   const adapter = resolveAdapter(session);
-  let data = await callTextModel('take-turn', { session, playerText, allowRoll });
-  let roll = null;
-  let resourceChange = null;
+  let data = checkpoint ? null : await callTextModel('take-turn', { session: context, playerText, allowRoll });
+  let roll = checkpoint?.roll || null;
+  let resourceChange = checkpoint?.resourceChange || null;
+  let continuation = checkpoint?.continuation;
 
-  const toolUse = extractToolUse(data.content);
+  const toolUse = extractToolUse(data?.content);
   if (toolUse && toolUse.name === 'roll_check') {
     roll = adapter.evaluate(toolUse.input.success_percent);
     roll.check_label = toolUse.input.check_label;
@@ -64,14 +71,14 @@ export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
     // ためだけの空JSON(narrative空・choices空)を添えて返すことがある。その2度目の
     // 呼び出しは下の1回きりの分岐では拾われず、空JSONがそのままターンの内容として
     // 表示される。tool_choice:noneで追撃時のツールを閉じ、本文の生成を必ず終わらせる。
-    data = await callTextModel('take-turn', {
-      session,
-      playerText,
-      allowRoll,
-      continuation: { assistantContent: data.content, toolResult: payload },
-    });
+    continuation = { assistantContent: data.content, toolResult: payload };
+    await onCheckpoint({ inputKey, playerText, allowRoll, continuation, roll, resourceChange });
   }
 
+  if (continuation) {
+    data = await callTextModel('take-turn', { session: context, playerText, allowRoll, continuation });
+  }
+  if (data.stop_reason === 'max_tokens') throw new Error('GM応答が途中で打ち切られた(max_tokens)。再試行してほしい。');
   const text = extractText(data.content);
   const result = normalizeFlags(parseJsonLoose(text));
   return { result, roll, resourceChange };
@@ -79,13 +86,13 @@ export async function takeTurn(session, playerText, { allowRoll = true } = {}) {
 
 // PC視点のオンデマンド回想。生フラグはLLMへの入力に留め、プレイヤーには自然な日本語のみ返す。
 export async function recallMemory(session) {
-  const data = await callTextModel('recall-memory', { session });
+  const data = await callTextModel('recall-memory', { session: turnContext(session) });
   return extractText(data.content).trim() || '(まだ特に思い出すことはない)';
 }
 
 // キャンペーン章末の引き継ぎ。既存PCシートへ冒険の成果を織り込んだ更新版と、持ち越しxpを返す。
 export async function advanceCampaignPc(session) {
-  const data = await callTextModel('advance-campaign-pc', { session });
+  const data = await callTextModel('advance-campaign-pc', { session: turnContext(session) });
   const pcRaw = extractText(data.content).trim() || session.pc?.raw || '';
   return { pcRaw, xp: session.state?.xp || 0 };
 }

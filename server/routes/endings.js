@@ -1,3 +1,4 @@
+import { rethrowTextLimit } from '../textGenerationContext.js';
 import { Router } from 'express';
 import { sessionKey } from '../storage/paths.js';
 import { saveEnding, getEnding, listEndings, deleteEnding } from '../storage/endingLibrary.js';
@@ -38,7 +39,8 @@ export function createEndingsRouter({ dataStore, apiKey, model, fetchImpl = fetc
       let check;
       try {
         check = await usage.consume(req.userId, 'messages');
-      } catch {
+      } catch (error) {
+        rethrowTextLimit(error);
         res.status(502).json({ error: 'usage check failed', code: 'USAGE_CHECK_FAILED' });
         return;
       }
@@ -50,7 +52,8 @@ export function createEndingsRouter({ dataStore, apiKey, model, fetchImpl = fetc
     let named;
     try {
       named = await nameEnding({ session, apiKey, model, fetchImpl });
-    } catch {
+    } catch (error) {
+      rethrowTextLimit(error);
       res.status(502).json({ error: 'ending generation failed', code: 'ENDING_GENERATION_FAILED' });
       return;
     }

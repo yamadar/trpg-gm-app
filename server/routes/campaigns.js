@@ -1,3 +1,4 @@
+import { rethrowTextLimit } from '../textGenerationContext.js';
 import { Router } from 'express';
 import {
   CAMPAIGN_SOURCE_KINDS,
@@ -128,7 +129,8 @@ async function consumeGeneration(usage, userId) {
   if (!usage) return { ok: true };
   try {
     return await usage.consume(userId, 'messages');
-  } catch {
+  } catch (error) {
+    rethrowTextLimit(error);
     const wrapped = new Error('usage check failed');
     wrapped.status = 502;
     wrapped.code = 'USAGE_CHECK_FAILED';
@@ -351,7 +353,8 @@ export function createCampaignsRouter({
     let generated;
     try {
       generated = await generator.reconcile({ campaign, sources, worldRaw: worldRaw || '', session });
-    } catch {
+    } catch (error) {
+      rethrowTextLimit(error);
       res.status(502).json({ error: 'campaign reconciliation failed', code: 'CAMPAIGN_RECONCILIATION_FAILED' });
       return;
     }
@@ -531,7 +534,8 @@ export function createCampaignsRouter({
         worldRaw: worldRaw || '',
         requestText: cleanText(req.body?.requestText, 4000),
       });
-    } catch {
+    } catch (error) {
+      rethrowTextLimit(error);
       res.status(502).json({ error: 'campaign pitch generation failed', code: 'CAMPAIGN_PITCH_GENERATION_FAILED' });
       return;
     }
@@ -590,7 +594,8 @@ export function createCampaignsRouter({
         pitchId: pitch.id,
         basedOnCanonRevision: campaign.canonRevision ?? 0,
       });
-    } catch {
+    } catch (error) {
+      rethrowTextLimit(error);
       res.status(502).json({ error: 'campaign scenario generation failed', code: 'CAMPAIGN_SCENARIO_GENERATION_FAILED' });
     }
   }));

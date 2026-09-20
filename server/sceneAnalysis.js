@@ -1,3 +1,4 @@
+import { rethrowTextLimit } from './textGenerationContext.js';
 import { generateText } from './textProvider.js';
 
 const ANALYSIS_TIMEOUT_MS = 60000;
@@ -102,7 +103,8 @@ export async function analyzeScene({
           .map((a) => ({ name: a.name, description: a.description }))
       : [];
     return { presentNames, newAppearances };
-  } catch {
+  } catch (error) {
+    rethrowTextLimit(error);
     return { presentNames: [], newAppearances: [] };
   }
 }

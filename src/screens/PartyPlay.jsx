@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { COLORS, F_BODY, F_DISPLAY, F_MONO, inputStyle } from '../theme.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import {
@@ -87,7 +87,6 @@ export default function PartyPlay({ sessionId }) {
   const [error, setError] = useState('');
   const [syncError, setSyncError] = useState('');
   const [draftNotice, setDraftNotice] = useState('');
-  const [clock, setClock] = useState(Date.now());
   const [serverOffset, setServerOffset] = useState(0);
   const [endConfirm, setEndConfirm] = useState(false);
   const [mobileTab, setMobileTab] = useState('story');
@@ -98,22 +97,30 @@ export default function PartyPlay({ sessionId }) {
   const lastSubmittedRef = useRef('');
   const latestStoryRef = useRef(null);
   const appliedSeqRef = useRef(-1);
+  const versionRef = useRef('');
+  const lastPollRef = useRef(0);
   const activeRef = useRef(true);
   const chatSeqRef = useRef(0);
   const chatInitializedRef = useRef(false);
 
   const applySnapshot = useCallback((snapshot) => {
-    if (!activeRef.current || !snapshot?.snapshot) return;
+    if (!activeRef.current) return;
+    if (Number.isFinite(snapshot?.serverNow)) setServerOffset((current) => {
+      const next = snapshot.serverNow - Date.now();
+      return Math.abs(next - current) > 1000 ? next : current;
+    });
+    if (snapshot?.unchanged || !snapshot?.snapshot) return;
     const seq = snapshot.eventSeq ?? 0;
     if (seq < appliedSeqRef.current) return;
     appliedSeqRef.current = seq;
+    versionRef.current = snapshot.version || '';
     setParty(snapshot);
-    if (Number.isFinite(snapshot.serverNow)) setServerOffset(snapshot.serverNow - Date.now());
   }, []);
 
   const refresh = useCallback(async () => {
     if (fetchingRef.current) return fetchingRef.current;
-    const task = getPartySnapshot(sessionId).then((snapshot) => {
+    lastPollRef.current = Date.now();
+    const task = getPartySnapshot(sessionId, versionRef.current).then((snapshot) => {
       applySnapshot(snapshot);
       if (activeRef.current) setSyncError('');
     }).catch((e) => {
@@ -142,12 +149,15 @@ export default function PartyPlay({ sessionId }) {
   useEffect(() => {
     activeRef.current = true;
     refresh();
-    const poll = setInterval(refresh, 1000);
-    const timer = setInterval(() => setClock(Date.now()), 250);
+    const poll = setInterval(() => {
+      if (document.visibilityState !== 'hidden' || Date.now() - lastPollRef.current >= 15000) refresh();
+    }, 1000);
+    const onVisible = () => { if (document.visibilityState !== 'hidden') refresh(); };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       activeRef.current = false;
       clearInterval(poll);
-      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [refresh]);
 
@@ -164,15 +174,6 @@ export default function PartyPlay({ sessionId }) {
       lastSubmittedRef.current = myIntent?.text || '';
     }
   }, [party?.round?.id, myIntent?.text]);
-
-  const remaining = useMemo(() => {
-    if (!['collecting', 'lock_grace', 'deciding'].includes(party?.round?.phase)) return null;
-    const deadline = party?.round?.phase === 'deciding'
-      ? party.round.decision?.deadlineAt
-      : party?.round?.phase === 'lock_grace' ? party.round.lockAt : party?.round?.deadlineAt;
-    if (!deadline) return null;
-    return Math.max(0, Math.ceil((deadline - (clock + serverOffset)) / 1000));
-  }, [party?.round, clock, serverOffset]);
 
   async function act(key, operation) {
     setBusy(key);
@@ -302,13 +303,7 @@ export default function PartyPlay({ sessionId }) {
       <div role="status" aria-live="polite">
         {phase === 'resolving' ? progressLabel : PHASE_LABELS[phase] || phase}
       </div>
-      {phase === 'resolving' && party.round.resolutionStartedAt && <div style={{ color: COLORS.inkSoft, marginTop: 5 }}>
-        経過 {Math.max(0, Math.floor((clock + serverOffset - party.round.resolutionStartedAt) / 1000))}秒
-      </div>}
-      {collecting && remaining === null && <p>時間制限なし。全員が行動を確定すると進む。</p>}
-      {remaining !== null && <div style={{ color: COLORS.inkSoft, marginTop: 5 }}>
-        {remaining === 0 ? '進行状態を同期中…' : phase === 'lock_grace' ? '全員確定。まもなく進む。' : `残り ${Math.ceil(remaining / 60)}分`}
-      </div>}
+      <PartyClock round={party.round} serverOffset={serverOffset} />
       {party.round?.error && <p role="alert" style={{ color: COLORS.stamp }}>{party.round.error}</p>}
       {phase === 'paused' && party.round?.resolutionId && <div style={{ fontFamily: F_MONO, fontSize: 10 }}>問い合わせID: {party.round.resolutionId}</div>}
     </div>
@@ -485,3 +480,23 @@ export default function PartyPlay({ sessionId }) {
     </div>
   );
 }
+
+const PartyClock = memo(function PartyClock({ round, serverOffset }) {
+  const [clock, setClock] = useState(Date.now());
+  const phase = round?.phase;
+  const deadline = phase === 'deciding' ? round?.decision?.deadlineAt : phase === 'lock_grace' ? round?.lockAt : round?.deadlineAt;
+  const ticking = (phase === 'resolving' && round?.resolutionStartedAt) || (['collecting', 'lock_grace', 'deciding'].includes(phase) && deadline);
+  useEffect(() => {
+    if (!ticking) return;
+    const update = () => { if (document.visibilityState !== 'hidden') setClock(Date.now()); };
+    update();
+    const timer = setInterval(update, 1000);
+    document.addEventListener('visibilitychange', update);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', update); };
+  }, [ticking]);
+  const remaining = deadline ? Math.max(0, Math.ceil((deadline - clock - serverOffset) / 1000)) : null;
+  if (phase === 'resolving' && round.resolutionStartedAt) return <div style={{ color: COLORS.inkSoft, marginTop: 5 }}>経過 {Math.max(0, Math.floor((clock + serverOffset - round.resolutionStartedAt) / 1000))}秒</div>;
+  if (phase === 'collecting' && remaining === null) return <p>時間制限なし。全員が行動を確定すると進む。</p>;
+  if (!['collecting', 'lock_grace', 'deciding'].includes(phase) || remaining === null) return null;
+  return <div style={{ color: COLORS.inkSoft, marginTop: 5 }}>{remaining === 0 ? '進行状態を同期中…' : phase === 'lock_grace' ? '全員確定。まもなく進む。' : `残り ${Math.ceil(remaining / 60)}分`}</div>;
+});

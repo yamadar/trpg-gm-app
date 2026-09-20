@@ -75,6 +75,7 @@ export function createNovelJobRunner({
   now = Date.now,
   jobRepository = null,
   reserveRecoveryStorage = null,
+  runTextAs = (_userId, operation) => operation(),
 }) {
   // 実行中Promiseの控え。テストの待ち合わせに使う(二重起動の抑止は永続レコード側で行う)。
   const pending = new Map();
@@ -98,7 +99,7 @@ export function createNovelJobRunner({
       for (let refresh = 0; refresh <= NOVELIZE_MAX_SESSION_REFRESHES; refresh += 1) {
         const sourceHash = novelSourceHash(sourceSession);
         const { transcript, imageIds } = buildTranscriptWithMarkers(sourceSession.log);
-        const { text, truncated } = await generateNovel({
+        const { text, truncated } = await runTextAs(userId, () => generateNovel({
           transcript,
           hasImages: imageIds.length > 0,
           // 旧セッションは pc.name を持たない。空文字で渡し、呼称の決定はモデルに委ねる。
@@ -107,7 +108,7 @@ export function createNovelJobRunner({
           apiKey,
           model,
           fetchImpl,
-        });
+        }));
 
         // 生成中にスマホ等からログが増えていたら、旧本文を完成扱いで保存せず、
         // 最新セッションを入力に自動生成し直す。

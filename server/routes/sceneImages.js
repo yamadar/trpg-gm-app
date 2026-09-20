@@ -62,8 +62,9 @@ export function createSceneImagesRouter({
       fetchImpl,
     });
     // 新キャラのポートレートを自動生成(非致命)。1枚=1ユニット消費、上限到達・失敗はスキップ。
-    const enrichedNew = [];
-    for (const a of newAppearances) {
+    const enrichedNew = await Promise.all(newAppearances.map(async (a, index) => {
+      // Only three portraits can be used as immediate scene references.
+      if (index >= 3) return a;
       let portraitId = null;
       let allowed = true;
       if (usage) {
@@ -88,8 +89,8 @@ export function createSceneImagesRouter({
           portraitId = null; // 非致命: テキストのみの一貫性へフォールバック
         }
       }
-      enrichedNew.push(portraitId ? { ...a, imageId: portraitId } : a);
-    }
+      return portraitId ? { ...a, imageId: portraitId } : a;
+    }));
 
     const merged = { ...registry };
     for (const a of enrichedNew) {

@@ -1,3 +1,4 @@
+import { createTextLimiter, withTextGenerationContext } from './textGenerationContext.js';
 import 'dotenv/config';
 import { requestLogging, logEvent, errorMetadata } from './observability.js';
 import express from 'express';
@@ -146,7 +147,7 @@ export function createApp({
   app.set('trust proxy', 1);
   app.use(requestLogging());
   app.use(securityHeaders);
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '16mb' }));
 
   const persistence = createPersistence({
     driver: env.DATABASE_DRIVER,
@@ -258,7 +259,10 @@ export function createApp({
         };
       }
     : null;
+  const limiter = createTextLimiter(parseLimit(env.LIMIT_TEXT_CONCURRENT, 6));
+  const runTextAs = (userId, operation) => withTextGenerationContext({ userId, usage, limiter }, operation);
   const novelJobs = createNovelJobRunner({
+    runTextAs,
     dataStore: scopes.sessions.dataStore,
     textStore: scopes.sessions.textStore,
     apiKey,
@@ -298,6 +302,7 @@ export function createApp({
     maintenanceMode,
   })); // 機能検出と保守状態の確認は認証不要
   app.use('/api', createRequireAuth({ dataStore: scopes.auth.dataStore, cookieOptions }));
+  app.use('/api', (req, res, next) => runTextAs(req.userId, next));
   app.use('/api', createStorageGuard({
     dataDir,
     maxUserBytes: maxUserStorageBytes,
@@ -329,12 +334,12 @@ export function createApp({
     transaction: persistence.transaction,
     usage,
     generator: apiKey
-      ? (args) => generatePartyResolution({
+      ? (args) => runTextAs(args.session.ownerId, () => generatePartyResolution({
           ...args,
           apiKey,
           model: textModel,
           fetchImpl,
-        })
+        }))
       : null,
   });
   app.locals.partyService = partyService;
@@ -449,6 +454,10 @@ export function createApp({
   }
 
   app.use((err, req, res, next) => {
+    if (err?.code === 'AI_DAILY_LIMIT') {
+      res.status(429).json({ error: 'daily limit reached', resetAt: err.resetAt });
+      return;
+    }
     const requestId = req.requestId || crypto.randomUUID();
     const rawStatus = typeof err?.status === 'number'
       ? err.status

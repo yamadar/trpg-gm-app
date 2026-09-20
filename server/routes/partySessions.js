@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { idParamGuard } from './validateId.js';
@@ -23,7 +24,11 @@ export function createPartySessionsRouter({ service }) {
   }));
 
   router.get('/party-sessions/:id/snapshot', asyncHandler(async (req, res) => {
-    res.json(await service.getSnapshot(req.userId, req.params.id));
+    const snapshot = await service.getSnapshot(req.userId, req.params.id);
+    const { serverNow, ...state } = snapshot;
+    const version = createHash('sha256').update(JSON.stringify(state)).digest('base64url');
+    res.set('Cache-Control', 'no-store');
+    res.json(req.query.known === version ? { unchanged: true, serverNow, version } : { ...snapshot, version });
   }));
 
   router.post('/party-sessions/:id/join', asyncHandler(async (req, res) => {

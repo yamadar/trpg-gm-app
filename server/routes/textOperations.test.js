@@ -94,7 +94,7 @@ describe('POST /text-operations/:operation', () => {
       tools: [{ name: 'arbitrary_proxy' }],
     });
     expect(built.tools.map((tool) => tool.name)).toEqual(['roll_check']);
-    expect(built.max_tokens).toBe(2000);
+    expect(built.max_tokens).toBe(4096);
   });
 
   it('returns a fixed error when no API key is configured', async () => {
@@ -204,4 +204,20 @@ describe('POST /text-operations/:operation', () => {
     });
     expect((await first).status).toBe(200);
   });
+});
+
+it('preserves thought signatures on both text and function call parts through continuation validation', async () => {
+  const { buildGeminiTextRequest } = await import('../textProvider.js');
+  const built = buildTextOperationRequest('take-turn', {
+    session: { world: {}, scenario: {}, pc: {}, state: {} }, playerText: '調べる', allowRoll: true,
+    continuation: {
+      assistantContent: [
+        { type: 'text', text: '判定', thought_signature: 'text-signature' },
+        { type: 'tool_use', name: 'roll_check', id: 'r1', input: { check_label: '調査', success_percent: 50 }, thought_signature: 'tool-signature' },
+      ],
+      toolResult: { roll: 30, success: true },
+    },
+  });
+  const parts = buildGeminiTextRequest(built).contents[1].parts;
+  expect(parts.map((part) => part.thoughtSignature)).toEqual(['text-signature', 'tool-signature']);
 });

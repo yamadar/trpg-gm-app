@@ -1091,3 +1091,28 @@ describe('resource side effects', () => {
     expect(await screen.findByText('再試行の題')).toBeInTheDocument();
   });
 });
+
+it('restores an interrupted roll after reload and clears the checkpoint after narration succeeds', async () => {
+  const save = vi.spyOn(storage, 'saveSession').mockResolvedValue(true);
+  const tool = { type: 'tool_use', name: 'roll_check', id: 'r1', input: { check_label: '調査', success_percent: 60 }, thought_signature: 'signature' };
+  fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ content: [tool] }) }).mockRejectedValueOnce(new Error('offline'));
+  const initial = makeSession({ log: [{ role: 'gm', text: '入口にいる。', choices: ['待つ'] }] });
+  let view = renderWithAuth(<Harness initialSession={initial} />);
+  fireEvent.change(screen.getByPlaceholderText('PCの行動を自由に書く…'), { target: { value: '扉を調べる' } });
+  fireEvent.click(screen.getByText('送る'));
+  await screen.findByText(/GM応答の取得に失敗した/);
+  const saved = save.mock.calls.map(([session]) => session).find((session) => session.pendingTurn);
+  expect(saved.pendingTurn.playerText).toBe('扉を調べる');
+  view.unmount();
+  view = renderWithAuth(<Harness initialSession={saved} />);
+  expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).toHaveValue('扉を調べる');
+  expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).toHaveAttribute('readonly');
+  expect(screen.getByText('待つ')).toBeDisabled();
+  fireEvent.click(screen.getByText('送る'));
+  await screen.findByText('物語が始まった。');
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(JSON.parse(fetch.mock.calls[2][1].body).input.continuation.toolResult.roll).toBe(saved.pendingTurn.roll.roll);
+  expect(save.mock.calls.at(-1)[0].pendingTurn).toBeUndefined();
+  expect(screen.getByPlaceholderText('PCの行動を自由に書く…')).toHaveValue('');
+  view.unmount();
+});

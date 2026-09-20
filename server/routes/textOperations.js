@@ -1,3 +1,4 @@
+import { textGenerationContext, rethrowTextLimit } from '../textGenerationContext.js';
 import { Router } from 'express';
 import { asyncHandler } from './asyncHandler.js';
 import { generateText, GeminiTextApiError } from '../textProvider.js';
@@ -107,8 +108,11 @@ function sanitizeAssistantContent(value) {
   }
   return value.map((block) => {
     object(block, 'assistant content block');
+    const signature = block.thought_signature === undefined ? {} : {
+      thought_signature: text(block.thought_signature, 'thought_signature', 200_000),
+    };
     if (block.type === 'text') {
-      return { type: 'text', text: text(block.text, 'assistant text', 100_000) };
+      return { type: 'text', text: text(block.text, 'assistant text', 100_000), ...signature };
     }
     if (block.type === 'tool_use' && block.name === 'roll_check') {
       const input = object(block.input, 'roll_check input');
@@ -130,6 +134,7 @@ function sanitizeAssistantContent(value) {
         id: text(block.id, 'roll_check id', 200, { allowEmpty: false }),
         name: 'roll_check',
         input: sanitizedInput,
+        ...signature,
       };
     }
     throw new TextOperationInputError('assistant content contains an unsupported block');
@@ -147,7 +152,7 @@ function takeTurn(input) {
   const system = buildSystemBlocks(session);
   const firstUserMessage = { role: 'user', content: buildTurnUserContent(session, playerText) };
   const request = {
-    max_tokens: 2000,
+    max_tokens: 4096,
     system,
     ...(value.allowRoll ? { tools: [buildRollTool(adapter)] } : {}),
     output_config: { format: TURN_OUTPUT_FORMAT },
@@ -342,7 +347,9 @@ export function createTextOperationsRouter({
     try {
       if (usage) {
         const reservedTokens = estimateTextOperationTokens(request);
-        const reservation = await usage.reserveTextOperation(req.userId, reservedTokens);
+        const reservation = textGenerationContext()
+          ? await usage.consume(req.userId, 'messages')
+          : await usage.reserveTextOperation(req.userId, reservedTokens);
         if (!reservation.ok) {
           res.status(429).json({ error: 'daily limit reached', resetAt: reservation.resetAt });
           return;
@@ -366,6 +373,7 @@ export function createTextOperationsRouter({
         }
       }
     } catch (error) {
+      rethrowTextLimit(error);
       if (error instanceof GeminiTextApiError && (error.status === 429 || error.status === 503)) {
         const code = error.status === 429 ? 'ai_service_rate_limited' : 'ai_service_overloaded';
         res.status(502).json({ error: code, upstreamStatus: error.status });

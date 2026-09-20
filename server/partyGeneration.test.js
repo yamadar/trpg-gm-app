@@ -225,3 +225,53 @@ it('allows an existing personal goal only in its owner view, not the common brie
   fetchImpl.mockResolvedValueOnce(geminiText(plan)).mockResolvedValueOnce(geminiText({ ...response, narratives: { pc1: '門を見る。', pc2: secret } }));
   await expect(generatePartyResolution({ session: ownSession, snapshot, round, apiKey: 'key', model: 'model', fetchImpl })).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
 });
+
+it('carries public history, flags and individual memories without putting private facts in public history', async () => {
+  const inputs = [];
+  const plan = { resolution: 'advance', publicHistorySummary: '公開された昔の約束', narratorBrief: '扉を調べる', pcBriefs: [], checks: [], autoActions: [] };
+  const outcome = { globalUpdate: { historySummary: '公開された昔の約束。扉を調べた', flagUpdates: [] }, narratives: { pc1: '扉を調べた', pc2: '扉を調べた' }, pcUpdates: [], choicesByPc: [] };
+  await generatePartyResolution({ session, snapshot: { ...snapshot, global: { historySummary: '公開された昔の約束', flags: { ancientPromise: true } }, pcs: { pc1: { resources: {}, memory: '自分だけの記憶' }, pc2: { resources: {} } } }, round, apiKey: 'key', model: 'model', fetchImpl: async (_url, options) => {
+    inputs.push(JSON.parse(options.body)); return geminiText(inputs.length === 1 ? plan : outcome);
+  } });
+  for (const body of inputs) expect(JSON.stringify(body)).toContain('ancientPromise');
+  expect(JSON.stringify(inputs[1])).toContain('公開された昔の約束');
+  expect(JSON.stringify(inputs[1])).toContain('自分だけの記憶');
+});
+
+it('allows a newly discovered clue for its authorized PC, persists it, and blocks copying it to another PC', async () => {
+  const { applyPartyResolution } = await import('./partyState.js');
+  const clue = '地下祭壇の奥には黄金の鍵が隠されている';
+  const scopedSession = { ...session, gmSnapshot: { ...session.gmSnapshot, scenario: { raw: `## GM専用情報\n${clue}。祭壇の奥を調べると見つかる。` } } };
+  const scopedRound = { intents: [{ pcId: 'pc1', text: '祭壇の奥を調べる', source: 'human' }] };
+  const state = { ...snapshot, pcs: { pc1: { resources: {}, knownFactIds: [] }, pc2: { resources: {}, knownFactIds: [] } } };
+  const plan = { resolution: 'advance', narratorBrief: 'それぞれ探索した', pcBriefs: [{ pcId: 'pc1', text: clue }], checks: [], autoActions: [], disclosures: [{ text: clue, pcIds: ['pc1'], sourceQuote: clue, actionEvidence: '祭壇の奥を調べる' }] };
+  const outcome = { globalUpdate: { historySummary: 'それぞれ探索した', flagUpdates: [] }, narratives: { pc1: clue, pc2: '周囲を警戒した' }, pcUpdates: [], choicesByPc: [] };
+  const generate = async (value) => {
+    let count = 0;
+    return generatePartyResolution({ session: scopedSession, snapshot: state, round: scopedRound, apiKey: 'key', model: 'model', fetchImpl: async () => geminiText(++count === 1 ? plan : value) });
+  };
+  const result = await generate(outcome);
+  const next = applyPartyResolution(state, result, { roundId: 'r1' });
+  expect(Object.values(next.facts)[0]).toMatchObject({ text: clue, audience: { kind: 'pcs', ids: ['pc1'] } });
+  expect(next.pcs.pc1.knownFactIds).toHaveLength(1);
+  expect(next.pcs.pc2.knownFactIds).toHaveLength(0);
+  await expect(generate({ ...outcome, narratives: { pc1: clue, pc2: clue } })).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
+  plan.disclosures[0].actionEvidence = '実行していない行動';
+  await expect(generate(outcome)).rejects.toMatchObject({ code: 'PARTY_SECRET_LEAK_BLOCKED' });
+});
+
+it.each([true, false])('only sends a conditional clue to the narrator when its check succeeds (%s)', async (success) => {
+  const clue = '石壁の裏に隠された魔導書を発見する';
+  const currentSession = { ...session, gmSnapshot: { ...session.gmSnapshot, scenario: { raw: `## GM専用情報\n${clue}` } } };
+  const plan = { resolution: 'advance', narratorBrief: '壁を調べる', pcBriefs: [], autoActions: [], checks: [{ pcId: 'pc1', checkLabel: '調査', successPercent: 50, checkKind: 'normal', supportPcIds: [] }], disclosures: [{ text: clue, pcIds: ['pc1'], sourceQuote: clue, actionEvidence: '石壁を調べる', successPcId: 'pc1' }] };
+  const outcome = { globalUpdate: { historySummary: '壁を調べた', flagUpdates: [] }, narratives: { pc1: success ? clue : '何も見つからない', pc2: '周囲を警戒した' }, pcUpdates: [], choicesByPc: [] };
+  let calls = 0;
+  let narrator;
+  const result = await generatePartyResolution({ session: currentSession, snapshot, round: { intents: [{ pcId: 'pc1', text: '石壁を調べる' }] }, apiKey: 'key', model: 'model', rng: () => success ? 10 : 90, fetchImpl: async (_url, options) => {
+    calls += 1;
+    if (calls === 2) narrator = options.body;
+    return geminiText(calls === 1 ? plan : outcome);
+  } });
+  expect(narrator.includes(clue)).toBe(success);
+  expect(result.disclosedFacts).toHaveLength(success ? 1 : 0);
+});

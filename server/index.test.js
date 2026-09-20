@@ -545,3 +545,20 @@ describe('static serving', () => {
     expect(res.status).toBe(404);
   });
 });
+
+it('applies the global token limit to ending generation and background novels as well as solo operations', async () => {
+  app.locals.persistence.close();
+  app = createApp({ apiKey: 'test-key', dataDir: dir, fetchImpl, env: testEnv({ LIMIT_GLOBAL_TEXT_TOKENS_PER_DAY: '0' }) });
+  const { user, cookie } = await createTestUserSession(app.locals.dataStore);
+  await app.locals.dataStore.set(`users/${user.id}/sessions/s1`, { id: 's1', endedAt: Date.now(), pc: {}, state: { turn_count: 1 }, log: [{ role: 'gm', text: '冒険が終わった。' }] });
+  const ending = await request(app).post('/api/sessions/s1/ending').set('Cookie', cookie).set('X-GMDesk-CSRF', '1').send({ stats: {} });
+  expect(ending.status).toBe(429);
+  expect(ending.body.error).toBe('daily limit reached');
+  const solo = await request(app).post('/api/text-operations/summarize-world').set('Cookie', cookie).set('X-GMDesk-CSRF', '1').send({ input: { raw: '世界' } });
+  expect(solo.status).toBe(429);
+  const novel = await request(app).post('/api/sessions/s1/novelize').set('Cookie', cookie).set('X-GMDesk-CSRF', '1');
+  expect(novel.status).toBe(202);
+  await Promise.all([...app.locals.novelJobs.pending.values()]);
+  expect((await app.locals.novelJobs.read(user.id, 's1')).status).toBe('error');
+  expect(fetchImpl).not.toHaveBeenCalled();
+});

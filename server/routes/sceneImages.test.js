@@ -298,3 +298,33 @@ describe('portrait generation and reference images', () => {
     expect(fetchImpl.mock.calls.filter(([u]) => !String(u).includes('gemini-text'))).toHaveLength(1);
   });
 });
+
+it('generates at most three new portraits concurrently before the scene image', async () => {
+  const people = Array.from({ length: 5 }, (_, i) => ({ name: `人物${i}`, description: `見た目${i}` }));
+  const release = [];
+  let portraits = 0;
+  let scene = false;
+  let allStarted;
+  const started = new Promise((resolve) => { allStarted = resolve; });
+  const fetchImpl = vi.fn(async (url) => {
+    if (String(url).includes('gemini-text')) return analysisResponse({ present_names: people.map((p) => p.name), new_appearances: people });
+    portraits += 1;
+    if (portraits <= 3) {
+      const result = new Promise((resolve) => release.push(() => resolve(geminiResponse())));
+      if (portraits === 3) allStarted();
+      return result;
+    }
+    scene = true;
+    return geminiResponse();
+  });
+  buildApp({ fetchImpl });
+  const pending = request(app).post('/api/sessions/s1/images').send({ logIndex: 0 }).then((result) => result);
+  await started;
+  expect(scene).toBe(false);
+  release.forEach((resolve) => resolve());
+  const res = await pending;
+  expect(res.status).toBe(200);
+  expect(portraits).toBe(4); // Three portraits and one scene.
+  expect(res.body.newAppearances.filter((p) => p.imageId)).toHaveLength(3);
+  expect(res.body.newAppearances).toHaveLength(5);
+});

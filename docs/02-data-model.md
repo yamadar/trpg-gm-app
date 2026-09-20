@@ -19,7 +19,7 @@ World、Character、Scenario、Ruleset はセッション開始時に必要な�
   scenario: { id, title, raw, directorGuide },
   rulesetId, ruleset: { id, label, desc, hint, growthUnit, formula },
   pc: { name, raw, goal, bonds },
-  moods, state, log, updatedAt, endedAt
+  moods, state, log, updatedAt, endedAt, pendingTurn // 判定後の描写待ちの間だけ存在
 }
 ```
 
@@ -39,9 +39,9 @@ World、Character、Scenario、Ruleset はセッション開始時に必要な�
 
 Party はサーバー正本。セッション本体に参加者、PC、設定、ラウンドを持ち、共有 `snapshot` に以下を保持する。
 
-- `global`: 時刻、公開フラグ、要約、緊張度、終了状態
+- `global`: 時刻、公開フラグ、要約、`publicHistorySummary`、緊張度、終了状態
 - `scenes`: 場面と参加 PC
-- `pcs`: 場面、リソース、状態異常、既知 Fact、経験値
+- `pcs`: 場面、リソース、状態異常、既知 Fact、経験値、本人限定の継続記憶`memory`
 - `facts` と `narratives`: `all`、`scene`、`pcs` の audience を持つ情報
 - `choicesByPc`、`autoActions`、状態リビジョン、イベント連番
 

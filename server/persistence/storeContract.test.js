@@ -106,3 +106,22 @@ for (const driver of ['filesystem', 'sqlite']) {
     });
   });
 }
+
+it.each(['filesystem', 'sqlite'])('checks scoped document existence without loading content (%s)', async (driver) => {
+  const persistence = await createDriver(driver);
+  const store = persistence.scopes.sessions.textStore;
+  const doc = 'users/u/sessions/s/novel.md';
+  expect(await store.exists(doc)).toBe(false);
+  await store.write(doc, '本文');
+  expect(await store.exists(doc)).toBe(true);
+  await store.delete(doc);
+  expect(await store.exists(doc)).toBe(false);
+});
+
+it('projects SQLite session summaries without returning large documents or another owner', async () => {
+  const persistence = await createDriver('sqlite');
+  await persistence.dataStore.set('users/u/sessions/s', { id: 's', title: 'A', log: ['large'], _sync: { revision: 1 }, updatedAt: 10 });
+  await persistence.dataStore.set('users/other/sessions/s', { id: 's', title: 'Other' });
+  const summaries = await persistence.repositories.modules.sessions.records.listSummaries('users/u/sessions');
+  expect(summaries).toEqual([{ id: 's', title: 'A', updatedAt: 10, _sync: { revision: 1 }, _summary: true }]);
+});
