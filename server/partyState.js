@@ -78,6 +78,7 @@ export function createPartySnapshot(pcs, ruleset, now = Date.now()) {
     ),
     facts: {},
     narratives: [],
+    actionHistory: [],
     choicesByPc: {},
     autoActions: [],
     updatedAt: now,
@@ -175,6 +176,11 @@ export function projectPartySession({ session, snapshot, round, userId, connecti
       audience: item.audience,
       text: item.text,
       createdAt: item.createdAt,
+    })),
+    actionHistory: (snapshot.actionHistory || []).map((round) => ({
+      roundId: round.roundId,
+      number: round.number,
+      intents: round.intents.map(({ id, pcId, characterName, text, source }) => ({ id, pcId, characterName, text, source })),
     })),
     choicesByPc: participant.pcId && snapshot.choicesByPc?.[participant.pcId]
       ? { [participant.pcId]: snapshot.choicesByPc[participant.pcId] }

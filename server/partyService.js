@@ -239,6 +239,15 @@ export function createPartyService({
       getPartySnapshot(dataStore, sessionId),
       getPartyRound(dataStore, sessionId, session.currentRoundId),
     ]);
+    // Reconstruct logs for sessions created before action history was stored.
+    if (snapshot && !snapshot.actionHistory) {
+      const rounds = await Promise.all([...new Set((snapshot.narratives || []).map((item) => item.roundId))]
+        .filter(Boolean).map((id) => getPartyRound(dataStore, sessionId, id)));
+      snapshot.actionHistory = rounds.filter((item) => item?.resolvedAt).map((item) => ({
+        roundId: item.id, number: item.number,
+        intents: (item.resolutionIntents || item.intents || []).map(({ id, pcId, characterName, text, source }) => ({ id, pcId, characterName, text, source })),
+      }));
+    }
     return { session, snapshot, round };
   }
 
@@ -471,6 +480,13 @@ export function createPartyService({
         data.session.stateRevision = data.snapshot.stateRevision;
         const resolvedRoundId = data.round.id;
         const resolvedIntents = data.round.resolutionIntents || data.round.intents;
+        // Keep only display fields; shared intents are already visible to every participant.
+        const retainedRounds = new Set(data.snapshot.narratives.map((item) => item.roundId));
+        data.snapshot.actionHistory = [...(data.snapshot.actionHistory || []), {
+          roundId: resolvedRoundId,
+          number: data.round.number,
+          intents: resolvedIntents.map(({ id, pcId, characterName, text, source }) => ({ id, pcId, characterName, text, source })),
+        }].filter((round) => retainedRounds.has(round.roundId));
         const checks = generated.checkResults || [];
         const resolvedRound = {
           ...data.round,

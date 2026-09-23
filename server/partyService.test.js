@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFsDataStore } from './storage/dataStore.js';
 import { createPartyService } from './partyService.js';
-import { getPartySession } from './storage/partyLibrary.js';
+import { getPartySession, getPartySnapshot, savePartySnapshot } from './storage/partyLibrary.js';
 import { sessionKey } from './storage/paths.js';
 
 let dir, dataStore, service, generator, time;
@@ -139,6 +139,14 @@ describe('partyService', () => {
     expect(snapshot.round.phase).toBe('collecting');
     expect(snapshot.round.number).toBe(2);
     expect(snapshot.snapshot.narratives.at(-1).text).toBe('全行動を解決');
+    expect(snapshot.snapshot.actionHistory.at(-1).intents.map((item) => item.text)).toEqual(['扉を開く', '罠を調べる']);
+    const reloaded = await service.getSnapshot('player', id);
+    expect(reloaded.snapshot.actionHistory).toEqual(snapshot.snapshot.actionHistory);
+    // Older snapshots reconstruct the same display history from persisted rounds.
+    const stored = await getPartySnapshot(dataStore, id);
+    delete stored.actionHistory;
+    await savePartySnapshot(dataStore, id, stored);
+    expect((await service.getSnapshot('player', id)).snapshot.actionHistory).toEqual(snapshot.snapshot.actionHistory);
     expect(snapshot.participants.map((item) => item.activity)).toEqual(['active', 'active']);
     expect(generator).toHaveBeenCalledTimes(2);
     const resolved = generator.mock.calls[1][0].round.resolutionIntents;
