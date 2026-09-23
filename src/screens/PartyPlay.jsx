@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { COLORS, F_BODY, F_DISPLAY, F_MONO, inputStyle } from '../theme.js';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
 import {
@@ -86,7 +86,6 @@ export default function PartyPlay({ sessionId }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [syncError, setSyncError] = useState('');
-  const [draftNotice, setDraftNotice] = useState('');
   const [serverOffset, setServerOffset] = useState(0);
   const [endConfirm, setEndConfirm] = useState(false);
   const [mobileTab, setMobileTab] = useState('story');
@@ -94,7 +93,9 @@ export default function PartyPlay({ sessionId }) {
   const chatFetchingRef = useRef(false);
   const typingAtRef = useRef(0);
   const roundRef = useRef(null);
-  const lastSubmittedRef = useRef('');
+  const seenNarrativeRef = useRef(undefined);
+  const scrollPositionsRef = useRef({ story: 0, action: 0, party: 0 });
+  const pendingScrollRef = useRef(null);
   const latestStoryRef = useRef(null);
   const appliedSeqRef = useRef(-1);
   const versionRef = useRef('');
@@ -169,11 +170,33 @@ export default function PartyPlay({ sessionId }) {
     const roundId = party?.round?.id || null;
     if (roundRef.current !== roundId) {
       roundRef.current = roundId;
-      setActionText((draft) => draft && draft !== lastSubmittedRef.current ? draft : myIntent?.text || '');
-      if (lastSubmittedRef.current) setDraftNotice('ラウンドが進んだ。未送信の編集があれば入力欄に保持している。');
-      lastSubmittedRef.current = myIntent?.text || '';
+      setActionText(myIntent?.text || '');
     }
   }, [party?.round?.id, myIntent?.text]);
+
+  const latestNarrativeId = party?.snapshot?.narratives?.at(-1)?.id || null;
+  useLayoutEffect(() => {
+    if (!party) return;
+    const previous = seenNarrativeRef.current;
+    seenNarrativeRef.current = latestNarrativeId;
+    if (previous !== undefined && latestNarrativeId && previous !== latestNarrativeId && mobile) {
+      scrollPositionsRef.current[mobileTab] = window.scrollY;
+      pendingScrollRef.current = 'latest';
+      setMobileTab('story');
+    }
+    if (mobile && pendingScrollRef.current !== null && (pendingScrollRef.current !== 'latest' || mobileTab === 'story')) {
+      if (pendingScrollRef.current === 'latest') latestStoryRef.current?.scrollIntoView({ block: 'start' });
+      else window.scrollTo({ top: pendingScrollRef.current, behavior: 'instant' });
+      pendingScrollRef.current = null;
+    }
+  }, [party, latestNarrativeId, mobile, mobileTab]);
+
+  function switchMobileTab(tab) {
+    if (tab === mobileTab) return;
+    scrollPositionsRef.current[mobileTab] = window.scrollY;
+    pendingScrollRef.current = scrollPositionsRef.current[tab];
+    setMobileTab(tab);
+  }
 
   async function act(key, operation) {
     setBusy(key);
@@ -201,8 +224,6 @@ export default function PartyPlay({ sessionId }) {
       commandId: commandId('intent'),
       ...(ready ? { ready: true } : {}),
     });
-    lastSubmittedRef.current = actionText;
-    setDraftNotice('');
     return result;
   }
 
@@ -318,14 +339,31 @@ export default function PartyPlay({ sessionId }) {
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {narratives.map((item, index) => (
-          <div key={item.id} ref={index === narratives.length - 1 ? latestStoryRef : null} tabIndex={index === narratives.length - 1 ? -1 : undefined} style={{ scrollMarginTop: 80, borderLeft: `3px solid ${COLORS.brass}`, padding: '4px 0 4px 12', whiteSpace: 'pre-wrap', fontFamily: F_BODY, fontSize: 15, lineHeight: 1.8, color: COLORS.inkSoft }}>
-            {item.text}
-          </div>
-        ))}
+        {narratives.map((item, index) => {
+          const actions = index === 0 || narratives[index - 1].roundId !== item.roundId
+            ? party.snapshot.actionHistory?.find((round) => round.roundId === item.roundId) : null;
+          return (
+            <Fragment key={item.id}>
+              {actions?.intents.length > 0 && (
+                <section aria-label={`ラウンド${actions.number}の行動`} style={{ background: COLORS.paper, borderRadius: 6, padding: '14px 16px', fontFamily: F_BODY, color: COLORS.inkSoft, overflowWrap: 'anywhere' }}>
+                  <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.faint, marginBottom: 10 }}>ROUND {actions.number} · PCの行動</div>
+                  {actions.intents.map((intent) => <div key={intent.id} style={{ marginTop: 10, fontSize: 14, lineHeight: 1.8 }}>
+                    <strong>{intent.characterName}{intent.source === 'auto' ? '（自動行動）' : ''}</strong>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{intent.text}</div>
+                  </div>)}
+                </section>
+              )}
+              <section ref={index === narratives.length - 1 ? latestStoryRef : null} tabIndex={-1} aria-label="GMの描写" style={{ scrollMarginTop: 80, padding: '16px 0', borderTop: index ? `1px solid ${COLORS.line}` : undefined, fontFamily: F_BODY, color: COLORS.inkSoft, overflowWrap: 'anywhere' }}>
+                <div style={{ fontFamily: F_MONO, fontSize: 11, color: COLORS.brassDark, marginBottom: 10 }}>GM</div>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 16, lineHeight: 1.95 }}>{item.text}</div>
+              </section>
+            </Fragment>
+          );
+        })}
         {narratives.length === 0 && <div style={{ fontFamily: F_BODY, color: COLORS.faint }}>物語は開始待ち。</div>}
       </div>
       {progressPanel}
+      {mobile && collecting && !away && <Button variant="brass" onClick={() => switchMobileTab('action')} style={{ marginTop: 12 }}>{isReady ? '確定した行動を確認' : '行動を選ぶ'}</Button>}
     </Card>
   );
 
@@ -352,7 +390,6 @@ export default function PartyPlay({ sessionId }) {
               {choices.map((choice) => <Button key={choice} disabled={isReady || !!busy} variant="ghost" onClick={() => setActionText(choice)}>{choice}</Button>)}
             </div>
           )}
-          {draftNotice && <p style={{ fontFamily: F_BODY, fontSize: 12 }}>{draftNotice}</p>}
           <textarea
             aria-label="自分の行動"
             disabled={isReady || !!busy}
@@ -409,7 +446,7 @@ export default function PartyPlay({ sessionId }) {
   return (
     <div>
       <FocusHeader showLogin title={party.title} steps={[]} currentStep={0} exitLabel="ホーム" onExit={() => navigate({ name: 'home' })} />
-      <div style={{ padding: mobile ? '14px 10px 80px' : '22px', maxWidth: 1500, margin: '0 auto' }}>
+      <div style={{ padding: mobile ? '14px 10px calc(140px + env(safe-area-inset-bottom))' : '22px', maxWidth: 1500, margin: '0 auto' }}>
         {syncError && <div role="status" style={{ color: COLORS.stamp, fontFamily: F_BODY }}>{syncError}</div>}
         {error && <div role="alert" style={{ color: COLORS.stamp, fontFamily: F_BODY, marginBottom: 10 }}>{error}</div>}
 
@@ -452,8 +489,8 @@ export default function PartyPlay({ sessionId }) {
             <div style={{ display: mobileTab === 'story' ? 'block' : 'none' }}>{storyPanel}</div>
             <div style={{ display: mobileTab === 'action' ? 'block' : 'none' }}>{actionPanel}</div>
             <div style={{ display: mobileTab === 'party' ? 'flex' : 'none', flexDirection: 'column', gap: 10 }}>{partyPanel}{characterPanel}{chatPanel}</div>
-            <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, background: COLORS.card, borderTop: `1px solid ${COLORS.lineStrong}`, padding: 8, display: 'flex', justifyContent: 'center', gap: 7, zIndex: 5 }}>
-              {['story', 'action', 'party'].map((tab) => <Button key={tab} variant={mobileTab === tab ? 'brass' : 'ghost'} onClick={() => { setMobileTab(tab); if (tab !== 'story') window.scrollTo({ top: 0 }); }}>{tab === 'story' ? '物語' : tab === 'action' ? '行動' : 'Party'}</Button>)}
+            <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, background: COLORS.card, borderTop: `1px solid ${COLORS.lineStrong}`, padding: '8px 8px calc(8px + env(safe-area-inset-bottom))', display: 'flex', justifyContent: 'center', gap: 7, zIndex: 5 }}>
+              {['story', 'action', 'party'].map((tab) => <Button key={tab} variant={mobileTab === tab ? 'brass' : 'ghost'} aria-pressed={mobileTab === tab} onClick={() => switchMobileTab(tab)}>{tab === 'story' ? '物語' : tab === 'action' ? '行動' : 'Party'}</Button>)}
             </div>
           </>
         ) : (
@@ -468,7 +505,7 @@ export default function PartyPlay({ sessionId }) {
           <div style={{ textAlign: 'center', marginTop: 18 }}><Button variant="brass" onClick={() => navigate({ name: 'home' })}>ホームへ戻る</Button></div>
         )}
       </div>
-      {!lobby && narratives.length > 0 && (!mobile || mobileTab === 'story') && <Button variant="brass" style={{ position: 'fixed', right: mobile ? 16 : undefined, left: mobile ? undefined : 16, bottom: mobile ? 70 : 18, zIndex: 6 }} onClick={() => { setMobileTab('story'); requestAnimationFrame(() => { latestStoryRef.current?.scrollIntoView({ block: 'start' }); latestStoryRef.current?.focus({ preventScroll: true }); }); }}>最新の場面へ</Button>}
+      {!lobby && narratives.length > 0 && (!mobile || mobileTab === 'story') && <Button variant="brass" style={{ position: 'fixed', right: mobile ? 16 : undefined, left: mobile ? undefined : 16, bottom: mobile ? 'calc(70px + env(safe-area-inset-bottom))' : 18, zIndex: 6 }} onClick={() => { setMobileTab('story'); requestAnimationFrame(() => { latestStoryRef.current?.scrollIntoView({ block: 'start' }); latestStoryRef.current?.focus({ preventScroll: true }); }); }}>最新の場面へ</Button>}
       <ConfirmModal
         open={endConfirm}
         message="このPartyセッションを終了する。全員の画面で再開不能になる。よいか?"

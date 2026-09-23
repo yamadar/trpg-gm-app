@@ -21,6 +21,7 @@ function snapshot(overrides = {}) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.spyOn(partyClient, 'getPartyChat').mockResolvedValue({ messages: [], nextSeq: 0 });
 });
 
@@ -132,7 +133,7 @@ it('renders GM progress below the story with goals and an own character sheet, w
   expect(screen.getByText('自分のシート')).toBeVisible();
 });
 
-it('updates the GM state even while chat is stuck, and retains the draft after a stale-round error', async () => {
+it('updates the GM state even while chat is stuck, and retains a failed draft within the round and clears it in the next round', async () => {
   let current = snapshot();
   vi.mocked(partyClient.getPartyChat).mockReturnValue(new Promise(() => {}));
   vi.spyOn(partyClient, 'getPartySnapshot').mockImplementation(async () => current);
@@ -146,7 +147,7 @@ it('updates the GM state even while chat is stuck, and retains the draft after a
   expect(await screen.findByText('全員の行動を一度に解決中…')).toBeInTheDocument();
   expect(await screen.findByRole('alert')).toHaveTextContent('行動受付は終了した');
   current = { ...current, eventSeq: 3, round: { ...current.round, id: 'round_2', phase: 'collecting' } };
-  expect(await screen.findByLabelText('自分の行動', {}, { timeout: 2000 })).toHaveValue('失いたくない下書き');
+  expect(await screen.findByLabelText('自分の行動', {}, { timeout: 2000 })).toHaveValue('');
 });
 
 it('reduces polling while hidden and preserves the screen on unchanged responses', async () => {
@@ -171,4 +172,60 @@ it('reduces polling while hidden and preserves the screen on unchanged responses
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     expect(fetch).toHaveBeenCalledTimes(count + 2);
   } finally { view.unmount(); vi.useRealTimers(); visibility.mockRestore(); }
+});
+
+
+it('restores the current submitted action but clears edits when the round changes', async () => {
+  let current = snapshot();
+  current.round.intents = [{ id: 'i1', pcId: 'pc1', source: 'human', text: '共有済み' }];
+  vi.spyOn(partyClient, 'getPartySnapshot').mockImplementation(async () => current);
+  vi.spyOn(partyClient, 'heartbeatPartyTyping').mockResolvedValue({});
+  render(<PartyPlay sessionId="p1" />);
+  expect(await screen.findByLabelText('自分の行動')).toHaveValue('共有済み');
+  fireEvent.change(screen.getByLabelText('自分の行動'), { target: { value: '前ラウンドの編集' } });
+  current = { ...current, eventSeq: 2, round: { ...current.round, id: 'round_2', intents: [] } };
+  fireEvent(document, new Event('visibilitychange'));
+  await waitFor(() => expect(screen.getByLabelText('自分の行動')).toHaveValue(''));
+});
+
+it('shows historical PC actions before the matching GM response', async () => {
+  const current = snapshot();
+  current.snapshot.narratives.push({ id: 'n2', roundId: 'round_1', text: '扉の先へ進んだ。' });
+  current.snapshot.actionHistory = [{ roundId: 'round_1', number: 1, intents: [
+    { id: 'i1', characterName: 'カイ', text: '扉を押す', source: 'human' },
+    { id: 'i2', characterName: 'ミナ', text: '周囲を見張る', source: 'auto' },
+  ] }];
+  vi.spyOn(partyClient, 'getPartySnapshot').mockResolvedValue(current);
+  render(<PartyPlay sessionId="p1" />);
+  const actions = await screen.findByRole('region', { name: 'ラウンド1の行動' });
+  expect(actions).toHaveTextContent('扉を押す');
+  expect(actions).toHaveTextContent('ミナ（自動行動）');
+  expect(actions.compareDocumentPosition(screen.getByText('扉の先へ進んだ。')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('restores mobile tab positions and opens a new GM scene only on new narration', async () => {
+  vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({ matches: true, addEventListener() {}, removeEventListener() {} })));
+  const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  const sceneScroll = vi.spyOn(Element.prototype, 'scrollIntoView');
+  const position = vi.spyOn(window, 'scrollY', 'get').mockReturnValue(420);
+  let current = snapshot();
+  vi.spyOn(partyClient, 'getPartySnapshot').mockImplementation(async () => current);
+  render(<PartyPlay sessionId="p1" />);
+  await screen.findByText('石の扉が開く。');
+  const actionTab = screen.getByRole('button', { name: '行動', exact: true });
+  const storyTab = screen.getByRole('button', { name: '物語', exact: true });
+  fireEvent.click(actionTab);
+  expect(scroll).toHaveBeenLastCalledWith({ top: 0, behavior: 'instant' });
+  position.mockReturnValue(80);
+  fireEvent.click(storyTab);
+  expect(scroll).toHaveBeenLastCalledWith({ top: 420, behavior: 'instant' });
+  fireEvent.click(actionTab);
+  current = { ...current, eventSeq: 2 };
+  fireEvent(document, new Event('visibilitychange'));
+  await waitFor(() => expect(actionTab).toHaveAttribute('aria-pressed', 'true'));
+  current = { ...current, eventSeq: 3, snapshot: { ...current.snapshot, narratives: [...current.snapshot.narratives, { id: 'n2', text: '新しい場面' }] } };
+  fireEvent(document, new Event('visibilitychange'));
+  expect(await screen.findByText('新しい場面')).toBeVisible();
+  expect(storyTab).toHaveAttribute('aria-pressed', 'true');
+  expect(sceneScroll).toHaveBeenCalledWith({ block: 'start' });
 });
