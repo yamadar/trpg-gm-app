@@ -15,6 +15,7 @@ import { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 vi.mock('../api/sceneImageClient.js', () => ({
   getConfig: vi.fn().mockResolvedValue({ imageGen: false }),
   generateSceneImage: vi.fn(),
+  deleteSceneImage: vi.fn(),
   sceneImageUrl: (sessionId, imageId) => `/api/sessions/${sessionId}/images/${imageId}`,
 }));
 
@@ -81,6 +82,7 @@ beforeEach(() => {
   // 挿絵クライアントのモックはテスト間で呼び出し履歴が残るため毎回リセットし、既定を復元する。
   sceneImageClient.getConfig.mockReset().mockResolvedValue({ imageGen: false });
   sceneImageClient.generateSceneImage.mockReset();
+  sceneImageClient.deleteSceneImage.mockReset();
 });
 
 afterEach(() => {
@@ -88,6 +90,61 @@ afterEach(() => {
 });
 
 describe('Play', () => {
+  it('requires confirmation to discard, focuses cancel, and preserves the story', async () => {
+    const session = makeSession({ log: [{ role: 'gm', text: '扉の奥を見た。', image: { imageId: 'img_old' } }] });
+    sceneImageClient.deleteSceneImage.mockResolvedValue({ ...session, log: [{ role: 'gm', text: '扉の奥を見た。' }] });
+    renderWithAuth(<Harness initialSession={session} />);
+    fireEvent.click(screen.getByText('挿絵を破棄…'));
+    expect(screen.getByText('キャンセル')).toHaveFocus();
+    expect(sceneImageClient.deleteSceneImage).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByAltText('場面の挿絵')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('挿絵を破棄…'));
+    fireEvent.click(screen.getByText('挿絵を破棄する'));
+    await waitFor(() => expect(screen.queryByAltText('場面の挿絵')).not.toBeInTheDocument());
+    expect(sceneImageClient.deleteSceneImage).toHaveBeenCalledExactlyOnceWith('s1', 'img_old');
+    expect(screen.getByText('扉の奥を見た。')).toBeInTheDocument();
+  });
+
+  it('keeps the old illustration when discard fails', async () => {
+    sceneImageClient.deleteSceneImage.mockRejectedValue(new Error('offline'));
+    renderWithAuth(<Harness initialSession={makeSession({ log: [{ role: 'gm', text: '場面', image: { imageId: 'img_old' } }] })} />);
+    fireEvent.click(screen.getByText('挿絵を破棄…'));
+    fireEvent.click(screen.getByText('挿絵を破棄する'));
+    expect(await screen.findByText(/挿絵の破棄に失敗した/)).toBeInTheDocument();
+    expect(screen.getByAltText('場面の挿絵')).toHaveAttribute('src', expect.stringContaining('img_old'));
+  });
+
+  it('confirms regeneration, prevents duplicate requests and retains the old image on failure', async () => {
+    sceneImageClient.getConfig.mockResolvedValue({ imageGen: true });
+    let reject;
+    sceneImageClient.generateSceneImage.mockReturnValue(new Promise((_, r) => { reject = r; }));
+    renderWithAuth(<Harness initialSession={makeSession({ log: [{ role: 'gm', text: '場面', image: { imageId: 'img_old' } }] })} />);
+    fireEvent.click(await screen.findByText('挿絵を再生成…'));
+    fireEvent.click(screen.getByText('キャンセル'));
+    expect(sceneImageClient.generateSceneImage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('挿絵を再生成…'));
+    fireEvent.click(screen.getByText('再生成する'));
+    await waitFor(() => expect(sceneImageClient.generateSceneImage).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('挿絵を再生成…')).toBeDisabled();
+    expect(screen.getByText('挿絵を破棄…')).toBeDisabled();
+    expect(screen.getByAltText('場面の挿絵')).toHaveAttribute('src', expect.stringContaining('img_old'));
+    await act(async () => reject(new Error('offline')));
+    expect(await screen.findByText(/挿絵の生成に失敗した/)).toBeInTheDocument();
+    expect(screen.getByAltText('場面の挿絵')).toHaveAttribute('src', expect.stringContaining('img_old'));
+  });
+
+  it('replaces an illustration only after successful regeneration', async () => {
+    sceneImageClient.getConfig.mockResolvedValue({ imageGen: true });
+    sceneImageClient.generateSceneImage.mockResolvedValue({ imageId: 'img_new', newAppearances: [] });
+    renderWithAuth(<Harness initialSession={makeSession({ log: [{ role: 'gm', text: '場面', image: { imageId: 'img_old' } }] })} />);
+    fireEvent.click(await screen.findByText('挿絵を再生成…'));
+    fireEvent.click(screen.getByText('再生成する'));
+    await waitFor(() => expect(screen.getByAltText('場面の挿絵')).toHaveAttribute('src', expect.stringContaining('img_new')));
+    expect(sceneImageClient.deleteSceneImage).not.toHaveBeenCalled();
+  });
+
   it('warns when another device is playing the same session', async () => {
     sessionSyncClient.heartbeatSession.mockResolvedValue({ otherDeviceActive: true, sync: null });
     renderWithAuth(

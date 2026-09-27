@@ -15,7 +15,8 @@ import {
   releaseSessionPresence,
 } from '../api/sessionSyncClient.js';
 import { normalizeTurnResult } from '../api/turnResult.js';
-import { generateSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
+import { generateSceneImage, deleteSceneImage, sceneImageUrl, getConfig } from '../api/sceneImageClient.js';
+import ConfirmModal from '../components/library/ConfirmModal.jsx';
 import { useAuth } from '../auth/AuthContext.jsx';
 import FocusHeader, { FOCUS_HEADER_HEIGHT } from '../components/nav/FocusHeader.jsx';
 import LoginModal from '../components/auth/LoginModal.jsx';
@@ -47,7 +48,12 @@ export default function Play({ session, setSession }) {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState(session.pendingTurn?.playerText || '');
   const [loginOpen, setLoginOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [turnBusy, setBusy] = useState(false);
+  const [removingImage, setRemovingImage] = useState(false);
+  const busy = turnBusy || removingImage;
+  const [imageAction, setImageAction] = useState(null);
+  const imageOperationRef = useRef(false);
+  const cancelImageAction = useCallback(() => setImageAction(null), []);
   const [slowResponse, setSlowResponse] = useState(false);
   const [error, setError] = useState('');
   const [saveWarning, setSaveWarning] = useState('');
@@ -146,7 +152,8 @@ export default function Play({ session, setSession }) {
   // runTurn より前に定義し、runTurn から参照できるようにする。
   const illustrate = useCallback(
     async (baseSession, i, syncPromise = null) => {
-      if (generatingIndex !== null) return;
+      if (imageOperationRef.current) return;
+      imageOperationRef.current = true;
       setGeneratingIndex(i);
       setImageError(null);
       try {
@@ -160,6 +167,7 @@ export default function Play({ session, setSession }) {
         const { imageId, newAppearances } = await generateSceneImage(baseSession.id, i);
         // 生成中に進んだターンを巻き戻さないよう、完了時点の最新セッションへ適用する。
         const current = sessionRef.current;
+        if (current.id !== baseSession.id) return;
         const appearances = { ...(current.appearances || {}) };
         for (const a of newAppearances || [])
           appearances[a.name] = { name: a.name, description: a.description, ...(a.imageId ? { imageId: a.imageId } : {}) };
@@ -169,17 +177,48 @@ export default function Play({ session, setSession }) {
           appearances,
           updatedAt: Date.now(),
         };
+        sessionRef.current = updated;
         setSession(updated);
         await saveSession(updated);
         putSessionToServer(updated).catch((e) => console.error('session server sync failed', e));
       } catch (e) {
         setImageError({ index: i, message: '挿絵の生成に失敗した: ' + e.message });
       } finally {
+        imageOperationRef.current = false;
         setGeneratingIndex(null);
       }
     },
     [generatingIndex, setSession]
   );
+
+  async function confirmImageAction() {
+    const action = imageAction;
+    const current = sessionRef.current;
+    if (!action || busy || !user || imageOperationRef.current) return;
+    cancelImageAction();
+    // 確認中に対象が変わっていたら、別の画像へ操作を適用しない。
+    if (current.log[action.index]?.image?.imageId !== action.imageId) return;
+    if (action.kind === 'regenerate') {
+      await illustrate(current, action.index);
+      return;
+    }
+    imageOperationRef.current = true;
+    setRemovingImage(true);
+    setImageError(null);
+    try {
+      await putSessionToServer(current);
+      const updated = await deleteSceneImage(current.id, action.imageId);
+      if (sessionRef.current.id !== current.id) return;
+      sessionRef.current = updated;
+      setSession(updated);
+      if (!(await saveSession(updated))) setSaveWarning('挿絵は破棄済みだが、端末への保存に失敗した。');
+    } catch (e) {
+      setImageError({ index: action.index, message: '挿絵の破棄に失敗した: ' + e.message });
+    } finally {
+      imageOperationRef.current = false;
+      setRemovingImage(false);
+    }
+  }
 
   const runTurn = useCallback(
     async (playerText, displayText, { allowRoll = true } = {}) => {
@@ -410,6 +449,16 @@ export default function Play({ session, setSession }) {
 
   return (
     <>
+      <ConfirmModal
+        open={!!imageAction}
+        message={imageAction?.kind === 'discard'
+          ? 'この場面の挿絵を破棄する？ 画像は元に戻せない。本文は残る。同じ画像を使う小説からも削除される。'
+          : 'この場面の挿絵を再生成する？ 画像生成の利用枠を消費する。成功したら新しい画像に置き換え、失敗したら元の画像を残す。'}
+        confirmLabel={imageAction?.kind === 'discard' ? '挿絵を破棄する' : '再生成する'}
+        confirmDisabled={busy || generatingIndex !== null || !user}
+        onConfirm={confirmImageAction}
+        onCancel={cancelImageAction}
+      />
       {/* 離脱導線と現在地はFocusHeaderに任せる(集中モード共通)。
           集中モードのヘッダーは Setup と、回遊モードのシェルヘッダーとも同じく
           画面幅いっぱいに敷く。本文カラムの中に入れると、この画面だけ
@@ -488,6 +537,7 @@ export default function Play({ session, setSession }) {
                 <input
                   type="checkbox"
                   checked={!!session.autoIllustrate}
+                  disabled={removingImage}
                   onChange={(e) => {
                     const updated = { ...session, autoIllustrate: e.target.checked, updatedAt: Date.now() };
                     setSession(updated);
@@ -541,6 +591,7 @@ export default function Play({ session, setSession }) {
               <Card key={i}>
                 {entry.image?.imageId && (
                   <img
+                    key={entry.image.imageId}
                     src={sceneImageUrl(session.id, entry.image.imageId)}
                     alt="場面の挿絵"
                     onError={(e) => {
@@ -556,20 +607,32 @@ export default function Play({ session, setSession }) {
                     }}
                   />
                 )}
+                {entry.image?.imageId && user && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    {imageGen && <Button variant="ghost" disabled={busy || generatingIndex !== null}
+                      onClick={() => setImageAction({ kind: 'regenerate', index: i, imageId: entry.image.imageId })}>
+                      挿絵を再生成…
+                    </Button>}
+                    <Button variant="ghost" disabled={busy || generatingIndex !== null}
+                      onClick={() => setImageAction({ kind: 'discard', index: i, imageId: entry.image.imageId })}>
+                      挿絵を破棄…
+                    </Button>
+                    {generatingIndex === i && <span role="status">挿絵を描いています…</span>}
+                    {removingImage && <span role="status">挿絵を破棄しています…</span>}
+                  </div>
+                )}
                 {imageGen && !entry.image?.imageId && (
                   <div style={{ marginBottom: 8 }}>
                     {generatingIndex === i ? (
                       <span style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>挿絵を描いています…</span>
                     ) : (
-                      <Button variant="ghost" onClick={() => illustrate(session, i)} disabled={generatingIndex !== null}>
+                      <Button variant="ghost" onClick={() => illustrate(session, i)} disabled={busy || !user || generatingIndex !== null}>
                         この場面を描く
                       </Button>
                     )}
-                    {imageError && imageError.index === i && (
-                      <div style={{ color: COLORS.stamp, fontSize: 12, marginTop: 4 }}>{imageError.message}</div>
-                    )}
                   </div>
                 )}
+                {imageError?.index === i && <div role="alert" style={{ color: COLORS.stamp, fontSize: 12, marginTop: 4 }}>{imageError.message}</div>}
                 <Stamp roll={entry.roll} animate={i >= initialLogLenRef.current} />
                 <GmNarrative
                   text={entry.text}
@@ -636,7 +699,7 @@ export default function Play({ session, setSession }) {
               </Button>
             </Card>
           )}
-          {busy && (
+          {turnBusy && (
             // 応答待ちであることは目でも支援技術でも取れるようにする。ログが空の
             // セッション開始直後は、この一行だけが「動いている」ことの唯一の手掛かりになる。
             <div role="status" style={{ fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>

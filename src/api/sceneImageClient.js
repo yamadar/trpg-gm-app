@@ -1,4 +1,11 @@
 import { apiFetch } from './apiFetch.js';
+import { rememberSessionSync } from './sessionSyncClient.js';
+
+export async function deleteSceneImage(sessionId, imageId) {
+  const result = await apiFetch(sceneImageUrl(sessionId, imageId), { method: 'DELETE' });
+  rememberSessionSync(result.session);
+  return result.session;
+}
 
 export async function generateSceneImage(sessionId, logIndex) {
   return apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/images`, {
