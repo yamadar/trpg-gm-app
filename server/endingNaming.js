@@ -45,10 +45,6 @@ function buildUserContent(session) {
   return `# PC\n${pc || '(未設定)'}\n\n# 物語要約\n${session.state?.history_summary || '(なし)'}\n\n# 結末付近の地の文\n${closing || '(なし)'}`;
 }
 
-function supportsThinkingLevel(model) {
-  return /^gemini-3(?:[.-]|$)/i.test(String(model || ''));
-}
-
 export async function nameEnding({ session, apiKey, model, fetchImpl = fetch }) {
   const data = await generateText({
     apiKey,
@@ -57,9 +53,9 @@ export async function nameEnding({ session, apiKey, model, fetchImpl = fetch }) 
     timeoutMs: NAMING_TIMEOUT_MS,
     request: {
       // Gemini 3.xでは思考トークンも出力上限を消費する。短いJSON生成に十分な
-      // 余裕を持たせ、対応モデルでは思考を最小化して本文前の打ち切りを防ぐ。
+      // 余裕を持たせる。思考設定は共通処理の low を使う。
+      // minimal は Gemini 3.7/3.8 Flash や Pro が拒否するため指定しない。
       max_tokens: NAMING_MAX_TOKENS,
-      ...(supportsThinkingLevel(model) ? { thinking_level: 'minimal' } : {}),
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildUserContent(session) }],
       output_config: { format: ENDING_OUTPUT_FORMAT },

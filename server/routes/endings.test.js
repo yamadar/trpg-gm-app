@@ -117,6 +117,28 @@ describe('endings routes', () => {
     expect(res.body.formula).toBeNull();
   });
 
+  it.each(['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.1-pro-preview'])(
+    'records and persists an ending with %s, which rejects MINIMAL thinking',
+    async (model) => {
+      const generate = okFetch();
+      const fetchImpl = vi.fn(async (...args) => {
+        const body = JSON.parse(args[1].body);
+        if (body.generationConfig.thinkingConfig?.thinkingLevel === 'MINIMAL') {
+          return { ok: false, status: 400, text: async () => 'Thinking level MINIMAL is not supported for this model.' };
+        }
+        return generate(...args);
+      });
+      buildApp({ model, fetchImpl });
+      await putSession('s1');
+      const res = await request(app).post('/api/sessions/s1/ending').send({ stats: STATS });
+      expect(res.status).toBe(201);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetchImpl.mock.calls[0][1].body).generationConfig.thinkingConfig)
+        .toEqual({ thinkingLevel: 'LOW' });
+      expect((await request(app).get('/api/endings')).body).toEqual([res.body]);
+    },
+  );
+
   it('returns 502 and saves nothing when naming fails', async () => {
     buildApp({ fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' }) });
     await putSession('s1');

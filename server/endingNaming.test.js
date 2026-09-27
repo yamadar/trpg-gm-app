@@ -45,7 +45,7 @@ describe('nameEnding', () => {
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
     expect(body.generationConfig.responseJsonSchema.required).toEqual(['ending_title', 'summary']);
     expect(body.generationConfig.maxOutputTokens).toBe(4096);
-    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'MINIMAL' });
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'LOW' });
   });
 
   it('requires the ending summary to stay in plain form even when source prose is polite', async () => {
