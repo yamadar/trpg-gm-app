@@ -36,11 +36,10 @@ describe('buildImagePrompt', () => {
     expect(p).toContain('人物を描く場合');
     expect(p).toContain('風景・物だけの場面へ人物を追加しない');
   });
-  it('trims long narrative to 400 chars', () => {
-    const long = 'あ'.repeat(500);
-    const p = buildImagePrompt({ narrative: long, moods: [] });
-    expect(p).toContain('あ'.repeat(400));
-    expect(p).not.toContain('あ'.repeat(401));
+  it('preserves late scene actions and gaze targets beyond the first 400 chars', () => {
+    const narrative = '廊下の描写。'.repeat(100) + 'カイは奥の扉の向こうに広がる庭を見つめた。';
+    const p = buildImagePrompt({ narrative, moods: [] });
+    expect(p).toContain(`場面: ${narrative}`);
   });
   it('does not throw on empty inputs', () => {
     expect(() => buildImagePrompt({})).not.toThrow();
