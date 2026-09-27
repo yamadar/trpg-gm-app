@@ -28,7 +28,7 @@ const hintStyle = {
 // 子が複数、あるいは対象が一意に定まらないとき(MoodChips のようなコントロール群や
 // ラッパーコンポーネント)は htmlFor の相手がいないので <label> は使えない。
 // role="group" + aria-labelledby でまとめてラベル付けする。
-export default function Field({ label, hint, children }) {
+export default function Field({ label, hint, children, style }) {
   const id = useId();
   const controlId = `${id}-control`;
   const labelId = `${id}-label`;
@@ -51,7 +51,7 @@ export default function Field({ label, hint, children }) {
     const targetId = only.props.id || controlId;
     const describedBy = [only.props['aria-describedby'], hint ? hintId : null].filter(Boolean).join(' ');
     return (
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 18, ...style }}>
         <label htmlFor={targetId} style={labelStyle}>
           {label}
         </label>
@@ -65,7 +65,7 @@ export default function Field({ label, hint, children }) {
   }
 
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div style={{ marginBottom: 18, ...style }}>
       <div id={labelId} style={labelStyle}>
         {label}
       </div>

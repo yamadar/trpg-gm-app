@@ -549,7 +549,7 @@ export default function CampaignTab({
         <Card>
           <div style={{ display: 'flex', gap: 8, alignItems: 'end', marginBottom: 16 }}>
             <div style={{ flex: 1 }}>
-              <Field label="タイトル">
+              <Field label="タイトル" style={{ marginBottom: 0 }}>
                 <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} style={inputStyle} />
               </Field>
             </div>
