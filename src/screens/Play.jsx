@@ -608,15 +608,20 @@ export default function Play({ session, setSession }) {
                   />
                 )}
                 {entry.image?.imageId && user && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                    {imageGen && <Button variant="ghost" disabled={busy || generatingIndex !== null}
-                      onClick={() => setImageAction({ kind: 'regenerate', index: i, imageId: entry.image.imageId })}>
-                      挿絵を再生成…
-                    </Button>}
-                    <Button variant="ghost" disabled={busy || generatingIndex !== null}
-                      onClick={() => setImageAction({ kind: 'discard', index: i, imageId: entry.image.imageId })}>
-                      挿絵を破棄…
-                    </Button>
+                  <div style={{ marginBottom: 8, fontFamily: F_MONO, fontSize: 12, color: COLORS.faint }}>
+                    <details>
+                      <summary style={{ cursor: 'pointer', padding: '6px 0', width: 'fit-content' }}>挿絵の操作</summary>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                        {imageGen && <Button variant="ghost" disabled={busy || generatingIndex !== null}
+                          onClick={() => setImageAction({ kind: 'regenerate', index: i, imageId: entry.image.imageId })}>
+                          挿絵を再生成…
+                        </Button>}
+                        <Button variant="ghost" disabled={busy || generatingIndex !== null}
+                          onClick={() => setImageAction({ kind: 'discard', index: i, imageId: entry.image.imageId })}>
+                          挿絵を破棄…
+                        </Button>
+                      </div>
+                    </details>
                     {generatingIndex === i && <span role="status">挿絵を描いています…</span>}
                     {removingImage && <span role="status">挿絵を破棄しています…</span>}
                   </div>
