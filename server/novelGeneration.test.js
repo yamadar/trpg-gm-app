@@ -45,13 +45,21 @@ describe('generateNovel', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('minimizes thinking on Gemini 3 so output tokens remain available for the novel', async () => {
-    const fetchImpl = sequenceFetch({ text: '本文', stop_reason: 'end_turn' });
-    await generateNovel({ ...BASE, model: 'gemini-3.5-flash', fetchImpl });
+  it.each(['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'])(
+    'uses supported LOW thinking for initial and continuation requests on %s', async (model) => {
+      const fetchImpl = sequenceFetch(
+        { text: '前半', stop_reason: 'max_tokens' },
+        { text: '後半', stop_reason: 'end_turn' },
+      );
+      const out = await generateNovel({ ...BASE, model, fetchImpl });
 
-    expect(bodyOf(fetchImpl, 0).generationConfig.thinkingConfig).toEqual({
-      thinkingLevel: 'MINIMAL',
-    });
+      expect(out).toEqual({ text: '前半後半', truncated: false });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      for (const callIndex of [0, 1]) {
+        expect(bodyOf(fetchImpl, callIndex).generationConfig.thinkingConfig).toEqual({
+          thinkingLevel: 'LOW',
+        });
+      }
   });
 
   it('does not send Gemini 3 thinking levels to older models', async () => {
